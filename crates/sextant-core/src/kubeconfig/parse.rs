@@ -99,13 +99,13 @@ pub(super) const NOT_KUBECONFIG: &str = "not in kubeconfig format";
 
 /// Stands in for the parser's message, which can quote the offending value.
 pub(crate) fn yaml_error_text(err: &serde_yaml_ng::Error) -> String {
+    with_location("invalid kubeconfig", err)
+}
+
+fn with_location(message: &str, err: &serde_yaml_ng::Error) -> String {
     match err.location() {
-        Some(at) => format!(
-            "invalid kubeconfig at line {}, column {}",
-            at.line(),
-            at.column()
-        ),
-        None => "invalid kubeconfig".to_owned(),
+        Some(at) => format!("{message} at line {}, column {}", at.line(), at.column()),
+        None => message.to_owned(),
     }
 }
 
@@ -123,8 +123,8 @@ fn read_config(bytes: &[u8]) -> Result<RawConfig, String> {
     match serde_yaml_ng::from_slice::<Option<RawConfig>>(bytes) {
         Ok(raw) => Ok(raw.unwrap_or_default()),
         // Without a target type what still fails is the syntax or a repeated key.
-        Err(_) => Err(match serde_yaml_ng::from_slice::<Value>(bytes) {
-            Ok(_) => NOT_KUBECONFIG.to_owned(),
+        Err(shape) => Err(match serde_yaml_ng::from_slice::<Value>(bytes) {
+            Ok(_) => with_location(NOT_KUBECONFIG, &shape),
             Err(syntax) => yaml_error_text(&syntax),
         }),
     }
@@ -178,7 +178,7 @@ pub(super) fn parse_file(path: &Path, bytes: &[u8]) -> Result<ParsedFile, String
 }
 
 /// Lists the contexts in kubeconfig text. The error is a fixed message, with the
-/// location of bad syntax, that quotes nothing from the file.
+/// location when the parser has one, that quotes nothing from the file.
 pub fn parse_contexts(path: &Path, bytes: &[u8]) -> Result<Vec<ContextEntry>, String> {
     parse_file(path, bytes).map(|parsed| parsed.entries)
 }
@@ -321,8 +321,16 @@ clusters:
             "contexts:\n- SECRET-TOKEN-abc123\n",
         ] {
             let err = parse_contexts(Path::new("/k/config"), document.as_bytes()).unwrap_err();
-            assert_eq!(err, NOT_KUBECONFIG, "{document}");
+            assert!(err.starts_with(NOT_KUBECONFIG), "{document}: {err}");
+            assert!(!err.contains("SECRET"), "{document}: {err}");
         }
+    }
+
+    #[test]
+    fn a_wrongly_shaped_document_reports_where_it_went_wrong() {
+        let raw = b"clusters: []\nusers:\n- name: u\n  user: tok-SECRET\n";
+        let err = parse_contexts(Path::new("/k/config"), raw).unwrap_err();
+        assert_eq!(err, format!("{NOT_KUBECONFIG} at line 4, column 9"));
     }
 
     #[test]

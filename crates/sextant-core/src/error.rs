@@ -76,22 +76,54 @@ pub(crate) fn find_auth_error<'a>(err: &'a (dyn Error + 'static)) -> Option<&'a 
     find_in_chain(err)
 }
 
-/// Where the program starts in `cmd`, which is normally the `Debug` form of a
-/// `Command`: `env -u A B="value" "/path/program" "arg"`. Only the program and its
-/// arguments start with a quote, so the first such token is the program. Text
-/// that has no quoted token is taken to start with the program.
+/// The program in `cmd`, which has one of two forms. An exec plugin gives the
+/// `Debug` form of a `Command`: `env -u A B="value" "/path/program" "arg"`. The gcp
+/// auth provider gives `program args` as written in the kubeconfig, where an
+/// argument may be quoted. Only the environment prefix is skipped, because whatever
+/// follows the program is an argument.
 fn program_token(cmd: &str) -> &str {
-    let mut first = None;
-    let mut rest = cmd.trim_start();
-    while !rest.is_empty() {
-        let (token, tail) = rest.split_at(token_end(rest));
-        if token.starts_with('"') {
-            return token;
-        }
-        first.get_or_insert(token);
-        rest = tail.trim_start();
+    let (first, rest) = next_token(cmd.trim_start());
+    if first != "env" {
+        return skip_assignments(first, rest);
     }
-    first.unwrap_or_default()
+    let (mut token, mut rest) = next_token(rest);
+    loop {
+        match token {
+            "-i" => (token, rest) = next_token(rest),
+            "-u" => {
+                let (_name, after_name) = next_token(rest);
+                (token, rest) = next_token(after_name);
+            }
+            _ => break,
+        }
+    }
+    let program = skip_assignments(token, rest);
+    // The `Debug` form always quotes its program, so otherwise `env` is the program.
+    if program.starts_with('"') {
+        program
+    } else {
+        first
+    }
+}
+
+fn skip_assignments<'a>(mut token: &'a str, mut rest: &'a str) -> &'a str {
+    while is_env_assignment(token) {
+        (token, rest) = next_token(rest);
+    }
+    token
+}
+
+/// `NAME=value`. A path can hold `=` too, as in `/opt/a=b/program`.
+fn is_env_assignment(token: &str) -> bool {
+    token
+        .split_once('=')
+        .is_some_and(|(name, _)| !name.is_empty() && !name.contains(['"', '/', '\\']))
+}
+
+/// The first token of `text`, and what follows it with leading space removed.
+fn next_token(text: &str) -> (&str, &str) {
+    let (token, tail) = text.split_at(token_end(text));
+    (token, tail.trim_start())
 }
 
 /// The end of the first token, where a space in double quotes does not end it.
@@ -488,6 +520,68 @@ mod tests {
             e.message,
             "auth plugin \"auth-plugin\" failed with status 1"
         );
+    }
+
+    /// `kube`'s gcp auth provider passes `{cmd-path} {cmd-args}` as written in the
+    /// kubeconfig, so the program is unquoted while an argument may be quoted.
+    #[cfg(unix)]
+    #[test]
+    fn auth_exec_run_names_the_plugin_when_only_an_argument_is_quoted() {
+        let cmd = r#"/opt/tools/auth-plugin --secret-arg "S3CRET-ARG""#;
+        let e: IpcError = kube::Error::Auth(exec_run_error(cmd)).into();
+        assert_exec_run_is_safe(&e);
+        assert_eq!(
+            e.message,
+            "auth plugin \"auth-plugin\" failed with status 1"
+        );
+    }
+
+    #[test]
+    fn plugin_name_is_never_taken_from_arguments_or_environment() {
+        for (cmd, expected) in [
+            (r#"auth-plugin "S3CRET-ARG""#, "auth-plugin"),
+            ("/opt/a=b/auth-plugin --key=S3CRET-ARG", "auth-plugin"),
+            (r#""/usr/bin/env" "S3CRET-ARG""#, "env"),
+            (
+                r#"env -i A="S3CRET-ENV" "/opt/auth-plugin" "S3CRET-ARG""#,
+                "auth-plugin",
+            ),
+            (
+                r#"env -u ONE -u TWO "/opt/auth-plugin" "S3CRET-ARG""#,
+                "auth-plugin",
+            ),
+            (
+                r#"A="S3CRET-ENV \"x y" "/opt/auth-plugin" "S3CRET-ARG""#,
+                "auth-plugin",
+            ),
+            // Only the `Debug` form quotes its program, so here `env` is the program.
+            ("env S3CRET-ARG", "env"),
+            ("env --secret-arg S3CRET-ARG", "env"),
+            (r#"A="S3CRET-ENV""#, "unknown"),
+            ("env -u", "env"),
+            ("", "unknown"),
+        ] {
+            assert_eq!(plugin_name(cmd), expected, "{cmd}");
+        }
+    }
+
+    #[test]
+    fn plugin_name_reads_the_debug_form_of_a_real_command() {
+        use std::process::Command;
+        let mut changed = Command::new("/opt/my tools/auth-plugin");
+        changed
+            .arg("S3CRET-ARG")
+            .env("API_KEY", "S3CRET-ENV \"a b")
+            .env_remove("DROPPED");
+        let mut cleared = Command::new("/opt/my tools/auth-plugin");
+        cleared
+            .arg("S3CRET-ARG")
+            .env_clear()
+            .env("API_KEY", "S3CRET-ENV");
+        for command in [changed, cleared] {
+            let cmd = format!("{command:?}");
+            assert_eq!(plugin_name(&cmd), "auth-plugin", "{cmd}");
+        }
     }
 
     #[cfg(unix)]
