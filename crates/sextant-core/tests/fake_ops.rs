@@ -713,6 +713,53 @@ async fn apply_rejects_a_document_that_is_not_a_mapping() {
 }
 
 #[tokio::test]
+async fn apply_sends_merged_fields_and_no_merge_key() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    let yaml = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app\n\
+                x-base: &base {shared: from-base, kept: base}\n\
+                data:\n  <<: *base\n  shared: explicit\n";
+
+    let results = core.resource_apply(&id, yaml, "default").await.unwrap();
+
+    assert!(results[0].ok, "{:?}", results[0]);
+    let writes = fake.writes("PATCH", CONFIGMAP_PATH);
+    assert_eq!(
+        writes[0].body["data"],
+        json!({ "shared": "explicit", "kept": "base" })
+    );
+}
+
+#[tokio::test]
+async fn apply_with_a_merge_key_that_is_not_a_mapping_applies_nothing() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    let yaml = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: one\n\
+                ---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: two\n\
+                data:\n  <<: tok-SECRET\n";
+
+    let err = core.resource_apply(&id, yaml, "default").await.unwrap_err();
+
+    assert_eq!(err.code, ErrorCode::InvalidInput);
+    assert!(err.message.contains("line"), "{}", err.message);
+    assert!(!err.message.contains("tok-SECRET"), "{}", err.message);
+    assert!(fake.writes("PATCH", CONFIGMAP_PATH).is_empty());
+}
+
+#[tokio::test]
+async fn replace_sends_merged_fields_and_no_merge_key() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    upsert_configmap(&fake, "first");
+    let yaml = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app\n  namespace: default\n\
+                x-base: &base {kept: base}\ndata:\n  <<: *base\n";
+
+    let stored = core
+        .resource_replace(&id, &configmaps(), Some("default"), "app", yaml, true)
+        .await
+        .unwrap();
+
+    assert_eq!(stored["data"], json!({ "kept": "base" }));
+}
+
+#[tokio::test]
 async fn apply_uses_field_manager_sextant() {
     let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
     let yaml = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app\n";

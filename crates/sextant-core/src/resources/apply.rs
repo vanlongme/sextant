@@ -7,8 +7,9 @@ use kube::api::{DynamicObject, Patch, PatchParams};
 use kube::core::discovery::{ApiCapabilities, Scope};
 use kube::core::{ApiResource, GroupVersionKind, Request, Resource};
 use kube::{Client, Discovery};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde::de::{self, IntoDeserializer, MapAccess, SeqAccess, Visitor};
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::{Map, Value};
 use tokio::time::Instant;
 use ts_rs::TS;
 
@@ -21,6 +22,7 @@ use crate::kubeconfig::{with_location, ClusterId};
 const FIELD_MANAGER: &str = "sextant";
 const CRD_GROUP: &str = "apiextensions.k8s.io";
 const CRD_KIND: &str = "CustomResourceDefinition";
+const MERGE_KEY: &str = "<<";
 /// How long a kind may stay unknown after a CRD in the same request was applied.
 const ESTABLISH_LIMIT: Duration = Duration::from_secs(10);
 const ESTABLISH_POLL: Duration = Duration::from_millis(500);
@@ -45,13 +47,102 @@ pub struct ApplyResult {
     pub message: String,
 }
 
+/// A YAML value as JSON, with merge keys applied the way kubectl applies them.
+struct Merged(Value);
+
+impl<'de> Deserialize<'de> for Merged {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_any(MergedVisitor).map(Self)
+    }
+}
+
+/// Merging happens while the keys arrive, because the result depends on their order
+/// and a repeated `<<` would not survive in a `Map`. Scalars are read by `Value` itself.
+struct MergedVisitor;
+
+macro_rules! scalars_as_value {
+    ($($method:ident: $type:ty),* $(,)?) => {$(
+        fn $method<E: de::Error>(self, scalar: $type) -> Result<Value, E> {
+            Value::deserialize(scalar.into_deserializer())
+        }
+    )*};
+}
+
+impl<'de> Visitor<'de> for MergedVisitor {
+    type Value = Value;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("a YAML value")
+    }
+
+    scalars_as_value!(
+        visit_bool: bool,
+        visit_i64: i64,
+        visit_i128: i128,
+        visit_u64: u64,
+        visit_u128: u128,
+        visit_f64: f64,
+        visit_str: &str,
+    );
+
+    /// The parser reports an empty document this way.
+    fn visit_none<E: de::Error>(self) -> Result<Value, E> {
+        Ok(Value::Null)
+    }
+
+    fn visit_unit<E: de::Error>(self) -> Result<Value, E> {
+        Ok(Value::Null)
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Value, A::Error> {
+        let mut items = Vec::with_capacity(seq.size_hint().unwrap_or(0).min(4096));
+        while let Some(Merged(item)) = seq.next_element()? {
+            items.push(item);
+        }
+        Ok(Value::Array(items))
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Value, A::Error> {
+        let mut object = Map::new();
+        while let Some(key) = map.next_key::<String>()? {
+            let Merged(value) = map.next_value()?;
+            if key == MERGE_KEY {
+                merge_into(&mut object, value).map_err(de::Error::custom)?;
+            } else {
+                object.insert(key, value);
+            }
+        }
+        Ok(Value::Object(object))
+    }
+}
+
+/// Applies what a `<<` names over the keys read so far: a key after the `<<` replaces
+/// it, a key before it does not, and earlier mappings of a list beat later ones.
+fn merge_into(object: &mut Map<String, Value>, sources: Value) -> Result<(), &'static str> {
+    let sources = match sources {
+        Value::Array(sources) => sources,
+        source => vec![source],
+    };
+    for source in sources.into_iter().rev() {
+        let Value::Object(source) = source else {
+            return Err("a merge key needs a mapping or a list of mappings");
+        };
+        object.extend(source);
+    }
+    Ok(())
+}
+
 /// Parses a whole stream, leaving out empty and comment-only documents. An error
 /// is a fixed message and a location, because the parser's own text quotes values.
+///
+/// Known differences from kubectl, which follows YAML 1.1: a plain `0644` stays the
+/// text `"0644"` where kubectl has 420, and `yes` or `on` stay text where kubectl has
+/// `true`. A quoted `"<<"` key also counts as a merge key here.
 pub(super) fn parse_documents(yaml: &str) -> CoreResult<Vec<Value>> {
     let mut documents = Vec::new();
     for document in serde_yaml_ng::Deserializer::from_str(yaml) {
-        let value =
-            Value::deserialize(document).map_err(|e| invalid(with_location("invalid YAML", &e)))?;
+        let Merged(value) = Merged::deserialize(document)
+            .map_err(|e| invalid(with_location("invalid YAML", &e)))?;
         match value {
             Value::Null => {}
             Value::Object(_) => documents.push(value),
@@ -248,6 +339,7 @@ impl AppCore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::ErrorCode;
 
     #[test]
     fn parse_skips_what_is_empty() {
@@ -275,5 +367,112 @@ mod tests {
             assert!(err.message.contains("not a mapping"), "{}", err.message);
             assert!(!err.message.contains("tok-SECRET"), "{}", err.message);
         }
+    }
+
+    /// Expected values come from `kubectl create --dry-run=client --validate=false -o json`.
+    #[test]
+    fn parse_applies_merge_keys_as_kubectl_does() {
+        let anchors = "x-a: &a {k: from-a, only-a: a}\nx-b: &b {k: from-b, only-b: b}\n";
+        for (data, expected) in [
+            (
+                "<<: *a",
+                serde_json::json!({ "k": "from-a", "only-a": "a" }),
+            ),
+            (
+                "<<: *a\n  k: explicit",
+                serde_json::json!({ "k": "explicit", "only-a": "a" }),
+            ),
+            (
+                "k: explicit\n  <<: *a",
+                serde_json::json!({ "k": "from-a", "only-a": "a" }),
+            ),
+            (
+                "<<: [*a, *b]",
+                serde_json::json!({ "k": "from-a", "only-a": "a", "only-b": "b" }),
+            ),
+            (
+                "<<: *a\n  <<: *b",
+                serde_json::json!({ "k": "from-b", "only-a": "a", "only-b": "b" }),
+            ),
+            ("<<: {k: inline}", serde_json::json!({ "k": "inline" })),
+            ("<<: []\n  k: v", serde_json::json!({ "k": "v" })),
+        ] {
+            let documents = parse_documents(&format!("{anchors}data:\n  {data}\n")).unwrap();
+            assert_eq!(documents[0]["data"], expected, "{data}");
+        }
+    }
+
+    #[test]
+    fn parse_applies_merge_keys_at_any_depth() {
+        let text = "x-a: &a {k: v}\nx-c: &c\n  <<: *a\n  c: c\nnested:\n  <<: *c\nlist:\n  - <<: *a\n    z: 1\n";
+        let documents = parse_documents(text).unwrap();
+        assert_eq!(
+            documents[0]["nested"],
+            serde_json::json!({ "k": "v", "c": "c" })
+        );
+        assert_eq!(
+            documents[0]["list"],
+            serde_json::json!([{ "k": "v", "z": 1 }])
+        );
+    }
+
+    #[test]
+    fn parse_rejects_a_merge_key_that_is_not_a_mapping() {
+        for data in ["<<: tok-SECRET", "<<:\n  k: v", "<<: [{k: v}, tok-SECRET]"] {
+            let err = parse_documents(&format!("data:\n  {data}\n")).unwrap_err();
+            assert_eq!(err.code, ErrorCode::InvalidInput);
+            assert!(
+                err.message.starts_with("invalid YAML at line 2, column "),
+                "{}",
+                err.message
+            );
+            assert!(!err.message.contains("tok-SECRET"), "{}", err.message);
+        }
+    }
+
+    /// Without a merge key, the result is what `serde_json::Value` alone reads.
+    #[test]
+    fn parse_reads_everything_else_like_a_plain_json_value() {
+        let plain = |text| {
+            serde_yaml_ng::Deserializer::from_str(text)
+                .map(|document| Value::deserialize(document).ok())
+                .collect::<Vec<_>>()
+        };
+        let merged = |text| {
+            serde_yaml_ng::Deserializer::from_str(text)
+                .map(|document| Merged::deserialize(document).ok().map(|merged| merged.0))
+                .collect::<Vec<_>>()
+        };
+        for text in [
+            "",
+            "---\n",
+            "---\n---\n# note\n---\n",
+            "s: text\nquoted: \"1\"\nt: true\nn: ~\nblank:\nint: -7\nfloat: 1.5\ninf: .inf\n",
+            "u64: 18446744073709551615\nu128: 18446744073709551616\ni128: -9223372036854775809\n",
+            "too-big: 340282366920938463463374607431768211456\n",
+            "list: [1, a, {b: c}, [], {}]\n1: int key\ntrue: bool key\n~: null key\n",
+            "repeated: first\nrepeated: last\nanchor: &x {a: 1}\nalias: *x\n",
+            "tagged: !custom value\n",
+            "typed: !!str 1\n",
+            "{a: 1}: mapping key\n",
+        ] {
+            assert_eq!(merged(text), plain(text), "{text}");
+        }
+        assert_eq!(
+            parse_documents("repeated: first\nrepeated: last\n").unwrap()[0]["repeated"],
+            "last"
+        );
+    }
+
+    /// These read differently from kubectl. The parser hands over plain and quoted text
+    /// the same way, so they cannot be told apart here. The test pins today's behaviour;
+    /// it does not say that this is wanted.
+    #[test]
+    fn parse_differs_from_kubectl_on_these_scalars() {
+        let documents = parse_documents("octal: 0644\nprefixed: 0o644\nyes: yes\n").unwrap();
+        assert_eq!(documents[0]["octal"], "0644");
+        assert_eq!(documents[0]["prefixed"], 420);
+        assert_eq!(documents[0]["yes"], "yes");
+        assert!(parse_documents("\"<<\": text\n").is_err());
     }
 }
