@@ -1,94 +1,53 @@
-//! Discovery documents served by the fake API server.
+//! Discovery documents served by the fake API server, built from the
+//! resources currently served.
+
+use std::collections::BTreeMap;
 
 use serde_json::{json, Value};
+
+use crate::objects::FakeResource;
 
 pub const AGGREGATED_CONTENT_TYPE: &str =
     "application/json;g=apidiscovery.k8s.io;v=v2;as=APIGroupDiscoveryList";
 
-const VERBS: [&str; 7] = [
-    "create", "delete", "get", "list", "patch", "update", "watch",
-];
+/// group -> versions (in first-seen order) -> resources.
+type Grouped<'a> = BTreeMap<&'a str, Vec<(&'a str, Vec<&'a FakeResource>)>>;
 
-struct Res {
-    plural: &'static str,
-    singular: &'static str,
-    kind: &'static str,
-    namespaced: bool,
-    verbs: &'static [&'static str],
-    short: &'static [&'static str],
+fn grouped(rs: &[FakeResource]) -> Grouped<'_> {
+    let mut out: Grouped = BTreeMap::new();
+    for r in rs {
+        let versions = out.entry(r.group.as_str()).or_default();
+        match versions.iter_mut().find(|(v, _)| *v == r.version) {
+            Some((_, list)) => list.push(r),
+            None => versions.push((r.version.as_str(), vec![r])),
+        }
+    }
+    out
 }
 
-const CORE: &[Res] = &[
-    Res {
-        plural: "namespaces",
-        singular: "namespace",
-        kind: "Namespace",
-        namespaced: false,
-        verbs: &["get", "list", "watch"],
-        short: &["ns"],
-    },
-    Res {
-        plural: "pods",
-        singular: "pod",
-        kind: "Pod",
-        namespaced: true,
-        verbs: &VERBS,
-        short: &["po"],
-    },
-    Res {
-        plural: "nodes",
-        singular: "node",
-        kind: "Node",
-        namespaced: false,
-        verbs: &["get", "list", "watch"],
-        short: &["no"],
-    },
-    Res {
-        plural: "events",
-        singular: "event",
-        kind: "Event",
-        namespaced: true,
-        verbs: &["get", "list", "watch"],
-        short: &["ev"],
-    },
-];
-
-const APPS: &[Res] = &[Res {
-    plural: "deployments",
-    singular: "deployment",
-    kind: "Deployment",
-    namespaced: true,
-    verbs: &VERBS,
-    short: &["deploy"],
-}];
-
-const AUTHZ: &[Res] = &[Res {
-    plural: "selfsubjectaccessreviews",
-    singular: "selfsubjectaccessreview",
-    kind: "SelfSubjectAccessReview",
-    namespaced: false,
-    verbs: &["create"],
-    short: &[],
-}];
-
-fn v2_resource(group: &str, version: &str, r: &Res) -> Value {
+fn v2_resource(r: &FakeResource) -> Value {
     json!({
         "resource": r.plural,
-        "responseKind": { "group": group, "version": version, "kind": r.kind },
+        "responseKind": { "group": r.group, "version": r.version, "kind": r.kind },
         "scope": if r.namespaced { "Namespaced" } else { "Cluster" },
-        "singularResource": r.singular,
-        "verbs": r.verbs,
-        "shortNames": r.short,
+        "singularResource": r.singular(),
+        "verbs": r.verbs(),
+        "shortNames": r.short_names(),
     })
 }
 
-fn v2_group(name: Option<&str>, version: &str, rs: &[Res]) -> Value {
-    let group = name.unwrap_or("");
-    let resources: Vec<Value> = rs.iter().map(|r| v2_resource(group, version, r)).collect();
-    let versions = json!([{ "version": version, "resources": resources, "freshness": "Current" }]);
-    match name {
-        Some(n) => json!({ "metadata": { "name": n }, "versions": versions }),
-        None => json!({ "metadata": {}, "versions": versions }),
+fn v2_group(name: &str, versions: &[(&str, Vec<&FakeResource>)]) -> Value {
+    let versions: Vec<Value> = versions
+        .iter()
+        .map(|(v, rs)| {
+            let resources: Vec<Value> = rs.iter().map(|r| v2_resource(r)).collect();
+            json!({ "version": v, "resources": resources, "freshness": "Current" })
+        })
+        .collect();
+    if name.is_empty() {
+        json!({ "metadata": {}, "versions": versions })
+    } else {
+        json!({ "metadata": { "name": name }, "versions": versions })
     }
 }
 
@@ -101,15 +60,19 @@ fn v2_list(items: Vec<Value>) -> Value {
     })
 }
 
-pub fn aggregated_core() -> Value {
-    v2_list(vec![v2_group(None, "v1", CORE)])
+pub fn aggregated_core(rs: &[FakeResource]) -> Value {
+    let g = grouped(rs);
+    v2_list(g.get("").map(|v| vec![v2_group("", v)]).unwrap_or_default())
 }
 
-pub fn aggregated_apis() -> Value {
-    v2_list(vec![
-        v2_group(Some("apps"), "v1", APPS),
-        v2_group(Some("authorization.k8s.io"), "v1", AUTHZ),
-    ])
+pub fn aggregated_apis(rs: &[FakeResource]) -> Value {
+    let g = grouped(rs);
+    v2_list(
+        g.iter()
+            .filter(|(name, _)| !name.is_empty())
+            .map(|(name, v)| v2_group(name, v))
+            .collect(),
+    )
 }
 
 pub fn legacy_api_versions() -> Value {
@@ -120,48 +83,55 @@ pub fn legacy_api_versions() -> Value {
     })
 }
 
-pub fn legacy_api_group_list() -> Value {
-    let group = |name: &str| {
-        let gv = json!({ "groupVersion": format!("{name}/v1"), "version": "v1" });
-        json!({ "name": name, "versions": [gv.clone()], "preferredVersion": gv })
-    };
-    json!({
-        "kind": "APIGroupList",
-        "apiVersion": "v1",
-        "groups": [group("apps"), group("authorization.k8s.io")],
-    })
+pub fn legacy_api_group_list(rs: &[FakeResource]) -> Value {
+    let groups: Vec<Value> = grouped(rs)
+        .iter()
+        .filter(|(name, _)| !name.is_empty())
+        .map(|(name, versions)| {
+            let vs: Vec<Value> = versions
+                .iter()
+                .map(|(v, _)| json!({ "groupVersion": format!("{name}/{v}"), "version": v }))
+                .collect();
+            json!({ "name": name, "versions": vs, "preferredVersion": vs[0] })
+        })
+        .collect();
+    json!({ "kind": "APIGroupList", "apiVersion": "v1", "groups": groups })
 }
 
-fn resource_list(group_version: &str, rs: &[Res]) -> Value {
-    let resources: Vec<Value> = rs
+/// The `APIResourceList` for one group version, or `None` when nothing is served there.
+pub fn resource_list(rs: &[FakeResource], group: &str, version: &str) -> Option<Value> {
+    let matching: Vec<&FakeResource> = rs
+        .iter()
+        .filter(|r| r.group == group && r.version == version)
+        .collect();
+    if matching.is_empty() {
+        return None;
+    }
+    let resources: Vec<Value> = matching
         .iter()
         .map(|r| {
             json!({
                 "name": r.plural,
-                "singularName": r.singular,
+                "singularName": r.singular(),
                 "namespaced": r.namespaced,
                 "kind": r.kind,
-                "verbs": r.verbs,
-                "shortNames": r.short,
+                "verbs": r.verbs(),
+                "shortNames": r.short_names(),
             })
         })
         .collect();
-    json!({
+    Some(json!({
         "kind": "APIResourceList",
         "apiVersion": "v1",
-        "groupVersion": group_version,
+        "groupVersion": r_gv(group, version),
         "resources": resources,
-    })
+    }))
 }
 
-pub fn core_v1_resources() -> Value {
-    resource_list("v1", CORE)
-}
-
-pub fn apps_v1_resources() -> Value {
-    resource_list("apps/v1", APPS)
-}
-
-pub fn authz_v1_resources() -> Value {
-    resource_list("authorization.k8s.io/v1", AUTHZ)
+fn r_gv(group: &str, version: &str) -> String {
+    if group.is_empty() {
+        version.to_string()
+    } else {
+        format!("{group}/{version}")
+    }
 }

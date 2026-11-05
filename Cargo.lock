@@ -4336,6 +4336,7 @@ dependencies = [
  "k8s-openapi",
  "kube",
  "serde_json",
+ "serde_yaml_ng",
  "tempfile",
  "tokio",
 ]
