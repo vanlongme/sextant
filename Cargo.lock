@@ -4287,6 +4287,7 @@ name = "sextant-app"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "serde_json",
  "sextant-core",
  "tauri",
  "tauri-build",

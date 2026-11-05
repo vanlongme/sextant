@@ -22,11 +22,13 @@ use crate::paths::AppPaths;
 use crate::prefs::{ClusterSettings, Prefs};
 use crate::resources::WatchHub;
 use crate::store::{JsonStore, StoreWarning};
+use crate::ui_state::UiState;
 
 const STORE_VERSION: u32 = 1;
 const PREFS_FILE: &str = "prefs.json";
 const CLUSTERS_FILE: &str = "clusters.json";
 const HOTBAR_FILE: &str = "hotbar.json";
+const UI_STATE_FILE: &str = "ui-state.json";
 /// The safety net under file events, which some filesystems never deliver.
 const SYNC_POLL: Duration = Duration::from_secs(10);
 const EVENT_BACKLOG: usize = 64;
@@ -60,6 +62,7 @@ struct Inner {
     prefs: JsonStore<Prefs>,
     clusters: JsonStore<HashMap<ClusterId, ClusterSettings>>,
     hotbar: JsonStore<Vec<ClusterId>>,
+    ui_state: UiState,
     pasted: PastedConfigs,
     connections: Arc<ClusterManager>,
     watches: Arc<WatchHub>,
@@ -172,6 +175,8 @@ impl AppCore {
         let (prefs, sources) = open_prefs(&paths, kubeconfig_env.as_deref(), &mut warnings);
         let clusters = open_store(&paths, CLUSTERS_FILE, &mut warnings);
         let hotbar = open_store(&paths, HOTBAR_FILE, &mut warnings);
+        let (ui_state, ui_warning) = UiState::open(paths.config.join(UI_STATE_FILE), STORE_VERSION);
+        warnings.extend(ui_warning);
         let pasted = PastedConfigs::open(&paths.data)?;
 
         let (sync, snapshots) = KubeconfigSync::start(all_sources(&pasted, sources), SYNC_POLL);
@@ -186,6 +191,7 @@ impl AppCore {
                 prefs,
                 clusters,
                 hotbar,
+                ui_state,
                 pasted,
                 connections,
                 watches: Arc::new(WatchHub::default()),
@@ -246,6 +252,14 @@ impl AppCore {
         } else {
             IpcError::new(ErrorCode::NotFound, format!("no pasted cluster {id}"))
         })
+    }
+
+    pub fn ui_state_get(&self, key: &str) -> Option<serde_json::Value> {
+        self.inner.ui_state.get(key)
+    }
+
+    pub fn ui_state_set(&self, key: &str, value: serde_json::Value) -> CoreResult<()> {
+        self.inner.ui_state.set(key, value)
     }
 
     pub fn cluster_settings_get(&self, id: &ClusterId) -> ClusterSettings {

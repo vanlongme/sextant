@@ -8,6 +8,7 @@ pub mod prefs;
 pub mod resources;
 pub mod shell_env;
 pub mod store;
+pub mod ui_state;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 

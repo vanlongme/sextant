@@ -3,4 +3,5 @@
 
 pub mod catalog;
 pub mod cluster;
+pub mod resources;
 pub mod settings;

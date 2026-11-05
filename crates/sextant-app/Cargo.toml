@@ -22,6 +22,7 @@ tauri-plugin-window-state = "2.5"
 sextant-core = { path = "../sextant-core" }
 serde.workspace = true
 tokio.workspace = true
+serde_json.workspace = true
 tracing.workspace = true
 tracing-appender = "0.2"
 tracing-subscriber.workspace = true
