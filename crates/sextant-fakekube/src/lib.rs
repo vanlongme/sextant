@@ -56,6 +56,14 @@ pub struct FakeKubeConfig {
     pub fail_access_reviews: bool,
 }
 
+/// A write the fake received, for tests that check what the client sent.
+#[derive(Clone, Debug)]
+pub struct WriteRequest {
+    pub query: BTreeMap<String, String>,
+    /// `Null` when the body is not JSON.
+    pub body: Value,
+}
+
 #[derive(Clone)]
 struct WatchEvent {
     rv: u64,
@@ -75,6 +83,8 @@ struct State_ {
     counts: BTreeMap<String, usize>,
     watch_counts: BTreeMap<String, usize>,
     fail: BTreeMap<String, u16>,
+    /// (method, path) -> the writes received, oldest first.
+    writes: BTreeMap<(String, String), Vec<WriteRequest>>,
 }
 
 struct Inner {
@@ -226,6 +236,7 @@ impl FakeKube {
                 counts: BTreeMap::new(),
                 watch_counts: BTreeMap::new(),
                 fail: BTreeMap::new(),
+                writes: BTreeMap::new(),
             }),
             events,
             stop_watches,
@@ -365,6 +376,16 @@ impl FakeKube {
             .get(path)
             .copied()
             .unwrap_or(0)
+    }
+
+    /// The writes that reached `path` with this method, oldest first.
+    pub fn writes(&self, method: &str, path: &str) -> Vec<WriteRequest> {
+        self.inner
+            .lock()
+            .writes
+            .get(&(method.to_string(), path.to_string()))
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// How many watch streams are open right now.
@@ -598,6 +619,17 @@ async fn generic(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
+    if method != Method::GET {
+        let write = WriteRequest {
+            query: q.clone(),
+            body: serde_json::from_slice(&body).unwrap_or(Value::Null),
+        };
+        s.lock()
+            .writes
+            .entry((method.to_string(), uri.path().to_string()))
+            .or_default()
+            .push(write);
+    }
     let Some(t) = parse_path(uri.path()) else {
         return not_found();
     };
@@ -901,6 +933,10 @@ fn patch(s: &Shared, res: &FakeResource, t: &Target, headers: &HeaderMap, body: 
     let Some(current) = current else {
         if !apply {
             return not_found_object(res, &key.1);
+        }
+        // A server-side apply that would create the object also needs `create`.
+        if s.denied("create", &res.plural, t.namespace.as_deref()) {
+            return forbidden(res, "create", t.namespace.as_deref());
         }
         let mut obj = patch_doc;
         set_identity(&mut obj, res, t, &key.1);

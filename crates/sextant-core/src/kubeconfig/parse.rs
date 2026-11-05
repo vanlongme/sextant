@@ -102,7 +102,7 @@ pub(crate) fn yaml_error_text(err: &serde_yaml_ng::Error) -> String {
     with_location("invalid kubeconfig", err)
 }
 
-fn with_location(message: &str, err: &serde_yaml_ng::Error) -> String {
+pub(crate) fn with_location(message: &str, err: &serde_yaml_ng::Error) -> String {
     match err.location() {
         Some(at) => format!("{message} at line {}, column {}", at.line(), at.column()),
         None => message.to_owned(),

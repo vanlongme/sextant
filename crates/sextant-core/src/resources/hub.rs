@@ -594,7 +594,7 @@ async fn still_served(client: &Client, resource: &ResourceRef) -> bool {
 
 /// The request path decides what the server returns, so a caller's `kind` must
 /// not be able to exempt Secrets from having their values blanked.
-fn stamped_kind(resource: &ResourceRef) -> &str {
+pub(super) fn stamped_kind(resource: &ResourceRef) -> &str {
     if resource.group.is_empty() && resource.plural == "secrets" {
         "Secret"
     } else {
@@ -602,7 +602,7 @@ fn stamped_kind(resource: &ResourceRef) -> &str {
     }
 }
 
-fn api_version(resource: &ResourceRef) -> String {
+pub(super) fn api_version(resource: &ResourceRef) -> String {
     if resource.group.is_empty() {
         resource.version.clone()
     } else {
