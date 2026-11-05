@@ -1,4 +1,5 @@
 pub mod error;
+pub mod kubeconfig;
 pub mod paths;
 pub mod shell_env;
 pub mod store;
