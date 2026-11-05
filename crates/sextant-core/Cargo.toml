@@ -3,3 +3,15 @@ name = "sextant-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+
+[dependencies]
+directories = "6"
+k8s-openapi.workspace = true
+kube.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+ts-rs.workspace = true
