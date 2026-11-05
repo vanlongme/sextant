@@ -1,16 +1,51 @@
+import fs from "node:fs";
 import path from "node:path";
-import { prepareAppEnv } from "./helpers/env";
+import { launcher as TauriLauncher } from "@wdio/tauri-service";
+import { stopApp } from "./helpers/app";
+import { type AppEnv, prepareAppEnv } from "./helpers/env";
+import { fixtureFor } from "./helpers/fixtures";
 
 const root = path.resolve(__dirname, "..");
 const exe = process.platform === "win32" ? "sextant-app.exe" : "sextant-app";
 const specSet = process.env.SEXTANT_E2E_SPEC_SET ?? "full";
+
+const envs: AppEnv[] = [];
+const envGroups = new Map<string, AppEnv>();
+
+function createEnv(kubeconfigs: Record<string, string>): AppEnv {
+  const env = prepareAppEnv({ kubeconfigs });
+  envs.push(env);
+  return env;
+}
+
+function useEnv(env: AppEnv): void {
+  process.env.HOME = env.home;
+  process.env.USERPROFILE = env.home;
+  process.env.SEXTANT_CONFIG_DIR = env.configDir;
+}
+
+/** The temp env for a spec file: a new one, or the one its group already has. */
+function envForSpec(spec: string): AppEnv {
+  const fixture = fixtureFor(spec);
+  const shared = fixture.envGroup && envGroups.get(fixture.envGroup);
+  if (shared) {
+    useEnv(shared);
+    return shared;
+  }
+  const env = createEnv(fixture.kubeconfigs);
+  if (fixture.envGroup) envGroups.set(fixture.envGroup, env);
+  return env;
+}
 
 export const config = {
   runner: "local",
   specs: specSet === "smoke" ? ["./specs/smoke/**/*.e2e.ts"] : ["./specs/**/*.e2e.ts"],
   exclude: specSet === "smoke" ? [] : ["./specs/smoke/**"],
   maxInstances: 1,
-  services: [["@wdio/tauri-service", { driverProvider: "embedded" }]],
+  // Launcher half only. The worker half needs `browser.executeAsync`, which
+  // webdriverio 10 removed: it fails in `before()` and then delays every element
+  // command by 5 s waiting for an API that never appears. No spec uses `browser.tauri`.
+  services: [[TauriLauncher, { driverProvider: "embedded" }]],
   capabilities: [
     {
       browserName: "tauri",
@@ -21,6 +56,22 @@ export const config = {
   reporters: ["spec"],
   mochaOpts: { ui: "bdd", timeout: 120000 },
   onPrepare() {
-    prepareAppEnv({});
+    // The service starts an app right after this hook, before any spec is
+    // known. It only needs a safe environment; onWorkerStart replaces it.
+    createEnv({});
+  },
+  // Runs before the service's own hook, which starts a new app when none is
+  // running, and before the worker is forked. So the app and the spec both get
+  // the environment set here: one app and one env per spec file.
+  async onWorkerStart(_cid: string, _caps: unknown, specs: string[]) {
+    await stopApp();
+    const env = envForSpec(specs[0] ?? "");
+    process.env.SEXTANT_E2E_HOME = env.home;
+  },
+  onComplete() {
+    for (const env of envs) {
+      fs.rmSync(env.home, { recursive: true, force: true });
+      fs.rmSync(env.configDir, { recursive: true, force: true });
+    }
   },
 };

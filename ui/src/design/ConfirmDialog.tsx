@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Button } from "./Button";
-import { Dialog } from "./Dialog";
 import styles from "./ConfirmDialog.module.css";
+import { Dialog } from "./Dialog";
 
 export function ConfirmDialog(props: {
   open: boolean;

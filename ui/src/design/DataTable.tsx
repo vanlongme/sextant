@@ -21,6 +21,7 @@ export function DataTable<T>(props: {
   rows: T[];
   columns: Column<T>[];
   rowKey(row: T): string;
+  rowTestId?(row: T): string;
   onRowClick?(row: T): void;
   empty?: ReactNode;
   testId?: string;
@@ -88,7 +89,7 @@ export function DataTable<T>(props: {
         {rows.map((row) => (
           <tr
             key={props.rowKey(row)}
-            data-testid="row"
+            data-testid={props.rowTestId?.(row) ?? "row"}
             className={props.onRowClick ? styles.clickable : undefined}
             onClick={
               props.onRowClick ? () => props.onRowClick?.(row) : undefined

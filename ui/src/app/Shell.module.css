@@ -1,0 +1,31 @@
+.root {
+  height: 100%;
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) 24px;
+  height: 100%;
+}
+
+.content {
+  min-height: 0;
+  overflow: auto;
+}
+
+.status {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-3);
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.placeholder {
+  padding: var(--space-4);
+}

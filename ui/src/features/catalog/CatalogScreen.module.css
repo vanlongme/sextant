@@ -1,0 +1,104 @@
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.heading {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.warnings {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-2);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  list-style: none;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+/* Fixed layout, so one long name cannot push the other columns off screen. */
+.table table {
+  table-layout: fixed;
+}
+
+.name,
+.truncated,
+.detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.name {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.name:hover {
+  text-decoration: underline;
+}
+
+.source,
+.status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.status > *,
+.source > * {
+  flex: none;
+}
+
+.status > .detail,
+.source > .truncated {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.detail {
+  color: var(--text-muted);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.yaml {
+  display: block;
+  width: 100%;
+  margin-top: var(--space-1);
+  padding: var(--space-2);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  resize: vertical;
+}
+
+.yamlError {
+  margin: var(--space-2) 0 0;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+  user-select: text;
+}

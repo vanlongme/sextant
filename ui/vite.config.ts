@@ -5,5 +5,13 @@ export default defineConfig({
   plugins: [react()],
   clearScreen: false,
   server: { port: 5173, strictPort: true },
-  test: { environment: "jsdom", setupFiles: "src/test/setup.ts" },
+  test: {
+    environment: "jsdom",
+    setupFiles: "src/test/setup.ts",
+    // Real CSS, so tests can read computed styles, with stable class names.
+    css: {
+      include: /.+/,
+      modules: { classNameStrategy: "non-scoped" },
+    },
+  },
 });

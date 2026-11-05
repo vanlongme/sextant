@@ -1,6 +1,7 @@
 export { Badge } from "./Badge";
 export { Button } from "./Button";
 export { ConfirmDialog } from "./ConfirmDialog";
+export { ContextMenu } from "./ContextMenu";
 export { type Column, DataTable } from "./DataTable";
 export { Dialog } from "./Dialog";
 export { EmptyState } from "./EmptyState";
