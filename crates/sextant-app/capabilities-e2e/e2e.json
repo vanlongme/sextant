@@ -1,0 +1,6 @@
+{
+  "identifier": "e2e",
+  "description": "End-to-end test driver permissions, compiled only with the e2e feature",
+  "windows": ["main"],
+  "permissions": ["wdio-webdriver:default"]
+}
