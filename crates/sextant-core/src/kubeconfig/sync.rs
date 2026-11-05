@@ -16,7 +16,7 @@ use super::parse::{parse_file, ContextEntry};
 use super::sources::SyncSource;
 
 const DEBOUNCE: Duration = Duration::from_millis(500);
-const MAX_FILE_BYTES: u64 = 10 * 1024 * 1024;
+pub(crate) const MAX_FILE_BYTES: u64 = 10 * 1024 * 1024;
 const KUBECONFIG_MARKERS: [&str; 3] = ["clusters:", "contexts:", "kind: Config"];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]

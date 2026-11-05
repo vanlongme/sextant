@@ -52,7 +52,7 @@ fn make_exec_command_absolute(user: &mut Value, base: &Path) {
     }
 }
 
-fn write_private(dest: &Path, bytes: &[u8]) -> CoreResult<()> {
+pub(crate) fn write_private(dest: &Path, bytes: &[u8]) -> CoreResult<()> {
     let dir = dest
         .parent()
         .filter(|p| !p.as_os_str().is_empty())

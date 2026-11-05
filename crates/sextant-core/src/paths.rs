@@ -52,7 +52,12 @@ impl AppPaths {
 
     pub fn ensure_dirs(&self) -> CoreResult<()> {
         for dir in [&self.config, &self.data, &self.logs, &self.cache] {
-            std::fs::create_dir_all(dir)?;
+            std::fs::create_dir_all(dir).map_err(|e| {
+                let mut err = IpcError::from(e);
+                // Shown to the user when the app cannot start, where the bare OS error says too little.
+                err.message = format!("cannot create {}: {}", dir.display(), err.message);
+                err
+            })?;
         }
         Ok(())
     }
@@ -71,6 +76,18 @@ mod tests {
         p.ensure_dirs().unwrap();
         assert!(p.config.is_dir() && p.data.is_dir() && p.logs.is_dir() && p.cache.is_dir());
         assert_eq!(p.home, home);
+    }
+
+    #[test]
+    fn ensure_dirs_failure_names_the_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let blocker = root.path().join("file");
+        std::fs::write(&blocker, "").unwrap();
+        let p = AppPaths::under(&blocker, root.path());
+
+        let err = p.ensure_dirs().unwrap_err();
+
+        assert!(err.message.contains("config"), "{}", err.message);
     }
 
     #[test]

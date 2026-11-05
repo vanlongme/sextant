@@ -1,6 +1,10 @@
+pub mod app_core;
+pub mod catalog;
+pub mod cluster;
 pub mod error;
 pub mod kubeconfig;
 pub mod paths;
+pub mod prefs;
 pub mod shell_env;
 pub mod store;
 

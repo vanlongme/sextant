@@ -91,7 +91,7 @@ pub(super) struct ParsedFile {
 /// kubeconfig, or in the wrong file picked by mistake, that may be a credential.
 pub(super) const NOT_KUBECONFIG: &str = "not in kubeconfig format";
 
-pub(super) fn strip_bom(bytes: &[u8]) -> &[u8] {
+pub(crate) fn strip_bom(bytes: &[u8]) -> &[u8] {
     bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes)
 }
 
