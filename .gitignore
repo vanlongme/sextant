@@ -1,0 +1,9 @@
+target/
+node_modules/
+dist/
+ui/dist/
+e2e/.tmp/
+.worktrees/
+*.log
+.DS_Store
+crates/sextant-app/gen/schemas/
