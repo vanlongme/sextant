@@ -1,0 +1,19 @@
+[package]
+name = "sextant-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "sextant_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = [] }
+
+[dependencies]
+tauri = { version = "2.12", features = ["tray-icon"] }
+tauri-plugin-dialog = "2.8"
+tauri-plugin-opener = "2.7"
+tauri-plugin-window-state = "2.5"
+sextant-core = { path = "../sextant-core" }
