@@ -74,6 +74,8 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 /// Opens the preferences and returns the sources to sync. First run means the
 /// file was absent or unusable; a saved list, even an empty one, is respected.
+/// A file that could not be moved aside may still hold the saved sources, so the
+/// defaults then apply to this session only and nothing is written over it.
 fn open_prefs(
     paths: &AppPaths,
     kubeconfig_env: Option<&OsStr>,
@@ -81,7 +83,7 @@ fn open_prefs(
 ) -> (JsonStore<Prefs>, Vec<SyncSource>) {
     let path = paths.config.join(PREFS_FILE);
     let absent = !path.exists();
-    let (prefs, warning) = JsonStore::<Prefs>::open(path, STORE_VERSION);
+    let (prefs, warning) = JsonStore::<Prefs>::open(path.clone(), STORE_VERSION);
     let first_run = absent || warning.is_some();
     warnings.extend(warning);
     if !first_run {
@@ -89,6 +91,10 @@ fn open_prefs(
         return (prefs, sources);
     }
     let sources = default_sources(&paths.home, kubeconfig_env);
+    // When existence cannot be checked, assume the file is there.
+    if path.try_exists().unwrap_or(true) {
+        return (prefs, sources);
+    }
     if let Err(e) = prefs.update(|p| p.sync_sources = sources.clone()) {
         warnings.push(StoreWarning {
             file: PREFS_FILE.to_owned(),

@@ -1,4 +1,4 @@
-.PHONY: check ui-build dev fmt e2e-build e2e
+.PHONY: check ui-build build dev fmt e2e-build e2e
 ui-build:
 	pnpm install --frozen-lockfile
 	pnpm -C ui build
@@ -6,10 +6,13 @@ check: ui-build
 	cargo fmt --all --check
 	cargo clippy --workspace --all-targets -- -D warnings
 	cargo test --workspace
+	git diff --exit-code -- ui/src/ipc/generated && test -z "$$(git ls-files --others --exclude-standard -- ui/src/ipc/generated)"
 	pnpm -C ui typecheck
 	pnpm -C ui lint
 	pnpm -C ui test
 	scripts/check-provenance.sh
+build:
+	pnpm tauri build --config crates/sextant-app/tauri.conf.json
 dev:
 	pnpm tauri dev --config crates/sextant-app/tauri.conf.json
 fmt:

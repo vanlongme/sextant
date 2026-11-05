@@ -90,10 +90,11 @@ where
             Ok(b) => b,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (T::default(), None),
             Err(e) => {
+                let moved = set_aside(path, "unreadable");
                 return (
                     T::default(),
-                    Some(warn(format!("{label} could not be read: {e}"))),
-                )
+                    Some(warn(format!("{label} could not be read ({e}); {moved}"))),
+                );
             }
         };
         let envelope: Envelope = match serde_json::from_slice(&bytes) {
@@ -235,6 +236,36 @@ mod tests {
         assert_eq!(kept, 1);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_file_is_preserved_and_defaults_used() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("a.json");
+        let saved = r#"{"version":1,"data":{"n":5}}"#;
+        std::fs::write(&p, saved).unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o000)).unwrap();
+        if std::fs::read(&p).is_ok() {
+            eprintln!("skipped: root ignores file modes");
+            return;
+        }
+
+        let (s, w) = JsonStore::<Sample>::open(p.clone(), 1);
+
+        assert_eq!(s.get(), Sample::default());
+        let message = w.unwrap().message;
+        assert!(message.contains("moved to a.json.unreadable-"), "{message}");
+        assert!(!p.exists());
+        s.update(|v| v.n = 9).unwrap();
+        let kept = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .find(|path| path.to_string_lossy().contains("a.json.unreadable-"))
+            .unwrap();
+        std::fs::set_permissions(&kept, std::fs::Permissions::from_mode(0o600)).unwrap();
+        assert_eq!(std::fs::read_to_string(kept).unwrap(), saved);
+    }
+
     #[test]
     fn newer_version_is_not_overwritten() {
         let dir = tempfile::tempdir().unwrap();
@@ -280,11 +311,11 @@ mod tests {
     #[test]
     fn failed_write_keeps_old_value() {
         let dir = tempfile::tempdir().unwrap();
-        // The target path is a directory, so persist (rename over it) fails.
         let p = dir.path().join("a.json");
+        let (s, _) = JsonStore::<Sample>::open(p.clone(), 1);
+        // The target path is now a directory, so persist (rename over it) fails.
         std::fs::create_dir(&p).unwrap();
         std::fs::write(p.join("x"), "x").unwrap();
-        let (s, _) = JsonStore::<Sample>::open(p, 1);
         assert!(s.update(|v| v.n = 9).is_err());
         assert_eq!(s.get(), Sample::default());
     }

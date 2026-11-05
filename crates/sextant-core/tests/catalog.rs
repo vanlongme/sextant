@@ -530,6 +530,69 @@ async fn app_starts_with_corrupt_stores_and_reports_warnings() {
     core.shutdown().await;
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn startup_keeps_a_prefs_file_it_could_not_read() {
+    use std::os::unix::fs::PermissionsExt;
+    let fixture = Fixture::with_kube_config(&["alpha"]);
+    let config = &fixture.paths.config;
+    std::fs::create_dir_all(config).unwrap();
+    let prefs = config.join("prefs.json");
+    let saved = r#"{"version":1,"data":{"theme":"dark","syncSources":[{"kind":"file","path":"/custom/saved.yaml"}]}}"#;
+    std::fs::write(&prefs, saved).unwrap();
+    std::fs::set_permissions(&prefs, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::read(&prefs).is_ok() {
+        eprintln!("skipped: root ignores file modes");
+        return;
+    }
+
+    let core = fixture.start().await;
+
+    let warnings = core.take_startup_warnings();
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert_eq!(warnings[0].file, "prefs.json");
+    // The file cannot be used, so this is a first run, but the saved sources survive it.
+    wait_for_names(&core, &["alpha"]).await;
+    core.shutdown().await;
+    let kept = std::fs::read_dir(config)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .find(|path| path.to_string_lossy().contains("prefs.json.unreadable-"))
+        .expect("the unread file is kept beside the new one");
+    std::fs::set_permissions(&kept, std::fs::Permissions::from_mode(0o600)).unwrap();
+    assert_eq!(std::fs::read_to_string(kept).unwrap(), saved);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn startup_does_not_seed_over_a_prefs_file_it_could_not_move() {
+    use std::os::unix::fs::PermissionsExt;
+    let fixture = Fixture::with_kube_config(&["alpha"]);
+    let config = &fixture.paths.config;
+    std::fs::create_dir_all(config).unwrap();
+    let prefs = config.join("prefs.json");
+    std::fs::write(&prefs, "{ garbage").unwrap();
+    std::fs::set_permissions(config, std::fs::Permissions::from_mode(0o500)).unwrap();
+    if std::fs::write(config.join("probe"), "").is_ok() {
+        eprintln!("skipped: root ignores directory modes");
+        return;
+    }
+
+    let core = fixture.start().await;
+
+    let warnings = core.take_startup_warnings();
+    std::fs::set_permissions(config, std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(warnings.len(), 1, "no seed write was tried: {warnings:?}");
+    assert!(
+        warnings[0].message.contains("could not be moved aside"),
+        "{warnings:?}"
+    );
+    assert_eq!(std::fs::read_to_string(&prefs).unwrap(), "{ garbage");
+    // The defaults still apply for this session.
+    wait_for_names(&core, &["alpha"]).await;
+    core.shutdown().await;
+}
+
 #[tokio::test]
 async fn first_run_seeds_sources_from_env_only_once() {
     let fixture = Fixture::with_kube_config(&["alpha"]);
