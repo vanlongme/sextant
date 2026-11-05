@@ -15,7 +15,7 @@ use ts_rs::TS;
 use super::connect::{establish, prepare_kubeconfig, ConnectTimeouts, Established, Failure};
 use super::state::{ConnectionState, FailureKind};
 use crate::app_core::CoreEvent;
-use crate::error::{CoreResult, ErrorCode, IpcError};
+use crate::error::{sanitize_text, CoreResult, ErrorCode, IpcError};
 use crate::kubeconfig::{ClusterId, ContextEntry};
 use crate::prefs::ClusterSettings;
 
@@ -144,7 +144,7 @@ impl ClusterHandle {
     }
 
     pub(crate) fn log(&self, level: LogLevel, message: impl Into<String>) {
-        lock(&self.shared).push_log(level, message.into());
+        lock(&self.shared).push_log(level, sanitize_text(&message.into()));
     }
 
     /// Takes the guard to show that `shared` is locked.

@@ -18,7 +18,7 @@ use tokio::time::{timeout, timeout_at, Instant};
 use super::distribution::detect_distribution;
 use super::manager::{ClusterHandle, LogLevel};
 use super::state::{ClusterInfo, FailureKind};
-use crate::error::ErrorCode;
+use crate::error::{auth_error_text, error_chain, find_auth_error, sanitize_text, ErrorCode};
 use crate::kubeconfig::{extract_context, ContextEntry};
 use crate::prefs::ClusterSettings;
 
@@ -27,7 +27,6 @@ use crate::prefs::ClusterSettings;
 /// on an old server takes one request per API group.
 const LATER_STEP_LIMIT: Duration = Duration::from_secs(60);
 const NODE_LIST_LIMIT: u32 = 50;
-const STDERR_LIMIT: usize = 500;
 
 #[derive(Debug, Clone)]
 pub struct ConnectTimeouts {
@@ -55,7 +54,7 @@ impl Failure {
     pub(crate) fn new(kind: FailureKind, message: impl Into<String>) -> Self {
         Self {
             kind,
-            message: message.into(),
+            message: sanitize_text(&message.into()),
         }
     }
 
@@ -128,6 +127,9 @@ impl Classifier {
     }
 
     fn classify(&self, err: &kube::Error) -> Failure {
+        if let Some(auth) = find_auth_error(err) {
+            return self.classify_auth(auth);
+        }
         match err {
             kube::Error::Api(status) => {
                 let kind = match status.code {
@@ -143,12 +145,7 @@ impl Classifier {
                 };
                 Failure::new(kind, message)
             }
-            kube::Error::Auth(auth) => self.classify_auth(auth),
-            kube::Error::Service(source) => match source.downcast_ref::<AuthError>() {
-                Some(auth) => self.classify_auth(auth),
-                None => Failure::new(FailureKind::Unreachable, error_chain(err)),
-            },
-            kube::Error::HyperError(_) | kube::Error::HttpError(_) => {
+            kube::Error::Service(_) | kube::Error::HyperError(_) | kube::Error::HttpError(_) => {
                 Failure::new(FailureKind::Unreachable, error_chain(err))
             }
             kube::Error::ProxyProtocolUnsupported { proxy_url } => Failure::config(format!(
@@ -164,6 +161,9 @@ impl Classifier {
     }
 
     fn classify_auth(&self, err: &AuthError) -> Failure {
+        if matches!(err, AuthError::AuthExecRun { .. }) {
+            return Failure::new(FailureKind::Other, auth_error_text(err));
+        }
         if let Some(detail) = exec_failure_detail(err) {
             let name = self.plugin_name();
             return Failure::new(FailureKind::Other, format!("{name} {detail}"));
@@ -178,16 +178,12 @@ impl Classifier {
     }
 }
 
-/// What went wrong on the exec path. It is written here and not taken from
-/// `AuthError`'s text, which can quote the plugin's stdout, where the credential is.
+/// What went wrong on the exec path, other than the plugin failing, which
+/// `auth_error_text` covers. It is written here and not taken from `AuthError`'s
+/// text, which can quote the plugin's stdout, where the credential is.
 fn exec_failure_detail(err: &AuthError) -> Option<String> {
     Some(match err {
         AuthError::AuthExecStart(source) => format!("could not start: {source}"),
-        AuthError::AuthExecRun { out, .. } => {
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            let stderr: String = stderr.trim().chars().take(STDERR_LIMIT).collect();
-            format!("failed with {}: {stderr}", out.status)
-        }
         AuthError::AuthExecParse(_) | AuthError::AuthExecSerialize(_) => {
             "printed something other than an ExecCredential".to_owned()
         }
@@ -200,20 +196,6 @@ fn exec_failure_detail(err: &AuthError) -> Option<String> {
         }
         _ => return None,
     })
-}
-
-/// `kube`'s top level text is often just "client error (Connect)"; the cause is further down.
-fn error_chain(err: &dyn std::error::Error) -> String {
-    let mut text = err.to_string();
-    let mut source = err.source();
-    while let Some(cause) = source {
-        let cause_text = cause.to_string();
-        if !text.contains(&cause_text) {
-            text = format!("{text}: {cause_text}");
-        }
-        source = cause.source();
-    }
-    text
 }
 
 /// Everything after `prepare_kubeconfig`. The caller races this against cancellation.

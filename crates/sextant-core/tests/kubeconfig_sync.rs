@@ -297,6 +297,26 @@ async fn explicit_file_with_invalid_yaml_warns_even_on_first_scan() {
 }
 
 #[tokio::test]
+async fn sync_warning_names_the_file_and_not_the_value() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("creds.yaml");
+    for content in [
+        "users: tok-SECRET\n",
+        "kind: {tok-SECRET: 1, tok-SECRET: 2}\n",
+    ] {
+        std::fs::write(&file, content).unwrap();
+
+        let (sync, mut rx) = KubeconfigSync::start(vec![file_source(&file)], NO_POLL);
+
+        let snapshot = wait_for(&mut rx, |s| s.warnings.len() == 1).await;
+        let warning = &snapshot.warnings[0];
+        assert_eq!(warning.path, file.display().to_string());
+        assert!(!warning.message.contains("tok-SECRET"), "{warning:?}");
+        sync.stop();
+    }
+}
+
+#[tokio::test]
 async fn explicit_file_of_the_wrong_shape_warns_without_quoting_it() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("token.txt");

@@ -263,8 +263,68 @@ async fn failing_exec_plugin_reports_the_command_and_its_stderr() {
 
     let (kind, message) = failure(&state);
     assert_eq!(kind, FailureKind::Other);
-    assert!(message.contains("/bin/sh"), "{message}");
+    assert!(message.contains("auth plugin \"sh\""), "{message}");
     assert!(message.contains("no-such-profile"), "{message}");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn failing_exec_plugin_does_not_leak_secrets_to_state_or_log() {
+    use std::os::unix::fs::PermissionsExt;
+    let scripts = tempfile::tempdir().unwrap();
+    let script = scripts.path().join("auth-plugin");
+    std::fs::write(
+        &script,
+        "#!/bin/sh\n\
+         echo '{\"token\":\"S3CRET-STDOUT\"}'\n\
+         echo 'Authorization: Bearer S3CRET-STDERR' >&2\n\
+         echo 'please run login' >&2\n\
+         exit 1\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    // A real `kube` error carries the arguments and the environment in `cmd`.
+    let user = format!(
+        "{{ exec: {{ apiVersion: client.authentication.k8s.io/v1, command: \"{}\", \
+         args: [--secret-arg, S3CRET-ARG], env: [{{ name: PLUGIN_ENV, value: S3CRET-ENV }}], \
+         interactiveMode: Never }} }}",
+        script.display()
+    );
+    let text = config_text("http://127.0.0.1:9", &user, None);
+    let (core, id, _root) = core_with_kubeconfig(&text).await;
+
+    let state = core.cluster_connect(&id).await.unwrap();
+
+    let (_, message) = failure(&state);
+    assert!(message.contains("auth-plugin"), "{message}");
+    let state_json = serde_json::to_string(&state).unwrap();
+    let log_json = serde_json::to_string(&core.cluster_log(&id)).unwrap();
+    for secret in ["S3CRET-STDOUT", "S3CRET-STDERR", "S3CRET-ARG", "S3CRET-ENV"] {
+        assert!(!state_json.contains(secret), "{secret} in {state_json}");
+        assert!(!log_json.contains(secret), "{secret} in {log_json}");
+    }
+    assert!(
+        message.contains("please run login") || log_json.contains("please run login"),
+        "{state_json} {log_json}"
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn exec_plugin_printing_garbage_does_not_leak_it() {
+    let text = config_text(
+        "http://127.0.0.1:9",
+        &exec_user("/bin/sh", &["-c", "echo 'S3CRET-STDOUT: [unterminated'"]),
+        None,
+    );
+    let (core, id, _root) = core_with_kubeconfig(&text).await;
+
+    let state = core.cluster_connect(&id).await.unwrap();
+
+    let state_json = serde_json::to_string(&state).unwrap();
+    let log_json = serde_json::to_string(&core.cluster_log(&id)).unwrap();
+    assert!(!state_json.contains("S3CRET-STDOUT"), "{state_json}");
+    assert!(!log_json.contains("S3CRET-STDOUT"), "{log_json}");
 }
 
 /// `kube` runs the plugin while building the client, before any request.

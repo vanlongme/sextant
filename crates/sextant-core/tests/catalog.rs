@@ -8,7 +8,7 @@ use std::time::Duration;
 use sextant_core::app_core::{AppCore, CoreEvent};
 use sextant_core::catalog::{ClusterEntry, ClusterSource};
 use sextant_core::error::ErrorCode;
-use sextant_core::kubeconfig::SyncSource;
+use sextant_core::kubeconfig::{parse_contexts, SyncSource};
 use sextant_core::paths::AppPaths;
 use sextant_core::prefs::{ClusterSettings, Theme};
 use tempfile::TempDir;
@@ -257,6 +257,135 @@ async fn pasted_invalid_or_empty_is_rejected() {
 
     assert!(fixture.pasted_files().is_empty());
     assert_eq!(core.catalog_list().len(), 1);
+    core.shutdown().await;
+}
+
+#[tokio::test]
+async fn pasted_errors_do_not_quote_values() {
+    let fixture = Fixture::new();
+    let core = fixture.start().await;
+
+    for yaml in [
+        "users: tok-SECRET",
+        "kind: {tok-SECRET: 1, tok-SECRET: 2}\n",
+    ] {
+        let err = core.catalog_add_pasted(yaml).unwrap_err();
+
+        assert_eq!(err.code, ErrorCode::InvalidInput, "{yaml:?}");
+        let json = serde_json::to_string(&err).unwrap();
+        assert!(!json.contains("tok-SECRET"), "{json}");
+    }
+    core.shutdown().await;
+}
+
+/// Two contexts whose names, clusters and users are given as `(context, cluster, user, token)`.
+fn config_with_credentials(rows: &[(&str, &str, &str, &str)], current: &str) -> String {
+    let mut clusters = String::new();
+    let mut users = String::new();
+    let mut contexts = String::new();
+    for (context, cluster, user, token) in rows {
+        let cluster_row =
+            format!("- {{ name: {cluster}, cluster: {{ server: \"https://x\" }} }}\n");
+        if !clusters.contains(&cluster_row) {
+            clusters.push_str(&cluster_row);
+        }
+        let user_row = format!("- {{ name: {user}, user: {{ token: {token} }} }}\n");
+        if !users.contains(&user_row) {
+            users.push_str(&user_row);
+        }
+        contexts.push_str(&format!(
+            "- {{ name: {context}, context: {{ cluster: {cluster}, user: {user} }} }}\n"
+        ));
+    }
+    format!(
+        "apiVersion: v1\nkind: Config\nclusters:\n{clusters}users:\n{users}\
+         contexts:\n{contexts}current-context: {current}\n"
+    )
+}
+
+/// The file behind a pasted context, as the catalog reports it.
+async fn pasted_entry(core: &AppCore, context: &str) -> (String, PathBuf) {
+    wait_for_catalog(core, |entries| {
+        entries.iter().any(|e| e.context_name == context)
+    })
+    .await;
+    let entries = core.catalog_list();
+    let entry = entries.iter().find(|e| e.context_name == context).unwrap();
+    match &entry.source {
+        ClusterSource::Pasted { path } => (entry.id.clone(), PathBuf::from(path)),
+        other => panic!("{context} is not pasted: {other:?}"),
+    }
+}
+
+fn names_in(document: &serde_yaml_ng::Value, section: &str) -> Vec<String> {
+    document[section]
+        .as_sequence()
+        .unwrap()
+        .iter()
+        .map(|item| item["name"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+#[tokio::test]
+async fn removing_pasted_context_removes_its_credentials_from_disk() {
+    let fixture = Fixture::new();
+    let core = fixture.start().await;
+    let yaml = config_with_credentials(
+        &[
+            ("one", "c1", "u1", "TOKEN-ONE"),
+            ("two", "c2", "u2", "TOKEN-TWO"),
+        ],
+        "one",
+    );
+    core.catalog_add_pasted(&yaml).unwrap();
+    let (id, path) = pasted_entry(&core, "one").await;
+
+    core.catalog_remove_pasted(&id).unwrap();
+
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(!text.contains("TOKEN-ONE"), "{text}");
+    assert!(text.contains("TOKEN-TWO"), "{text}");
+    let document: serde_yaml_ng::Value = serde_yaml_ng::from_str(&text).unwrap();
+    assert_eq!(names_in(&document, "users"), ["u2"]);
+    assert_eq!(names_in(&document, "clusters"), ["c2"]);
+    assert_eq!(names_in(&document, "contexts"), ["two"]);
+    assert_ne!(
+        document.get("current-context").and_then(|c| c.as_str()),
+        Some("one")
+    );
+    core.shutdown().await;
+}
+
+#[tokio::test]
+async fn removing_pasted_context_keeps_entries_still_referenced() {
+    let fixture = Fixture::new();
+    let core = fixture.start().await;
+    let yaml = config_with_credentials(
+        &[
+            ("one", "c1", "u1", "TOKEN-SHARED"),
+            ("two", "c1", "u1", "TOKEN-SHARED"),
+        ],
+        "two",
+    );
+    core.catalog_add_pasted(&yaml).unwrap();
+    let (id, path) = pasted_entry(&core, "one").await;
+
+    core.catalog_remove_pasted(&id).unwrap();
+
+    let bytes = std::fs::read(&path).unwrap();
+    let document: serde_yaml_ng::Value = serde_yaml_ng::from_slice(&bytes).unwrap();
+    assert_eq!(names_in(&document, "users"), ["u1"]);
+    assert_eq!(names_in(&document, "clusters"), ["c1"]);
+    assert_eq!(
+        document.get("current-context").and_then(|c| c.as_str()),
+        Some("two")
+    );
+    let left = parse_contexts(&path, &bytes).unwrap();
+    assert_eq!(left.len(), 1);
+    assert_eq!(left[0].context_name, "two");
+    assert_eq!(left[0].cluster_name, "c1");
+    assert_eq!(left[0].user_name, "u1");
+    assert!(left[0].problem.is_none(), "{:?}", left[0].problem);
     core.shutdown().await;
 }
 

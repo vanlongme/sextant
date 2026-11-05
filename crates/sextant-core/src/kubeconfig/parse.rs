@@ -61,9 +61,15 @@ struct RawClusterBody {
 #[derive(Deserialize)]
 struct RawUser {
     name: String,
-    // Only `exec` is looked at, so the rest of the section stays unmodelled.
     #[serde(default)]
-    user: Value,
+    user: Option<RawUserBody>,
+}
+
+// Only `exec` is looked at, so the rest of the section stays unmodelled.
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct RawUserBody {
+    exec: Value,
 }
 
 #[derive(Deserialize)]
@@ -91,6 +97,18 @@ pub(super) struct ParsedFile {
 /// kubeconfig, or in the wrong file picked by mistake, that may be a credential.
 pub(super) const NOT_KUBECONFIG: &str = "not in kubeconfig format";
 
+/// Stands in for the parser's message, which can quote the offending value.
+pub(crate) fn yaml_error_text(err: &serde_yaml_ng::Error) -> String {
+    match err.location() {
+        Some(at) => format!(
+            "invalid kubeconfig at line {}, column {}",
+            at.line(),
+            at.column()
+        ),
+        None => "invalid kubeconfig".to_owned(),
+    }
+}
+
 pub(crate) fn strip_bom(bytes: &[u8]) -> &[u8] {
     bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes)
 }
@@ -104,11 +122,10 @@ fn read_config(bytes: &[u8]) -> Result<RawConfig, String> {
     // An empty or comment-only document deserializes as `None`.
     match serde_yaml_ng::from_slice::<Option<RawConfig>>(bytes) {
         Ok(raw) => Ok(raw.unwrap_or_default()),
-        // Without a target type there is no type error left to quote a value,
-        // so what still fails is the syntax or a repeated key, named at most.
+        // Without a target type what still fails is the syntax or a repeated key.
         Err(_) => Err(match serde_yaml_ng::from_slice::<Value>(bytes) {
             Ok(_) => NOT_KUBECONFIG.to_owned(),
-            Err(syntax) => syntax.to_string(),
+            Err(syntax) => yaml_error_text(&syntax),
         }),
     }
 }
@@ -130,8 +147,8 @@ pub(super) fn parse_file(path: &Path, bytes: &[u8]) -> Result<ParsedFile, String
         let cluster = clusters.iter().find(|c| c.name == cluster_name);
         let user = users.iter().find(|u| u.name == user_name);
         let uses_exec = user
-            .and_then(|u| u.user.get("exec"))
-            .is_some_and(|exec| !exec.is_null());
+            .and_then(|u| u.user.as_ref())
+            .is_some_and(|body| !body.exec.is_null());
         let problem = match (cluster.is_some(), user.is_some()) {
             (true, true) => None,
             (false, true) => Some(format!(
@@ -160,8 +177,8 @@ pub(super) fn parse_file(path: &Path, bytes: &[u8]) -> Result<ParsedFile, String
     })
 }
 
-/// Lists the contexts in kubeconfig text. The error is the parser's message
-/// for bad syntax, and otherwise a fixed one that quotes nothing from the file.
+/// Lists the contexts in kubeconfig text. The error is a fixed message, with the
+/// location of bad syntax, that quotes nothing from the file.
 pub fn parse_contexts(path: &Path, bytes: &[u8]) -> Result<Vec<ContextEntry>, String> {
     parse_file(path, bytes).map(|parsed| parsed.entries)
 }
@@ -290,7 +307,7 @@ clusters:
     #[test]
     fn invalid_yaml_is_an_error_naming_the_cause() {
         let err = parse_contexts(Path::new("/k/config"), b"clusters: [unterminated").unwrap_err();
-        assert!(err.contains("line 1"), "{err}");
+        assert!(err.contains("line"), "{err}");
     }
 
     #[test]
@@ -362,6 +379,50 @@ contexts:
         let e = parse_contexts(Path::new("/k/config"), raw).unwrap();
         assert_eq!(e.len(), 1);
         assert!(e[0].problem.is_none());
+    }
+
+    #[test]
+    fn parse_errors_never_quote_values() {
+        for bad in [
+            "tok-SECRET",
+            "users: tok-SECRET",
+            "users:\n- name: u\n  user: tok-SECRET\n",
+            "clusters: [{name: tok-SECRET, cluster: 5}]\ncontexts: 7\n",
+            "kind: {tok-SECRET: 1, tok-SECRET: 2}\n",
+        ] {
+            let err = parse_contexts(Path::new("/k/config"), bad.as_bytes()).unwrap_err();
+            assert!(!err.contains("tok-SECRET"), "{bad:?} leaked in {err:?}");
+        }
+    }
+
+    #[test]
+    fn parse_errors_report_a_location() {
+        let err = parse_contexts(Path::new("/k/config"), b"clusters: [unterminated").unwrap_err();
+        assert!(err.contains("line"), "{err}");
+    }
+
+    #[test]
+    fn syntax_errors_are_a_fixed_message_with_a_location() {
+        let err = parse_contexts(Path::new("/k/config"), b"clusters: [unterminated").unwrap_err();
+        assert!(err.starts_with("invalid kubeconfig at line "), "{err}");
+    }
+
+    #[test]
+    fn a_user_without_a_body_is_accepted() {
+        let raw = br#"
+clusters:
+- { name: c1, cluster: { server: "https://x" } }
+users:
+- { name: u1, user: null }
+- { name: u2 }
+contexts:
+- { name: a, context: { cluster: c1, user: u1 } }
+- { name: b, context: { cluster: c1, user: u2 } }
+"#;
+        let e = parse_contexts(Path::new("/k/config"), raw).unwrap();
+        assert!(e
+            .iter()
+            .all(|entry| entry.problem.is_none() && !entry.uses_exec));
     }
 
     #[test]

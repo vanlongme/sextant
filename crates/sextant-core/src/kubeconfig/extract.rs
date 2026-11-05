@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde_yaml_ng::{Mapping, Value};
 
-use super::parse::{strip_bom, NOT_KUBECONFIG};
+use super::parse::{strip_bom, yaml_error_text, NOT_KUBECONFIG};
 use crate::error::{CoreResult, ErrorCode, IpcError};
 
 const CLUSTER_PATH_KEYS: [&str; 1] = ["certificate-authority"];
@@ -77,9 +77,8 @@ pub(crate) fn write_private(dest: &Path, bytes: &[u8]) -> CoreResult<()> {
 pub fn extract_context(source: &Path, context: &str, dest: &Path) -> CoreResult<()> {
     let raw = std::fs::read(source)?;
     let label = source.display();
-    // Through `Value`, whose errors have no type error to quote a value in.
     let document: Value = serde_yaml_ng::from_slice(strip_bom(&raw))
-        .map_err(|e| invalid(format!("{label} is not a valid kubeconfig: {e}")))?;
+        .map_err(|e| invalid(format!("{label}: {}", yaml_error_text(&e))))?;
     let Value::Mapping(mut root) = document else {
         return Err(invalid(format!("{label} is {NOT_KUBECONFIG}")));
     };
@@ -299,6 +298,37 @@ contexts:
         assert_eq!(err.code, ErrorCode::InvalidInput);
         assert!(!err.message.contains("SECRET"), "{}", err.message);
         assert!(err.message.contains(NOT_KUBECONFIG), "{}", err.message);
+    }
+
+    #[test]
+    fn extract_errors_never_quote_values() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("config");
+        for bad in [
+            "tok-SECRET",
+            "users: tok-SECRET",
+            "users:\n- name: u\n  user: tok-SECRET\n",
+            "clusters: [{name: tok-SECRET, cluster: 5}]\ncontexts: 7\n",
+            "tok-SECRET: 1\ntok-SECRET: 2\n",
+        ] {
+            std::fs::write(&src, bad).unwrap();
+            let err = extract_context(&src, "one", &dir.path().join("out.yaml")).unwrap_err();
+            let json = serde_json::to_string(&err).unwrap();
+            assert!(!json.contains("tok-SECRET"), "{bad:?} leaked in {json}");
+        }
+    }
+
+    #[test]
+    fn extract_syntax_errors_report_a_fixed_message_and_location() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("config");
+        std::fs::write(&src, "clusters: [unterminated").unwrap();
+        let err = extract_context(&src, "one", &dir.path().join("out.yaml")).unwrap_err();
+        assert!(
+            err.message.contains("invalid kubeconfig at line "),
+            "{}",
+            err.message
+        );
     }
 
     #[test]

@@ -12,6 +12,7 @@ k8s-openapi.workspace = true
 kube.workspace = true
 notify = "8.2"
 notify-debouncer-full = "0.7"
+regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_yaml_ng.workspace = true

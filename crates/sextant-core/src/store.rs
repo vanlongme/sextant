@@ -51,6 +51,15 @@ fn file_label(path: &Path) -> String {
         .unwrap_or_else(|| path.display().to_string())
 }
 
+/// Stands in for the parser's message, which can quote the offending value. An
+/// error from converting a parsed value has no location, which reads as line 0.
+fn json_error_text(err: &serde_json::Error) -> String {
+    match err.line() {
+        0 => "invalid store file".to_owned(),
+        line => format!("invalid store file at line {line}, column {}", err.column()),
+    }
+}
+
 /// Moves a file we cannot use aside so it is never overwritten or lost.
 fn set_aside(path: &Path, kind: &str) -> String {
     let mut target = path.as_os_str().to_owned();
@@ -101,9 +110,10 @@ where
             Ok(env) => env,
             Err(e) => {
                 let moved = set_aside(path, "corrupt");
+                let reason = json_error_text(&e);
                 return (
                     T::default(),
-                    Some(warn(format!("{label} is not valid ({e}); {moved}"))),
+                    Some(warn(format!("{label}: {reason}; {moved}"))),
                 );
             }
         };
@@ -121,11 +131,10 @@ where
             Ok(v) => (v, None),
             Err(e) => {
                 let moved = set_aside(path, "corrupt");
+                let reason = json_error_text(&e);
                 (
                     T::default(),
-                    Some(warn(format!(
-                        "{label} has unexpected content ({e}); {moved}"
-                    ))),
+                    Some(warn(format!("{label}: {reason}; {moved}"))),
                 )
             }
         }
@@ -234,6 +243,29 @@ mod tests {
             })
             .count();
         assert_eq!(kept, 1);
+    }
+
+    #[test]
+    fn corrupt_store_warning_does_not_quote_values() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("a.json");
+        std::fs::write(&p, r#"{"version":1,"data":{"n":"tok-SECRET"}}"#).unwrap();
+        let (_, w) = JsonStore::<Sample>::open(p, 1);
+        assert!(!w.unwrap().message.contains("tok-SECRET"));
+    }
+
+    #[test]
+    fn malformed_envelope_warning_gives_a_location_and_no_values() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("a.json");
+        std::fs::write(&p, "{\"version\":\"tok-SECRET\",\n\"data\":{}}").unwrap();
+        let (_, w) = JsonStore::<Sample>::open(p, 1);
+        let message = w.unwrap().message;
+        assert!(!message.contains("tok-SECRET"), "{message}");
+        assert!(
+            message.contains("invalid store file at line 1, column "),
+            "{message}"
+        );
     }
 
     #[cfg(unix)]

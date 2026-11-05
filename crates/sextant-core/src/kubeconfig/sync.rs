@@ -14,6 +14,7 @@ use ts_rs::TS;
 
 use super::parse::{parse_file, ContextEntry};
 use super::sources::SyncSource;
+use crate::error::sanitize_text;
 
 const DEBOUNCE: Duration = Duration::from_millis(500);
 pub(crate) const MAX_FILE_BYTES: u64 = 10 * 1024 * 1024;
@@ -277,7 +278,7 @@ struct Candidate {
 fn warning(path: &Path, message: String) -> SyncWarning {
     SyncWarning {
         path: path.display().to_string(),
-        message,
+        message: sanitize_text(&message),
     }
 }
 

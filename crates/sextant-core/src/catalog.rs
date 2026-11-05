@@ -1,7 +1,7 @@
 //! The cluster catalog: what the sync found, combined with the user's settings,
 //! and the kubeconfigs the user pasted in.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -13,7 +13,8 @@ use ts_rs::TS;
 use crate::cluster::ConnectionState;
 use crate::error::{CoreResult, ErrorCode, IpcError};
 use crate::kubeconfig::{
-    parse_contexts, strip_bom, write_private, ClusterId, ContextEntry, SyncSource, MAX_FILE_BYTES,
+    parse_contexts, strip_bom, write_private, yaml_error_text, ClusterId, ContextEntry, SyncSource,
+    MAX_FILE_BYTES,
 };
 use crate::prefs::ClusterSettings;
 
@@ -89,8 +90,7 @@ impl PastedConfigs {
             return Err(invalid("the kubeconfig is over the 10 MiB limit"));
         }
         let path = self.dir.join(pasted_file_name(yaml));
-        let entries = parse_contexts(&path, yaml.as_bytes())
-            .map_err(|e| invalid(format!("the text is not a valid kubeconfig: {e}")))?;
+        let entries = parse_contexts(&path, yaml.as_bytes()).map_err(invalid)?;
         if entries.is_empty() {
             return Err(invalid("the kubeconfig has no contexts"));
         }
@@ -142,11 +142,30 @@ fn scalar_text(value: &Value) -> Option<String> {
     }
 }
 
-/// Deletes the file when `context` was the last one in it.
+/// The `key` names (`cluster` or `user`) that `contexts` refer to.
+fn referenced_names(contexts: &[Value], key: &str) -> HashSet<String> {
+    contexts
+        .iter()
+        .filter_map(|item| item.get("context")?.get(key).and_then(scalar_text))
+        .collect()
+}
+
+fn retain_named(section: Option<&mut Value>, names: &HashSet<String>) {
+    if let Some(items) = section.and_then(Value::as_sequence_mut) {
+        items.retain(|item| {
+            let name = item.get("name").and_then(scalar_text);
+            name.is_some_and(|name| names.contains(&name))
+        });
+    }
+}
+
+/// Removes `context` and the `users` and `clusters` entries nothing refers to any
+/// more, so its credentials leave the disk. Deletes the file when `context` was
+/// the last one in it.
 fn rewrite_without_context(path: &Path, bytes: &[u8], context: &str) -> CoreResult<()> {
     let label = path.display();
     let mut document: Value = serde_yaml_ng::from_slice(strip_bom(bytes))
-        .map_err(|e| invalid(format!("{label} is not a valid kubeconfig: {e}")))?;
+        .map_err(|e| invalid(format!("{label}: {}", yaml_error_text(&e))))?;
     let Some(contexts) = document
         .get_mut("contexts")
         .and_then(Value::as_sequence_mut)
@@ -164,7 +183,11 @@ fn rewrite_without_context(path: &Path, bytes: &[u8], context: &str) -> CoreResu
         std::fs::remove_file(path)?;
         return Ok(());
     }
+    let users = referenced_names(contexts, "user");
+    let clusters = referenced_names(contexts, "cluster");
     if let Value::Mapping(root) = &mut document {
+        retain_named(root.get_mut("users"), &users);
+        retain_named(root.get_mut("clusters"), &clusters);
         let current = root.get("current-context").and_then(scalar_text);
         if current.as_deref() == Some(context) {
             root.remove("current-context");

@@ -146,3 +146,15 @@ fn show_startup_error(err: &IpcError, mut context: Context<Wry>) -> ! {
     }
     std::process::exit(1);
 }
+
+#[cfg(test)]
+mod capability_tests {
+    #[test]
+    fn webview_has_no_opener_permission() {
+        let raw = include_str!("../capabilities/default.json");
+        assert!(
+            !raw.contains("opener"),
+            "the webview must not hold an opener permission (spec 5.5)"
+        );
+    }
+}
