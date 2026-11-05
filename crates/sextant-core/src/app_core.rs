@@ -280,7 +280,34 @@ impl AppCore {
     }
 
     pub fn hotbar_set(&self, ids: Vec<ClusterId>) -> CoreResult<()> {
-        self.inner.hotbar.update(|pinned| *pinned = ids)?;
+        let listed: HashSet<ClusterId> = self
+            .inner
+            .snapshots
+            .borrow()
+            .entries
+            .iter()
+            .map(|entry| entry.id.clone())
+            .collect();
+        // Pins the catalog does not list right now are kept, at their relative positions.
+        self.inner.hotbar.update(|stored| {
+            let mut merged = ids;
+            let mut anchor: Option<ClusterId> = None;
+            for id in stored.iter() {
+                if listed.contains(id) || merged.contains(id) {
+                    if merged.contains(id) {
+                        anchor = Some(id.clone());
+                    }
+                    continue;
+                }
+                let at = anchor
+                    .as_ref()
+                    .and_then(|a| merged.iter().position(|m| m == a))
+                    .map_or(0, |i| i + 1);
+                merged.insert(at, id.clone());
+                anchor = Some(id.clone());
+            }
+            *stored = merged;
+        })?;
         Ok(())
     }
 

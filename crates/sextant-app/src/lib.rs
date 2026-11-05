@@ -56,10 +56,13 @@ fn report_failure(message: &impl std::fmt::Display) {
     eprintln!("sextant failed to start: {message}");
 }
 
-pub fn run() {
+pub fn run(shell_env_warning: Option<String>) {
     let context = tauri::generate_context!();
     let paths = AppPaths::resolve();
     let log_guard = paths.as_ref().ok().and_then(init_logging);
+    if let Some(warning) = shell_env_warning {
+        tracing::warn!("{warning}");
+    }
     tracing::info!("starting sextant {}", sextant_core::VERSION);
     let started = paths.and_then(|paths| tauri::async_runtime::block_on(AppCore::start(paths)));
     match started {

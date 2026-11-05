@@ -515,6 +515,26 @@ async fn hotbar_drops_unknown_ids_on_read_but_keeps_order() {
 }
 
 #[tokio::test]
+async fn hotbar_set_keeps_pins_the_catalog_does_not_list() {
+    let fixture = Fixture::with_kube_config(&["a", "b"]);
+    let core = fixture.start().await;
+    wait_for_names(&core, &["a", "b"]).await;
+    let (a, b) = (id_of(&core, "a"), id_of(&core, "b"));
+
+    core.hotbar_set(vec![a.clone(), "ghost".to_owned(), b.clone()])
+        .unwrap();
+    // The UI only sees listed pins, so it sends back a reordered visible list.
+    core.hotbar_set(vec![b.clone(), a.clone()]).unwrap();
+
+    assert_eq!(core.hotbar_get(), vec![b.clone(), a.clone()]);
+    let stored = std::fs::read_to_string(fixture.paths.data.join("hotbar.json"))
+        .or_else(|_| std::fs::read_to_string(fixture.paths.config.join("hotbar.json")))
+        .unwrap();
+    assert!(stored.contains("ghost"), "hidden pin survives: {stored}");
+    core.shutdown().await;
+}
+
+#[tokio::test]
 async fn prefs_set_sources_takes_effect() {
     let fixture = Fixture::with_kube_config(&["alpha"]);
     let core = fixture.start().await;

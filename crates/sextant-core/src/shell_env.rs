@@ -92,12 +92,12 @@ pub fn load_from_shell(shell: &Path, timeout: Duration) -> Result<HashMap<String
 }
 
 /// Merges the login shell's environment into this process. No-op on Windows.
-pub fn apply_login_shell_env() {
+/// Returns the failure message, if any; the caller logs it once logging is up.
+pub fn apply_login_shell_env() -> Option<String> {
     #[cfg(not(windows))]
     {
         let Some(shell) = std::env::var_os("SHELL").filter(|s| !s.is_empty()) else {
-            tracing::warn!("SHELL is not set; keeping the inherited environment");
-            return;
+            return Some("SHELL is not set; keeping the inherited environment".to_string());
         };
         match load_from_shell(Path::new(&shell), Duration::from_secs(5)) {
             Ok(env) => {
@@ -108,9 +108,10 @@ pub fn apply_login_shell_env() {
                     std::env::set_var(k, v);
                 }
             }
-            Err(e) => tracing::warn!("could not load login shell environment: {e}"),
+            Err(e) => return Some(format!("could not load login shell environment: {e}")),
         }
     }
+    None
 }
 
 #[cfg(test)]

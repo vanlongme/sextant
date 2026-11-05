@@ -88,6 +88,17 @@ describe("cluster connection", () => {
     await expectStatus("Connected", 30000);
   });
 
+  it("clicking a pinned disconnected cluster connects it", async () => {
+    await (await hotbarItem("fake")).click();
+    await clickWhenShown("cluster-disconnect");
+    await expectStatus("Disconnected");
+
+    await clickWhenShown("nav-catalog");
+    await shown("catalog-row-fake");
+    await (await hotbarItem("fake")).click();
+    await expectStatus("Connected", 30000);
+  });
+
   it("removing a context on disk disconnects and removes it", async () => {
     await clickWhenShown("nav-catalog");
     await shown("catalog-row-fake");

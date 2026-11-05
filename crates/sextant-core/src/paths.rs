@@ -15,11 +15,23 @@ impl AppPaths {
     /// `SEXTANT_CONFIG_DIR` (when set and non-empty) roots everything; otherwise
     /// the platform directories for qualifier `dev.sextant` are used.
     pub fn resolve() -> CoreResult<AppPaths> {
-        let home = directories::BaseDirs::new()
-            .map(|d| d.home_dir().to_path_buf())
-            .or_else(|| std::env::var_os("HOME").map(PathBuf::from))
-            .ok_or_else(|| IpcError::new(ErrorCode::Internal, "cannot determine home directory"))?;
-        if let Some(root) = std::env::var_os("SEXTANT_CONFIG_DIR").filter(|v| !v.is_empty()) {
+        let override_root = std::env::var_os("SEXTANT_CONFIG_DIR").filter(|v| !v.is_empty());
+        // `directories` ignores USERPROFILE on Windows, so a test home must come from the env.
+        let env_home = || {
+            let var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+            std::env::var_os(var)
+                .filter(|v| !v.is_empty())
+                .or_else(|| std::env::var_os("HOME").filter(|v| !v.is_empty()))
+                .map(PathBuf::from)
+        };
+        let base_home = || directories::BaseDirs::new().map(|d| d.home_dir().to_path_buf());
+        let home = if override_root.is_some() {
+            env_home().or_else(base_home)
+        } else {
+            base_home().or_else(env_home)
+        }
+        .ok_or_else(|| IpcError::new(ErrorCode::Internal, "cannot determine home directory"))?;
+        if let Some(root) = override_root {
             return Ok(Self::under(Path::new(&root), &home));
         }
         let dirs =
