@@ -61,8 +61,7 @@ struct RawClusterBody {
 #[derive(Deserialize)]
 struct RawUser {
     name: String,
-    // Kept untyped: type errors quote the offending value, and this section
-    // holds credentials that must not end up in a warning.
+    // Only `exec` is looked at, so the rest of the section stays unmodelled.
     #[serde(default)]
     user: Value,
 }
@@ -88,20 +87,34 @@ pub(super) struct ParsedFile {
     pub is_kubeconfig: bool,
 }
 
+/// Stands in for serde's type errors, which quote the offending value. In a
+/// kubeconfig, or in the wrong file picked by mistake, that may be a credential.
+pub(super) const NOT_KUBECONFIG: &str = "not in kubeconfig format";
+
 pub(super) fn strip_bom(bytes: &[u8]) -> &[u8] {
     bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes)
 }
 
-pub(super) fn parse_file(path: &Path, bytes: &[u8]) -> Result<ParsedFile, String> {
-    let bytes = strip_bom(bytes);
+fn read_config(bytes: &[u8]) -> Result<RawConfig, String> {
+    if bytes.iter().all(u8::is_ascii_whitespace) {
+        return Ok(RawConfig::default());
+    }
+    // Read directly rather than through `Value`, which would type an unquoted
+    // name such as `123` as a number and reject it where a string is expected.
     // An empty or comment-only document deserializes as `None`.
-    let raw: RawConfig = if bytes.iter().all(u8::is_ascii_whitespace) {
-        RawConfig::default()
-    } else {
-        serde_yaml_ng::from_slice::<Option<RawConfig>>(bytes)
-            .map_err(|e| e.to_string())?
-            .unwrap_or_default()
-    };
+    match serde_yaml_ng::from_slice::<Option<RawConfig>>(bytes) {
+        Ok(raw) => Ok(raw.unwrap_or_default()),
+        // Without a target type there is no type error left to quote a value,
+        // so what still fails is the syntax or a repeated key, named at most.
+        Err(_) => Err(match serde_yaml_ng::from_slice::<Value>(bytes) {
+            Ok(_) => NOT_KUBECONFIG.to_owned(),
+            Err(syntax) => syntax.to_string(),
+        }),
+    }
+}
+
+pub(super) fn parse_file(path: &Path, bytes: &[u8]) -> Result<ParsedFile, String> {
+    let raw = read_config(strip_bom(bytes))?;
     let is_kubeconfig =
         raw.kind.as_str() == Some("Config") || raw.contexts.is_some() || raw.clusters.is_some();
     let clusters = raw.clusters.unwrap_or_default();
@@ -147,7 +160,8 @@ pub(super) fn parse_file(path: &Path, bytes: &[u8]) -> Result<ParsedFile, String
     })
 }
 
-/// Lists the contexts in kubeconfig text. The error is the parser's message.
+/// Lists the contexts in kubeconfig text. The error is the parser's message
+/// for bad syntax, and otherwise a fixed one that quotes nothing from the file.
 pub fn parse_contexts(path: &Path, bytes: &[u8]) -> Result<Vec<ContextEntry>, String> {
     parse_file(path, bytes).map(|parsed| parsed.entries)
 }
@@ -275,7 +289,41 @@ clusters:
 
     #[test]
     fn invalid_yaml_is_an_error_naming_the_cause() {
-        assert!(parse_contexts(Path::new("/k/config"), b"clusters: [unterminated").is_err());
+        let err = parse_contexts(Path::new("/k/config"), b"clusters: [unterminated").unwrap_err();
+        assert!(err.contains("line 1"), "{err}");
+    }
+
+    #[test]
+    fn a_wrongly_shaped_document_gives_a_message_without_its_text() {
+        for document in [
+            "SECRET-TOKEN-abc123\n",
+            "-----BEGIN PRIVATE KEY-----\nSECRET-KEY-abc123\n-----END PRIVATE KEY-----\n",
+            "users: SECRET-TOKEN-abc123\n",
+            "users:\n- SECRET-TOKEN-abc123\n",
+            "clusters: SECRET-TOKEN-abc123\n",
+            "contexts:\n- SECRET-TOKEN-abc123\n",
+        ] {
+            let err = parse_contexts(Path::new("/k/config"), document.as_bytes()).unwrap_err();
+            assert_eq!(err, NOT_KUBECONFIG, "{document}");
+        }
+    }
+
+    #[test]
+    fn unquoted_scalar_names_are_read_as_text() {
+        let raw = br#"
+clusters:
+- { name: 1.5, cluster: { server: "https://x" } }
+users:
+- { name: true, user: { token: t } }
+contexts:
+- { name: 123, context: { cluster: 1.5, user: true, namespace: 7 } }
+"#;
+        let e = parse_contexts(Path::new("/k/config"), raw).unwrap();
+        assert_eq!(e[0].context_name, "123");
+        assert_eq!(e[0].cluster_name, "1.5");
+        assert_eq!(e[0].user_name, "true");
+        assert_eq!(e[0].namespace.as_deref(), Some("7"));
+        assert!(e[0].problem.is_none());
     }
 
     #[test]

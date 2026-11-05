@@ -206,7 +206,7 @@ impl Worker {
 
     fn scan(&mut self) -> SyncSnapshot {
         let mut warnings = Vec::new();
-        let candidates = collect_candidates(&self.sources, &mut warnings);
+        let candidates = collect_candidates(&self.sources, &self.accepted, &mut warnings);
         let mut accepted = HashMap::new();
         let mut entries = Vec::new();
         for candidate in &candidates {
@@ -281,7 +281,11 @@ fn warning(path: &Path, message: String) -> SyncWarning {
     }
 }
 
-fn collect_candidates(sources: &[SyncSource], warnings: &mut Vec<SyncWarning>) -> Vec<Candidate> {
+fn collect_candidates(
+    sources: &[SyncSource],
+    accepted: &HashMap<PathBuf, Vec<ContextEntry>>,
+    warnings: &mut Vec<SyncWarning>,
+) -> Vec<Candidate> {
     let mut candidates: Vec<Candidate> = Vec::new();
     let mut by_canonical: HashMap<PathBuf, usize> = HashMap::new();
     let mut add = |path: PathBuf, explicit: bool| {
@@ -302,7 +306,7 @@ fn collect_candidates(sources: &[SyncSource], warnings: &mut Vec<SyncWarning>) -
         match source {
             SyncSource::File(path) => add(PathBuf::from(path), true),
             SyncSource::Dir(path) => {
-                for file in list_dir(Path::new(path), warnings) {
+                for file in list_dir(Path::new(path), accepted, warnings) {
                     add(file, false);
                 }
             }
@@ -312,23 +316,44 @@ fn collect_candidates(sources: &[SyncSource], warnings: &mut Vec<SyncWarning>) -
 }
 
 /// Sorted, so which of two links to one file wins does not depend on directory order.
-fn list_dir(dir: &Path, warnings: &mut Vec<SyncWarning>) -> Vec<PathBuf> {
-    let listing = match std::fs::read_dir(dir) {
-        Ok(listing) => listing,
+fn list_dir(
+    dir: &Path,
+    accepted: &HashMap<PathBuf, Vec<ContextEntry>>,
+    warnings: &mut Vec<SyncWarning>,
+) -> Vec<PathBuf> {
+    // Collected first, so an error midway through the listing counts like one at the start.
+    let listing =
+        std::fs::read_dir(dir).and_then(|items| items.collect::<std::io::Result<Vec<_>>>());
+    let mut files: Vec<PathBuf> = match listing {
+        Ok(items) => items
+            .iter()
+            .filter(|item| !is_skipped_name(&item.file_name().to_string_lossy()))
+            .map(|item| item.path())
+            .filter(|path| may_be_file(path))
+            .collect(),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
         Err(e) => {
             warnings.push(warning(dir, format!("could not read the directory: {e}")));
-            return Vec::new();
+            // A failed listing does not mean the files have gone, and dropping
+            // their entries would disconnect their clusters on a brief outage.
+            accepted
+                .iter()
+                .filter(|(path, entries)| !entries.is_empty() && path.parent() == Some(dir))
+                .map(|(path, _)| path.clone())
+                .collect()
         }
     };
-    let mut files: Vec<PathBuf> = listing
-        .flatten()
-        .filter(|item| !is_skipped_name(&item.file_name().to_string_lossy()))
-        .map(|item| item.path())
-        .filter(|path| std::fs::metadata(path).is_ok_and(|m| m.is_file()))
-        .collect();
     files.sort();
     files
+}
+
+/// A path that cannot be examined may still be a file with accepted entries,
+/// so only a missing one is ruled out. `read_candidate` reports the others.
+fn may_be_file(path: &Path) -> bool {
+    match std::fs::metadata(path) {
+        Ok(metadata) => metadata.is_file(),
+        Err(e) => e.kind() != std::io::ErrorKind::NotFound,
+    }
 }
 
 /// Returns the entries to keep for this file, adding a warning when they are

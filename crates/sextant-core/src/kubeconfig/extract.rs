@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde_yaml_ng::{Mapping, Value};
 
-use super::parse::strip_bom;
+use super::parse::{strip_bom, NOT_KUBECONFIG};
 use crate::error::{CoreResult, ErrorCode, IpcError};
 
 const CLUSTER_PATH_KEYS: [&str; 1] = ["certificate-authority"];
@@ -27,9 +27,27 @@ fn make_paths_absolute(item: &mut Value, body: &str, keys: &[&str], base: &Path)
     };
     for key in keys {
         if let Some(Value::String(path)) = body.get_mut(*key) {
-            if !path.is_empty() && Path::new(path.as_str()).is_relative() {
-                *path = base.join(path.as_str()).display().to_string();
-            }
+            make_absolute(path, base);
+        }
+    }
+}
+
+fn make_absolute(path: &mut String, base: &Path) {
+    if !path.is_empty() && Path::new(path.as_str()).is_relative() {
+        *path = base.join(path.as_str()).display().to_string();
+    }
+}
+
+/// A command with a separator is a file relative to the kubeconfig, which the
+/// extracted copy no longer sits beside. A bare name stays a `PATH` lookup.
+fn make_exec_command_absolute(user: &mut Value, base: &Path) {
+    let command = user
+        .get_mut("user")
+        .and_then(|body| body.get_mut("exec"))
+        .and_then(|exec| exec.get_mut("command"));
+    if let Some(Value::String(command)) = command {
+        if command.contains(std::path::is_separator) {
+            make_absolute(command, base);
         }
     }
 }
@@ -59,8 +77,12 @@ fn write_private(dest: &Path, bytes: &[u8]) -> CoreResult<()> {
 pub fn extract_context(source: &Path, context: &str, dest: &Path) -> CoreResult<()> {
     let raw = std::fs::read(source)?;
     let label = source.display();
-    let mut root: Mapping = serde_yaml_ng::from_slice(strip_bom(&raw))
+    // Through `Value`, whose errors have no type error to quote a value in.
+    let document: Value = serde_yaml_ng::from_slice(strip_bom(&raw))
         .map_err(|e| invalid(format!("{label} is not a valid kubeconfig: {e}")))?;
+    let Value::Mapping(mut root) = document else {
+        return Err(invalid(format!("{label} is {NOT_KUBECONFIG}")));
+    };
 
     let selected = find_named(&root, "contexts", context)
         .ok_or_else(|| invalid(format!("context \"{context}\" not found in {label}")))?;
@@ -89,6 +111,7 @@ pub fn extract_context(source: &Path, context: &str, dest: &Path) -> CoreResult<
     let base = absolute_source.parent().unwrap_or(Path::new(""));
     make_paths_absolute(&mut cluster, "cluster", &CLUSTER_PATH_KEYS, base);
     make_paths_absolute(&mut user, "user", &USER_PATH_KEYS, base);
+    make_exec_command_absolute(&mut user, base);
 
     for (key, value) in [
         ("contexts", Value::Sequence(vec![selected])),
@@ -222,6 +245,60 @@ contexts:
             out["users"][0]["user"]["client-key-data"].as_str().unwrap(),
             "aGVsbG8="
         );
+    }
+
+    fn extracted_exec_command(dir: &Path, command: &str) -> String {
+        let src = dir.join("config");
+        std::fs::write(
+            &src,
+            format!(
+                r#"
+clusters:
+- {{ name: c1, cluster: {{ server: "https://x" }} }}
+users:
+- name: u1
+  user:
+    exec: {{ apiVersion: client.authentication.k8s.io/v1, command: '{command}' }}
+contexts:
+- {{ name: one, context: {{ cluster: c1, user: u1 }} }}
+"#
+            ),
+        )
+        .unwrap();
+        let dest = dir.join("out.yaml");
+        extract_context(&src, "one", &dest).unwrap();
+        read_yaml(&dest)["users"][0]["user"]["exec"]["command"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    }
+
+    #[test]
+    fn extract_resolves_an_exec_command_with_a_separator_against_the_source_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        for command in ["./bin/plugin", "bin/plugin"] {
+            let out = extracted_exec_command(dir.path(), command);
+            assert_eq!(Path::new(&out), dir.path().join("bin/plugin"), "{command}");
+        }
+    }
+
+    #[test]
+    fn extract_leaves_a_bare_or_absolute_exec_command_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(extracted_exec_command(dir.path(), "aws"), "aws");
+        let abs = dir.path().join("plugin").display().to_string();
+        assert_eq!(extracted_exec_command(dir.path(), &abs), abs);
+    }
+
+    #[test]
+    fn extract_error_for_a_wrongly_shaped_source_omits_its_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("config");
+        std::fs::write(&src, "SECRET-TOKEN-abc123\n").unwrap();
+        let err = extract_context(&src, "one", &dir.path().join("out.yaml")).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput);
+        assert!(!err.message.contains("SECRET"), "{}", err.message);
+        assert!(err.message.contains(NOT_KUBECONFIG), "{}", err.message);
     }
 
     #[test]

@@ -297,6 +297,104 @@ async fn explicit_file_with_invalid_yaml_warns_even_on_first_scan() {
 }
 
 #[tokio::test]
+async fn explicit_file_of_the_wrong_shape_warns_without_quoting_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("token.txt");
+    std::fs::write(&file, "SECRET-TOKEN-abc123\n").unwrap();
+
+    let (sync, mut rx) = KubeconfigSync::start(vec![file_source(&file)], NO_POLL);
+
+    let snapshot = wait_for(&mut rx, |s| s.warnings.len() == 1).await;
+    let message = &snapshot.warnings[0].message;
+    assert!(!message.contains("SECRET"), "{message}");
+    sync.stop();
+}
+
+/// Sets a directory's mode for the test, and restores it so the temp dir can be removed.
+#[cfg(unix)]
+struct DirMode<'a>(&'a Path);
+
+#[cfg(unix)]
+impl<'a> DirMode<'a> {
+    fn set(dir: &'a Path, mode: u32) -> Self {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(mode)).unwrap();
+        Self(dir)
+    }
+}
+
+#[cfg(unix)]
+impl Drop for DirMode<'_> {
+    fn drop(&mut self) {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(self.0, std::fs::Permissions::from_mode(0o700));
+    }
+}
+
+/// Removes a dir-scanned file's access through `mode`, expects its entries to
+/// stay across several polls with a warning at the path `warned(dir, file)`,
+/// then expects a normal scan to resume once access is back.
+#[cfg(unix)]
+async fn entries_survive_dir_mode(mode: u32, warned: fn(&Path, &Path) -> String) {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("config");
+    std::fs::write(&file, config_with(&["one"])).unwrap();
+    let poll = Duration::from_millis(50);
+    let (sync, mut rx) = KubeconfigSync::start(vec![dir_source(dir.path())], poll);
+    wait_for(&mut rx, |s| s.entries.len() == 1).await;
+
+    let restricted = DirMode::set(dir.path(), mode);
+    if std::fs::metadata(&file).is_ok() && std::fs::read_dir(dir.path()).is_ok() {
+        eprintln!("skipped: this user is not restricted by directory modes");
+        return;
+    }
+
+    let expected = warned(dir.path(), &file);
+    let snapshot = wait_for(&mut rx, |s| s.warnings.iter().any(|w| w.path == expected)).await;
+    assert_eq!(snapshot.entries.len(), 1, "{snapshot:?}");
+    tokio::time::sleep(poll * 4).await;
+    assert_eq!(rx.borrow().entries.len(), 1, "{:?}", *rx.borrow());
+
+    drop(restricted);
+    std::fs::write(&file, config_with(&["one", "two"])).unwrap();
+    let snapshot = wait_for(&mut rx, |s| s.entries.len() == 2 && s.warnings.is_empty()).await;
+    assert_eq!(snapshot.entries[1].context_name, "two");
+    sync.stop();
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn unreadable_dir_keeps_its_entries_and_warns() {
+    entries_survive_dir_mode(0o000, |dir, _| dir.display().to_string()).await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn dir_whose_files_cannot_be_examined_keeps_its_entries_and_warns() {
+    // Readable but not searchable: listing works, and every stat of a file fails.
+    entries_survive_dir_mode(0o400, |_, file| file.display().to_string()).await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn first_scan_of_an_unreadable_dir_only_warns() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("config"), config_with(&["one"])).unwrap();
+    let _restricted = DirMode::set(dir.path(), 0o000);
+    if std::fs::read_dir(dir.path()).is_ok() {
+        eprintln!("skipped: this user is not restricted by directory modes");
+        return;
+    }
+
+    let (sync, mut rx) = KubeconfigSync::start(vec![dir_source(dir.path())], NO_POLL);
+
+    let snapshot = wait_for(&mut rx, |s| !s.warnings.is_empty()).await;
+    assert!(snapshot.entries.is_empty());
+    assert_eq!(snapshot.warnings[0].path, dir.path().display().to_string());
+    sync.stop();
+}
+
+#[tokio::test]
 async fn missing_explicit_file_gives_no_warning_and_is_picked_up_when_created() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("later.yaml");
