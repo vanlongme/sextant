@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Button } from "./Button";
 import { Dialog } from "./Dialog";
+import styles from "./ConfirmDialog.module.css";
 
 export function ConfirmDialog(props: {
   open: boolean;
@@ -32,7 +33,7 @@ export function ConfirmDialog(props: {
         </>
       }
     >
-      {props.body}
+      <div className={styles.body}>{props.body}</div>
     </Dialog>
   );
 }
