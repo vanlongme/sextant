@@ -48,6 +48,11 @@ pub struct FakeKubeConfig {
     pub no_aggregated_discovery: bool,
     /// Matching requests get a real 403 and a not-allowed access review.
     pub deny: Vec<DenyRule>,
+    /// Like `deny`, but only for requests without a namespace (cluster-wide).
+    /// The rule's `namespace` is ignored.
+    pub deny_cluster_wide: Vec<DenyRule>,
+    /// SelfSubjectAccessReview answers 500.
+    pub fail_access_reviews: bool,
 }
 
 #[derive(Clone)]
@@ -177,6 +182,12 @@ impl Inner {
 
     fn denied(&self, verb: &str, plural: &str, ns: Option<&str>) -> bool {
         self.cfg.deny.iter().any(|d| d.matches(verb, plural, ns))
+            || (ns.is_none()
+                && self
+                    .cfg
+                    .deny_cluster_wide
+                    .iter()
+                    .any(|d| d.verb == verb && d.plural == plural))
     }
 }
 
@@ -951,6 +962,9 @@ fn watch_response(
 }
 
 async fn access_review(State(s): State<Shared>, Json(mut review): Json<Value>) -> Response {
+    if s.cfg.fail_access_reviews {
+        return status(500, "InternalError", "access reviews are failing");
+    }
     let attrs = review.pointer("/spec/resourceAttributes");
     let text = |k: &str| {
         attrs

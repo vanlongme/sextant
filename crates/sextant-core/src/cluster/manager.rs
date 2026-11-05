@@ -2,6 +2,7 @@
 
 use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -12,12 +13,15 @@ use tokio::sync::{broadcast, watch};
 use tokio_util::sync::CancellationToken;
 use ts_rs::TS;
 
-use super::connect::{establish, prepare_kubeconfig, ConnectTimeouts, Established, Failure};
+use super::connect::{
+    establish, prepare_kubeconfig, run_discovery, ConnectTimeouts, Established, Failure,
+};
 use super::state::{ConnectionState, FailureKind};
 use crate::app_core::CoreEvent;
 use crate::error::{sanitize_text, CoreResult, ErrorCode, IpcError};
 use crate::kubeconfig::{ClusterId, ContextEntry};
 use crate::prefs::ClusterSettings;
+use crate::resources::ApiResourceInfo;
 
 const RUNTIME_DIR: &str = "runtime";
 const LOG_CAPACITY: usize = 500;
@@ -92,7 +96,14 @@ fn create_private_dir(dir: &Path) -> std::io::Result<()> {
 struct Live {
     client: Client,
     discovery: Arc<Discovery>,
+    /// Told apart from the connection that replaces this one, so a late result
+    /// of the old one is not stored.
+    epoch: u64,
+    /// Dropped with the connection, so a reconnect starts without it.
+    resources: Option<Arc<Vec<ApiResourceInfo>>>,
 }
+
+static NEXT_EPOCH: AtomicU64 = AtomicU64::new(1);
 
 struct Shared {
     log: VecDeque<ConnectionLogEntry>,
@@ -197,6 +208,8 @@ impl ClusterHandle {
                 shared.live = Some(Live {
                     client: established.client,
                     discovery: established.discovery,
+                    epoch: NEXT_EPOCH.fetch_add(1, Ordering::Relaxed),
+                    resources: None,
                 });
                 shared.push_log(LogLevel::Info, "connected".to_owned());
                 ConnectionState::Connected {
@@ -385,6 +398,50 @@ impl ClusterManager {
 
     pub(crate) fn kubeconfig_path(&self, id: &ClusterId) -> CoreResult<PathBuf> {
         self.with_live(id, |_, handle, _| handle.kubeconfig_path.clone())
+    }
+
+    /// The connection's identity, for `store_resources`.
+    pub(crate) fn epoch(&self, id: &ClusterId) -> CoreResult<u64> {
+        self.with_live(id, |live, _, _| live.epoch)
+    }
+
+    pub(crate) fn cached_resources(
+        &self,
+        id: &ClusterId,
+    ) -> CoreResult<Option<Arc<Vec<ApiResourceInfo>>>> {
+        self.with_live(id, |live, _, _| live.resources.clone())
+    }
+
+    /// Runs discovery again on the live client. Nothing is replaced yet.
+    pub(crate) async fn rediscover(&self, id: &ClusterId) -> CoreResult<Discovery> {
+        let handle = self.handle(id).ok_or_else(|| not_connected(id))?;
+        let client = self.client(id)?;
+        Ok(run_discovery(&handle, client).await?)
+    }
+
+    /// Keeps the result for the connection with this epoch and returns whether
+    /// it did. A disconnect or reconnect since the epoch was read drops it.
+    pub(crate) fn store_resources(
+        &self,
+        id: &ClusterId,
+        epoch: u64,
+        discovery: Option<Discovery>,
+        resources: Arc<Vec<ApiResourceInfo>>,
+    ) -> bool {
+        let Some(handle) = self.handle(id) else {
+            return false;
+        };
+        let mut shared = lock(&handle.shared);
+        match shared.live.as_mut() {
+            Some(live) if live.epoch == epoch => {
+                if let Some(discovery) = discovery {
+                    live.discovery = Arc::new(discovery);
+                }
+                live.resources = Some(resources);
+                true
+            }
+            _ => false,
+        }
     }
 
     /// A child of the connection's token: disconnecting cancels it, and whoever

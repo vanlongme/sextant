@@ -329,7 +329,10 @@ async fn build_client(
         })
 }
 
-async fn run_discovery(handle: &ClusterHandle, client: Client) -> kube::Result<Discovery> {
+pub(super) async fn run_discovery(
+    handle: &ClusterHandle,
+    client: Client,
+) -> kube::Result<Discovery> {
     let aggregated = Discovery::new(client.clone()).run_aggregated().await;
     // A server without aggregated discovery answers in another format, or not at all.
     // A real problem, such as bad credentials, shows up again in the fallback.

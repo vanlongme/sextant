@@ -356,6 +356,10 @@ impl AppCore {
         self.inner.connections.discovery(id)
     }
 
+    pub(crate) fn connections(&self) -> &ClusterManager {
+        &self.inner.connections
+    }
+
     pub fn set_connect_timeouts_for_test(&self, t: ConnectTimeouts) {
         self.inner.connections.set_timeouts(t);
     }

@@ -4307,6 +4307,7 @@ dependencies = [
  "base64 0.22.1",
  "dashmap",
  "directories",
+ "futures",
  "http",
  "k8s-openapi",
  "kube",

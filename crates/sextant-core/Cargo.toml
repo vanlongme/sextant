@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 dashmap.workspace = true
+futures.workspace = true
 directories = "6"
 http = "1"
 k8s-openapi.workspace = true
