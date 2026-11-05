@@ -20,6 +20,7 @@ use crate::kubeconfig::{
 };
 use crate::paths::AppPaths;
 use crate::prefs::{ClusterSettings, Prefs};
+use crate::resources::WatchHub;
 use crate::store::{JsonStore, StoreWarning};
 
 const STORE_VERSION: u32 = 1;
@@ -61,6 +62,7 @@ struct Inner {
     hotbar: JsonStore<Vec<ClusterId>>,
     pasted: PastedConfigs,
     connections: Arc<ClusterManager>,
+    watches: Arc<WatchHub>,
     /// Held across a preferences write and the matching source change, so
     /// concurrent calls cannot leave the sync on sources that were not saved last.
     sync: Mutex<Option<KubeconfigSync>>,
@@ -186,6 +188,7 @@ impl AppCore {
                 hotbar,
                 pasted,
                 connections,
+                watches: Arc::new(WatchHub::default()),
                 sync: Mutex::new(Some(sync)),
                 snapshots,
                 sync_events: Mutex::new(Some(sync_events)),
@@ -358,6 +361,10 @@ impl AppCore {
 
     pub(crate) fn connections(&self) -> &ClusterManager {
         &self.inner.connections
+    }
+
+    pub(crate) fn watches(&self) -> &Arc<WatchHub> {
+        &self.inner.watches
     }
 
     pub fn set_connect_timeouts_for_test(&self, t: ConnectTimeouts) {

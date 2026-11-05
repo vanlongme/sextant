@@ -16,7 +16,7 @@ use crate::kubeconfig::ClusterId;
 
 const MAX_IN_FLIGHT: usize = 10;
 
-fn state_name(state: &ConnectionState) -> &'static str {
+pub(super) fn state_name(state: &ConnectionState) -> &'static str {
     match state {
         ConnectionState::Disconnected => "disconnected",
         ConnectionState::Connecting => "still connecting",

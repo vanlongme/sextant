@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
@@ -72,6 +73,7 @@ struct State_ {
     objects: BTreeMap<String, BTreeMap<(String, String), Value>>,
     history: Vec<WatchEvent>,
     counts: BTreeMap<String, usize>,
+    watch_counts: BTreeMap<String, usize>,
     fail: BTreeMap<String, u16>,
 }
 
@@ -81,6 +83,7 @@ struct Inner {
     events: broadcast::Sender<WatchEvent>,
     /// `None` ends every watch, `Some(plural)` ends the watches of that plural.
     stop_watches: broadcast::Sender<Option<String>>,
+    open_watches: AtomicUsize,
 }
 
 impl Inner {
@@ -221,10 +224,12 @@ impl FakeKube {
                 objects: BTreeMap::new(),
                 history: Vec::new(),
                 counts: BTreeMap::new(),
+                watch_counts: BTreeMap::new(),
                 fail: BTreeMap::new(),
             }),
             events,
             stop_watches,
+            open_watches: AtomicUsize::new(0),
         });
         let fake_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let addr = fake_listener.local_addr()?;
@@ -324,8 +329,47 @@ impl FakeKube {
         let _ = self.inner.stop_watches.send(None);
     }
 
+    /// Sends a 410 ERROR event on the open watches of `plural`, as a server does
+    /// when their resourceVersion has expired. The stream stays open.
+    pub fn expire_watches(&self, plural: &str) {
+        let mut st = self.inner.lock();
+        st.rv += 1;
+        let ev = WatchEvent {
+            rv: st.rv,
+            plural: plural.to_string(),
+            namespace: String::new(),
+            kind: "ERROR",
+            object: json!({
+                "kind": "Status",
+                "apiVersion": "v1",
+                "metadata": {},
+                "status": "Failure",
+                "message": "too old resource version",
+                "reason": "Expired",
+                "code": 410,
+            }),
+        };
+        // Not in the history: a watch that resumes must not see it again.
+        let _ = self.inner.events.send(ev);
+    }
+
     pub fn request_count(&self, path: &str) -> usize {
         self.inner.lock().counts.get(path).copied().unwrap_or(0)
+    }
+
+    /// How many watch requests reached `path`, without its lists.
+    pub fn watch_request_count(&self, path: &str) -> usize {
+        self.inner
+            .lock()
+            .watch_counts
+            .get(path)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// How many watch streams are open right now.
+    pub fn open_watch_count(&self) -> usize {
+        self.inner.open_watches.load(Ordering::SeqCst)
     }
 
     pub async fn shutdown(self) {
@@ -600,7 +644,7 @@ async fn generic(
     }
     match verb {
         "list" => list(&s, &res, &t, &q),
-        "watch" => watch_response(s, &res, &t, &q),
+        "watch" => watch_response(s, &res, &t, uri.path(), &q),
         "get" => get_one(&s, &res, &t),
         "create" => create(&s, &res, &t, &body),
         "update" => update(&s, &res, &t, &body),
@@ -635,6 +679,16 @@ fn selected(obj: &Value, q: &BTreeMap<String, String>) -> bool {
             .is_none_or(|sel| field_selector_matches(sel, obj))
 }
 
+/// A real API server leaves `kind` and `apiVersion` out of list items.
+fn list_item(obj: &Value) -> Value {
+    let mut item = obj.clone();
+    if let Some(fields) = item.as_object_mut() {
+        fields.remove("kind");
+        fields.remove("apiVersion");
+    }
+    item
+}
+
 fn list(s: &Shared, res: &FakeResource, t: &Target, q: &BTreeMap<String, String>) -> Response {
     let st = s.lock();
     let items: Vec<Value> = st
@@ -645,7 +699,7 @@ fn list(s: &Shared, res: &FakeResource, t: &Target, q: &BTreeMap<String, String>
                 .filter(|((ns, _), _)| t.namespace.as_deref().is_none_or(|n| n == ns))
                 .map(|(_, o)| o)
                 .filter(|o| selected(o, q))
-                .cloned()
+                .map(list_item)
                 .collect()
         })
         .unwrap_or_default();
@@ -881,7 +935,24 @@ fn delete_one(s: &Shared, res: &FakeResource, t: &Target) -> Response {
     }
 }
 
+/// Counts a watch stream as open for as long as its response body lives.
+struct OpenWatch(Shared);
+
+impl OpenWatch {
+    fn new(s: Shared) -> Self {
+        s.open_watches.fetch_add(1, Ordering::SeqCst);
+        OpenWatch(s)
+    }
+}
+
+impl Drop for OpenWatch {
+    fn drop(&mut self) {
+        self.0.open_watches.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 struct WatchState {
+    _open: OpenWatch,
     backlog: VecDeque<WatchEvent>,
     rx: broadcast::Receiver<WatchEvent>,
     stop: broadcast::Receiver<Option<String>>,
@@ -895,12 +966,14 @@ fn watch_response(
     s: Shared,
     res: &FakeResource,
     t: &Target,
+    path: &str,
     q: &BTreeMap<String, String>,
 ) -> Response {
     let since: Option<u64> = q.get("resourceVersion").and_then(|v| v.parse().ok());
     // Subscribe and snapshot history under one lock so no event is missed or duplicated.
     let (backlog, rx, stop, since) = {
-        let st = s.lock();
+        let mut st = s.lock();
+        *st.watch_counts.entry(path.to_string()).or_insert(0) += 1;
         let since = since.unwrap_or(st.rv);
         let backlog: VecDeque<WatchEvent> = st
             .history
@@ -916,6 +989,7 @@ fn watch_response(
         )
     };
     let state = WatchState {
+        _open: OpenWatch::new(s),
         backlog,
         rx,
         stop,
