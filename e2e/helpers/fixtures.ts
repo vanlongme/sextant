@@ -1,4 +1,7 @@
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { startFakeKube } from "./fakekube";
 
 /** Unreachable, so nothing in these specs ever depends on a live cluster. */
 const DEAD_SERVER = "http://127.0.0.1:1";
@@ -28,6 +31,31 @@ export interface SpecFixture {
   kubeconfigs: Record<string, string>;
   /** Specs in one group share a temp HOME and config dir, so a later spec sees what an earlier one saved. */
   envGroup?: string;
+  /**
+   * Starts what the spec needs before the app does, such as a fake API server,
+   * and returns the kubeconfigs it wants written, with a way to stop it.
+   */
+  start?: () => Promise<{ kubeconfigs: Record<string, string>; stop(): Promise<void> }>;
+}
+
+const KIND_KUBECONFIG = path.resolve(__dirname, "..", ".tmp", "kubeconfig");
+
+/** One file each for the kind cluster, a fakekube context and a dead one. */
+async function startConnectionFixture() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sextant-e2e-fake-"));
+  const fakePath = path.join(dir, "fake");
+  const fake = await startFakeKube({ kubeconfigPath: fakePath, context: "fake" });
+  return {
+    kubeconfigs: {
+      kind: fs.readFileSync(KIND_KUBECONFIG, "utf8"),
+      fake: fs.readFileSync(fakePath, "utf8"),
+      dead: kubeconfig(["dead"]),
+    },
+    async stop() {
+      await fake.stop();
+      fs.rmSync(dir, { recursive: true, force: true });
+    },
+  };
 }
 
 const FIXTURES: Record<string, SpecFixture> = {
@@ -37,6 +65,7 @@ const FIXTURES: Record<string, SpecFixture> = {
     envGroup: "hotbar-restart",
   },
   "hotbar-restart-2-verify": { kubeconfigs: {}, envGroup: "hotbar-restart" },
+  connection: { kubeconfigs: {}, start: startConnectionFixture },
 };
 
 /** Specs with no entry start with an empty `~/.kube`. */

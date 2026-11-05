@@ -12,6 +12,8 @@ const specSet = process.env.SEXTANT_E2E_SPEC_SET ?? "full";
 const envs: AppEnv[] = [];
 const envGroups = new Map<string, AppEnv>();
 
+const stops: Array<() => Promise<void>> = [];
+
 function createEnv(kubeconfigs: Record<string, string>): AppEnv {
   const env = prepareAppEnv({ kubeconfigs });
   envs.push(env);
@@ -25,14 +27,20 @@ function useEnv(env: AppEnv): void {
 }
 
 /** The temp env for a spec file: a new one, or the one its group already has. */
-function envForSpec(spec: string): AppEnv {
+async function envForSpec(spec: string): Promise<AppEnv> {
   const fixture = fixtureFor(spec);
   const shared = fixture.envGroup && envGroups.get(fixture.envGroup);
   if (shared) {
     useEnv(shared);
     return shared;
   }
-  const env = createEnv(fixture.kubeconfigs);
+  let kubeconfigs = fixture.kubeconfigs;
+  if (fixture.start) {
+    const started = await fixture.start();
+    stops.push(started.stop);
+    kubeconfigs = { ...kubeconfigs, ...started.kubeconfigs };
+  }
+  const env = createEnv(kubeconfigs);
   if (fixture.envGroup) envGroups.set(fixture.envGroup, env);
   return env;
 }
@@ -65,10 +73,11 @@ export const config = {
   // the environment set here: one app and one env per spec file.
   async onWorkerStart(_cid: string, _caps: unknown, specs: string[]) {
     await stopApp();
-    const env = envForSpec(specs[0] ?? "");
+    const env = await envForSpec(specs[0] ?? "");
     process.env.SEXTANT_E2E_HOME = env.home;
   },
-  onComplete() {
+  async onComplete() {
+    for (const stop of stops) await stop();
     for (const env of envs) {
       fs.rmSync(env.home, { recursive: true, force: true });
       fs.rmSync(env.configDir, { recursive: true, force: true });
