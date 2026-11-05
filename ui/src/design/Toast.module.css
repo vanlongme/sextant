@@ -1,0 +1,57 @@
+.viewport {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 340px;
+  max-width: 100vw;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  z-index: 2000;
+}
+
+.toast {
+  position: relative;
+  padding: var(--space-2) var(--space-6) var(--space-2) var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+}
+
+.success {
+  border-left-color: var(--ok);
+}
+
+.error {
+  border-left-color: var(--danger);
+}
+
+.info {
+  border-left-color: var(--info);
+}
+
+.title {
+  font-weight: 600;
+}
+
+.details {
+  margin-top: var(--space-1);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  user-select: text;
+}
+
+.close {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-1);
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
