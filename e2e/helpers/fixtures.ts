@@ -58,6 +58,20 @@ async function startConnectionFixture() {
   };
 }
 
+/** One fakekube context and nothing else, so it needs no Docker. */
+async function startSmokeFixture() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sextant-e2e-smoke-"));
+  const fakePath = path.join(dir, "fake");
+  const fake = await startFakeKube({ kubeconfigPath: fakePath, context: "fake" });
+  return {
+    kubeconfigs: { fake: fs.readFileSync(fakePath, "utf8") },
+    async stop() {
+      await fake.stop();
+      fs.rmSync(dir, { recursive: true, force: true });
+    },
+  };
+}
+
 const FIXTURES: Record<string, SpecFixture> = {
   catalog: { kubeconfigs: { config: kubeconfig(["alpha", "beta"]) } },
   "hotbar-restart-1-save": {
@@ -66,6 +80,7 @@ const FIXTURES: Record<string, SpecFixture> = {
   },
   "hotbar-restart-2-verify": { kubeconfigs: {}, envGroup: "hotbar-restart" },
   connection: { kubeconfigs: {}, start: startConnectionFixture },
+  smoke: { kubeconfigs: {}, start: startSmokeFixture },
 };
 
 /** Specs with no entry start with an empty `~/.kube`. */

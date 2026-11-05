@@ -1,4 +1,9 @@
-.PHONY: check ui-build build dev fmt e2e-build e2e test-kind
+.PHONY: check ui-build build dev fmt e2e-build e2e e2e-smoke test-kind
+ifeq ($(shell uname -s),Linux)
+XVFB := xvfb-run -a --server-args="-screen 0 1600x1000x24"
+else
+XVFB :=
+endif
 ui-build:
 	pnpm install --frozen-lockfile
 	pnpm -C ui build
@@ -23,7 +28,10 @@ e2e-build:
 e2e: e2e-build
 	scripts/kind-up.sh
 	cargo build -p sextant-fakekube
-	SEXTANT_E2E_SPEC_SET=full xvfb-run -a --server-args="-screen 0 1600x1000x24" pnpm -C e2e exec wdio run wdio.conf.ts
+	SEXTANT_E2E_SPEC_SET=full $(XVFB) pnpm -C e2e exec wdio run wdio.conf.ts
 test-kind:
 	scripts/kind-up.sh
 	cargo test -p sextant-core --test 'kind_*' -- --ignored --test-threads=1
+e2e-smoke: e2e-build
+	cargo build -p sextant-fakekube
+	SEXTANT_E2E_SPEC_SET=smoke $(XVFB) pnpm -C e2e exec wdio run wdio.conf.ts
