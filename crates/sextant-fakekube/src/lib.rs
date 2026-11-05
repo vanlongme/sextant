@@ -37,6 +37,8 @@ pub struct FakeKubeConfig {
     pub namespaces: Vec<String>,
     /// Defaults to "v1.37.0".
     pub git_version: Option<String>,
+    /// Discovery answers in the legacy format even when asked for the aggregated one.
+    pub no_aggregated_discovery: bool,
 }
 
 #[derive(Clone)]
@@ -305,16 +307,16 @@ fn aggregated(v: Value) -> Response {
         .into_response()
 }
 
-async fn api(headers: HeaderMap) -> Response {
-    if wants_aggregated(&headers) {
+async fn api(State(s): State<Shared>, headers: HeaderMap) -> Response {
+    if !s.cfg.no_aggregated_discovery && wants_aggregated(&headers) {
         aggregated(discovery::aggregated_core())
     } else {
         json_ok(discovery::legacy_api_versions())
     }
 }
 
-async fn apis(headers: HeaderMap) -> Response {
-    if wants_aggregated(&headers) {
+async fn apis(State(s): State<Shared>, headers: HeaderMap) -> Response {
+    if !s.cfg.no_aggregated_discovery && wants_aggregated(&headers) {
         aggregated(discovery::aggregated_apis())
     } else {
         json_ok(discovery::legacy_api_group_list())

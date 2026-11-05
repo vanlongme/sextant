@@ -187,6 +187,7 @@ pub(crate) fn build_entries(
     contexts: Vec<ContextEntry>,
     settings: &HashMap<ClusterId, ClusterSettings>,
     pasted: &PastedConfigs,
+    state_of: impl Fn(&ClusterId) -> ConnectionState,
 ) -> Vec<ClusterEntry> {
     contexts
         .into_iter()
@@ -204,12 +205,12 @@ pub(crate) fn build_entries(
             ClusterEntry {
                 name: display_name(own).unwrap_or_else(|| context.context_name.clone()),
                 icon: own.and_then(|s| s.icon.clone()),
+                state: state_of(&context.id),
                 id: context.id,
                 context_name: context.context_name,
                 server: context.server,
                 source,
                 problem: context.problem,
-                state: ConnectionState::Disconnected,
             }
         })
         .collect()
@@ -263,6 +264,7 @@ mod tests {
             ],
             &HashMap::new(),
             &pasted,
+            |_| ConnectionState::Disconnected,
         );
 
         assert_eq!(entries[0].source, ClusterSource::Pasted { path: inside });
@@ -283,6 +285,7 @@ mod tests {
             vec![context("a", "/h/.kube/config")],
             &HashMap::new(),
             &pasted,
+            |_| ConnectionState::Disconnected,
         );
 
         let v = serde_json::to_value(&entries[0]).unwrap();

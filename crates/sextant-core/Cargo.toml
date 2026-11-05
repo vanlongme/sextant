@@ -5,7 +5,9 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+dashmap.workspace = true
 directories = "6"
+http = "1"
 k8s-openapi.workspace = true
 kube.workspace = true
 notify = "8.2"
@@ -17,5 +19,10 @@ sha2.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
 tracing.workspace = true
 ts-rs.workspace = true
+
+[dev-dependencies]
+base64 = "0.22"
+sextant-fakekube = { path = "../sextant-fakekube" }

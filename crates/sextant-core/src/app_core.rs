@@ -2,17 +2,18 @@
 
 use std::collections::{HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use serde::Serialize;
 use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 use ts_rs::TS;
 
 use crate::catalog::{build_entries, ClusterEntry, PastedConfigs};
-use crate::cluster::ConnectionState;
+use crate::cluster::{ClusterManager, ConnectTimeouts, ConnectionLogEntry, ConnectionState};
 use crate::error::{CoreResult, ErrorCode, IpcError};
 use crate::kubeconfig::{
     default_sources, ClusterId, KubeconfigSync, SyncSnapshot, SyncSource, SyncWarning,
@@ -59,6 +60,7 @@ struct Inner {
     clusters: JsonStore<HashMap<ClusterId, ClusterSettings>>,
     hotbar: JsonStore<Vec<ClusterId>>,
     pasted: PastedConfigs,
+    connections: Arc<ClusterManager>,
     /// Held across a preferences write and the matching source change, so
     /// concurrent calls cannot leave the sync on sources that were not saved last.
     sync: Mutex<Option<KubeconfigSync>>,
@@ -120,16 +122,19 @@ fn all_sources(pasted: &PastedConfigs, sources: Vec<SyncSource>) -> Vec<SyncSour
     all
 }
 
-/// Turns sync snapshots into events until the sync stops.
+/// Turns sync snapshots into events until the sync stops, and disconnects
+/// clusters that left the catalog.
 async fn publish_sync_changes(
     mut snapshots: watch::Receiver<SyncSnapshot>,
     events: broadcast::Sender<CoreEvent>,
+    connections: Arc<ClusterManager>,
 ) {
     let mut last = SyncSnapshot::default();
     while snapshots.changed().await.is_ok() {
         let current = snapshots.borrow_and_update().clone();
         // Sending fails only while nobody is subscribed, and they read the current state.
         if current.entries != last.entries {
+            connections.disconnect_unlisted(&current.entries);
             let _ = events.send(CoreEvent::CatalogChanged);
         }
         if current.warnings != last.warnings {
@@ -159,6 +164,8 @@ impl AppCore {
         kubeconfig_env: Option<OsString>,
     ) -> CoreResult<AppCore> {
         paths.ensure_dirs()?;
+        let (events, _) = broadcast::channel(EVENT_BACKLOG);
+        let connections = Arc::new(ClusterManager::start(&paths.data, events.clone()));
         let mut warnings = Vec::new();
         let (prefs, sources) = open_prefs(&paths, kubeconfig_env.as_deref(), &mut warnings);
         let clusters = open_store(&paths, CLUSTERS_FILE, &mut warnings);
@@ -166,8 +173,11 @@ impl AppCore {
         let pasted = PastedConfigs::open(&paths.data)?;
 
         let (sync, snapshots) = KubeconfigSync::start(all_sources(&pasted, sources), SYNC_POLL);
-        let (events, _) = broadcast::channel(EVENT_BACKLOG);
-        let sync_events = tokio::spawn(publish_sync_changes(snapshots.clone(), events.clone()));
+        let sync_events = tokio::spawn(publish_sync_changes(
+            snapshots.clone(),
+            events.clone(),
+            connections.clone(),
+        ));
 
         Ok(AppCore {
             inner: Arc::new(Inner {
@@ -175,6 +185,7 @@ impl AppCore {
                 clusters,
                 hotbar,
                 pasted,
+                connections,
                 sync: Mutex::new(Some(sync)),
                 snapshots,
                 sync_events: Mutex::new(Some(sync_events)),
@@ -196,7 +207,12 @@ impl AppCore {
 
     pub fn catalog_list(&self) -> Vec<ClusterEntry> {
         let contexts = self.inner.snapshots.borrow().entries.clone();
-        build_entries(contexts, &self.inner.clusters.get(), &self.inner.pasted)
+        build_entries(
+            contexts,
+            &self.inner.clusters.get(),
+            &self.inner.pasted,
+            |id| self.inner.connections.state(id),
+        )
     }
 
     pub fn catalog_warnings(&self) -> Vec<SyncWarning> {
@@ -268,6 +284,55 @@ impl AppCore {
         Ok(())
     }
 
+    /// Idempotent, and concurrent calls join one attempt. A failed attempt is
+    /// `Ok(Failed)`; the error case is an id the catalog does not list.
+    pub async fn cluster_connect(&self, id: &ClusterId) -> CoreResult<ConnectionState> {
+        let entry = self
+            .inner
+            .snapshots
+            .borrow()
+            .entries
+            .iter()
+            .find(|entry| entry.id == *id)
+            .cloned()
+            .ok_or_else(|| IpcError::new(ErrorCode::NotFound, format!("no cluster {id}")))?;
+        let settings = self.cluster_settings_get(id);
+        Ok(self.inner.connections.connect(entry, settings).await)
+    }
+
+    pub async fn cluster_disconnect(&self, id: &ClusterId) -> CoreResult<()> {
+        self.inner.connections.disconnect(id);
+        Ok(())
+    }
+
+    pub fn cluster_state(&self, id: &ClusterId) -> ConnectionState {
+        self.inner.connections.state(id)
+    }
+
+    pub fn cluster_log(&self, id: &ClusterId) -> Vec<ConnectionLogEntry> {
+        self.inner.connections.log(id)
+    }
+
+    pub fn cluster_client(&self, id: &ClusterId) -> CoreResult<kube::Client> {
+        self.inner.connections.client(id)
+    }
+
+    pub fn cluster_kubeconfig_path(&self, id: &ClusterId) -> CoreResult<PathBuf> {
+        self.inner.connections.kubeconfig_path(id)
+    }
+
+    pub fn cluster_cancel_token(&self, id: &ClusterId) -> CoreResult<CancellationToken> {
+        self.inner.connections.cancel_token(id)
+    }
+
+    pub fn cluster_discovery(&self, id: &ClusterId) -> CoreResult<Arc<kube::Discovery>> {
+        self.inner.connections.discovery(id)
+    }
+
+    pub fn set_connect_timeouts_for_test(&self, t: ConnectTimeouts) {
+        self.inner.connections.set_timeouts(t);
+    }
+
     pub fn prefs_get(&self) -> Prefs {
         self.inner.prefs.get()
     }
@@ -295,8 +360,10 @@ impl AppCore {
         Ok(())
     }
 
-    /// Stops background work. The last snapshot stays readable.
+    /// Disconnects every cluster and stops background work. The last snapshot
+    /// stays readable.
     pub async fn shutdown(&self) {
+        self.inner.connections.disconnect_all();
         let sync = lock(&self.inner.sync).take();
         let sync_events = lock(&self.inner.sync_events).take();
         let stopped = async {
