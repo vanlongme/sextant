@@ -83,6 +83,7 @@ struct State_ {
     counts: BTreeMap<String, usize>,
     watch_counts: BTreeMap<String, usize>,
     fail: BTreeMap<String, u16>,
+    fail_discovery: Option<u16>,
     /// (method, path) -> the writes received, oldest first.
     writes: BTreeMap<(String, String), Vec<WriteRequest>>,
 }
@@ -236,6 +237,7 @@ impl FakeKube {
                 counts: BTreeMap::new(),
                 watch_counts: BTreeMap::new(),
                 fail: BTreeMap::new(),
+                fail_discovery: None,
                 writes: BTreeMap::new(),
             }),
             events,
@@ -323,6 +325,12 @@ impl FakeKube {
             Some(code) => st.fail.insert(plural.to_string(), code),
             None => st.fail.remove(plural),
         };
+    }
+
+    /// Makes the discovery documents (`/api`, `/apis` and each group version)
+    /// answer with this HTTP status until cleared with `None`.
+    pub fn fail_discovery_with(&self, http_status: Option<u16>) {
+        self.inner.lock().fail_discovery = http_status;
     }
 
     /// Adds a pod and emits a watch ADDED event.
@@ -551,7 +559,14 @@ fn served(s: &Shared) -> Vec<FakeResource> {
     s.lock().resources.values().cloned().collect()
 }
 
+fn discovery_failure(s: &Shared) -> Option<Response> {
+    s.lock().fail_discovery.map(status_for_code)
+}
+
 async fn api(State(s): State<Shared>, headers: HeaderMap) -> Response {
+    if let Some(failure) = discovery_failure(&s) {
+        return failure;
+    }
     if !s.cfg.no_aggregated_discovery && wants_aggregated(&headers) {
         aggregated(discovery::aggregated_core(&served(&s)))
     } else {
@@ -560,6 +575,9 @@ async fn api(State(s): State<Shared>, headers: HeaderMap) -> Response {
 }
 
 async fn apis(State(s): State<Shared>, headers: HeaderMap) -> Response {
+    if let Some(failure) = discovery_failure(&s) {
+        return failure;
+    }
     let rs = served(&s);
     if !s.cfg.no_aggregated_discovery && wants_aggregated(&headers) {
         aggregated(discovery::aggregated_apis(&rs))
@@ -569,6 +587,9 @@ async fn apis(State(s): State<Shared>, headers: HeaderMap) -> Response {
 }
 
 async fn group_version_doc(State(s): State<Shared>, uri: Uri) -> Response {
+    if let Some(failure) = discovery_failure(&s) {
+        return failure;
+    }
     let segs: Vec<&str> = uri.path().trim_matches('/').split('/').collect();
     let (group, version) = match segs.as_slice() {
         ["api", v] => ("", *v),

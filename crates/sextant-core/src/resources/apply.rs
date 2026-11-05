@@ -14,6 +14,7 @@ use ts_rs::TS;
 
 use super::ops::{invalid, is_path_segment, send};
 use crate::app_core::AppCore;
+use crate::cluster::ConnectionState;
 use crate::error::{sanitize_text, CoreResult};
 use crate::kubeconfig::{with_location, ClusterId};
 
@@ -23,6 +24,13 @@ const CRD_KIND: &str = "CustomResourceDefinition";
 /// How long a kind may stay unknown after a CRD in the same request was applied.
 const ESTABLISH_LIMIT: Duration = Duration::from_secs(10);
 const ESTABLISH_POLL: Duration = Duration::from_millis(500);
+/// The fields that say what a document is and where it goes.
+const IDENTITY_FIELDS: [(&str, &str); 4] = [
+    ("/apiVersion", "apiVersion"),
+    ("/kind", "kind"),
+    ("/metadata/namespace", "metadata.namespace"),
+    ("/metadata/name", "metadata.name"),
+];
 
 /// The outcome of one document. `index` counts the documents that are not empty.
 #[derive(Debug, Clone, Serialize, TS)]
@@ -58,6 +66,18 @@ pub(super) fn parse_documents(yaml: &str) -> CoreResult<Vec<Value>> {
     Ok(documents)
 }
 
+/// An identity field of another type is an error, not an absent field: an unquoted
+/// `namespace: 123` must not send the object to the default namespace.
+fn check_identity_types(document: &Value) -> Result<(), String> {
+    for (pointer, field) in IDENTITY_FIELDS {
+        match document.pointer(pointer) {
+            None | Some(Value::Null | Value::String(_)) => {}
+            Some(_) => return Err(format!("{field} must be a string; write it in quotes")),
+        }
+    }
+    Ok(())
+}
+
 /// What one request has learned so far, shared by its documents.
 struct ApplyRun<'a> {
     core: &'a AppCore,
@@ -73,6 +93,8 @@ struct ApplyRun<'a> {
 impl ApplyRun<'_> {
     /// Finds a kind, refreshing discovery on a miss: once, or until `ESTABLISH_LIMIT`
     /// when an earlier document created a CRD, which takes a moment to be served.
+    /// A failed refresh is retried in that window while the cluster stays connected,
+    /// and it is what gets reported if the last attempt was one.
     async fn resolve(
         &mut self,
         api_version: &str,
@@ -85,24 +107,30 @@ impl ApplyRun<'_> {
         }
         let deadline = Instant::now() + ESTABLISH_LIMIT;
         loop {
-            match self.core.connections().rediscover(self.id).await {
+            let failure = match self.core.connections().rediscover(self.id).await {
                 Ok(fresh) => {
                     self.discovery = Arc::new(fresh);
                     if let Some(found) = self.discovery.resolve_gvk(&wanted) {
                         self.kept_discovery_stale = true;
                         return Ok(found);
                     }
+                    format!("unknown kind \"{kind}\" in apiVersion \"{api_version}\"")
                 }
-                Err(e) if !self.created_crd => return Err(e.message),
-                Err(_) => {}
-            }
+                Err(e) if !self.created_crd || !self.is_connected() => return Err(e.message),
+                Err(e) => e.message,
+            };
             if !self.created_crd || Instant::now() + ESTABLISH_POLL > deadline {
-                return Err(format!(
-                    "unknown kind \"{kind}\" in apiVersion \"{api_version}\""
-                ));
+                return Err(failure);
             }
             tokio::time::sleep(ESTABLISH_POLL).await;
         }
+    }
+
+    fn is_connected(&self) -> bool {
+        matches!(
+            self.core.connections().state(self.id),
+            ConnectionState::Connected { .. }
+        )
     }
 
     async fn send_document(
@@ -110,6 +138,7 @@ impl ApplyRun<'_> {
         document: &mut Value,
         result: &mut ApplyResult,
     ) -> Result<(), String> {
+        check_identity_types(document)?;
         let api_version = document
             .get("apiVersion")
             .and_then(Value::as_str)

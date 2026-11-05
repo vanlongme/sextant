@@ -517,6 +517,172 @@ async fn apply_gives_up_on_the_kind_of_a_crd_after_ten_seconds() {
 }
 
 #[tokio::test]
+async fn apply_shows_the_discovery_error_when_the_crd_window_ends() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    fake.fail_discovery_with(Some(500));
+
+    let results = core
+        .resource_apply(&id, CRD_THEN_WIDGET, "default")
+        .await
+        .unwrap();
+
+    assert!(results[0].ok, "{:?}", results[0]);
+    assert!(!results[1].ok);
+    assert!(
+        results[1].message.contains("injected failure"),
+        "{}",
+        results[1].message
+    );
+    assert!(
+        !results[1].message.contains("unknown kind"),
+        "{}",
+        results[1].message
+    );
+}
+
+#[tokio::test]
+async fn apply_blames_the_kind_when_discovery_recovers_in_the_crd_window() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    let fake = Arc::new(fake);
+    fake.fail_discovery_with(Some(500));
+    let recovering = fake.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(1200)).await;
+        recovering.fail_discovery_with(None);
+    });
+
+    let results = core
+        .resource_apply(&id, CRD_THEN_WIDGET, "default")
+        .await
+        .unwrap();
+
+    assert_eq!(
+        results[1].message,
+        r#"unknown kind "Widget" in apiVersion "example.com/v1""#
+    );
+}
+
+#[tokio::test]
+async fn apply_keeps_waiting_through_a_discovery_failure_in_the_crd_window() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    let fake = Arc::new(fake);
+    fake.fail_discovery_with(Some(503));
+    let recovering = fake.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(1200)).await;
+        recovering.serve_resource(FakeResource::new(
+            "example.com",
+            "v1",
+            "Widget",
+            "widgets",
+            true,
+        ));
+        recovering.fail_discovery_with(None);
+    });
+
+    let results = core
+        .resource_apply(&id, CRD_THEN_WIDGET, "default")
+        .await
+        .unwrap();
+
+    assert!(results[1].ok, "{:?}", results[1]);
+}
+
+#[tokio::test]
+async fn apply_stops_waiting_for_a_kind_once_the_cluster_is_disconnected() {
+    let (core, _fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    let yaml = format!(
+        "{CRD_THEN_WIDGET}---\napiVersion: example.com/v1\nkind: Gadget\nmetadata:\n  name: g\n"
+    );
+    let disconnecting = core.clone();
+    let disconnected_id = id.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(700)).await;
+        disconnecting
+            .cluster_disconnect(&disconnected_id)
+            .await
+            .unwrap();
+    });
+    let started = Instant::now();
+
+    let results = core.resource_apply(&id, &yaml, "default").await.unwrap();
+
+    assert!(results[0].ok, "{:?}", results[0]);
+    for result in &results[1..] {
+        assert!(!result.ok);
+        assert!(
+            result.message.contains("is not connected"),
+            "{}",
+            result.message
+        );
+    }
+    let elapsed = started.elapsed();
+    assert!(elapsed < Duration::from_secs(5), "{elapsed:?}");
+}
+
+#[tokio::test]
+async fn apply_rejects_identity_fields_that_are_not_strings() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    let yaml = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: a\n  namespace: 123\n\
+                ---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: a\n  namespace: true\n\
+                ---\napiVersion: v1\nkind: Namespace\nmetadata:\n  name: fresh\n  namespace: 123\n\
+                ---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: 123\n\
+                ---\napiVersion: v1\nkind: 123\nmetadata:\n  name: a\n\
+                ---\napiVersion: 1\nkind: ConfigMap\nmetadata:\n  name: a\n";
+    let fields = [
+        "metadata.namespace",
+        "metadata.namespace",
+        "metadata.namespace",
+        "metadata.name",
+        "kind",
+        "apiVersion",
+    ];
+
+    let results = core.resource_apply(&id, yaml, "default").await.unwrap();
+
+    assert_eq!(results.len(), fields.len());
+    for (result, field) in results.iter().zip(fields) {
+        assert!(!result.ok, "{result:?}");
+        assert!(
+            result
+                .message
+                .starts_with(&format!("{field} must be a string")),
+            "{}",
+            result.message
+        );
+    }
+    assert_eq!(results[0].name.as_deref(), Some("a"));
+    assert_eq!(results[0].namespace, None);
+    assert!(fake
+        .writes("PATCH", "/api/v1/namespaces/default/configmaps/a")
+        .is_empty());
+    assert!(fake.writes("PATCH", "/api/v1/namespaces/fresh").is_empty());
+}
+
+#[tokio::test]
+async fn apply_uses_the_default_namespace_only_when_none_is_given() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    let yaml = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: quoted\n  namespace: \"123\"\n\
+                ---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: null-ns\n  namespace: null\n\
+                ---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: empty-ns\n  namespace: \"\"\n";
+
+    let results = core.resource_apply(&id, yaml, "default").await.unwrap();
+
+    let namespaces: Vec<Option<&str>> = results.iter().map(|r| r.namespace.as_deref()).collect();
+    assert_eq!(
+        namespaces,
+        [Some("123"), Some("default"), Some("default")],
+        "{results:?}"
+    );
+    assert!(results.iter().all(|r| r.ok), "{results:?}");
+    assert_eq!(
+        fake.writes("PATCH", "/api/v1/namespaces/123/configmaps/quoted")
+            .len(),
+        1
+    );
+}
+
+#[tokio::test]
 async fn apply_with_invalid_yaml_is_an_error() {
     let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
     let yaml = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: first\n\
