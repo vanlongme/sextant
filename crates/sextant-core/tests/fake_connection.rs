@@ -206,7 +206,10 @@ async fn closed_port_maps_to_failed_unreachable() {
 
     let state = core.cluster_connect(&id).await.unwrap();
 
-    assert_eq!(failure(&state).0, FailureKind::Unreachable);
+    let (kind, message) = failure(&state);
+    assert_eq!(kind, FailureKind::Unreachable);
+    assert!(message.starts_with("Connection refused"), "{message}");
+    assert!(!message.contains("ServiceError"), "{message}");
 }
 
 #[tokio::test]

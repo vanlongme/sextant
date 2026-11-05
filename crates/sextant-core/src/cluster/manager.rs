@@ -205,7 +205,8 @@ impl ClusterHandle {
             }
             Err(failure) => {
                 remove_kubeconfig(&self.kubeconfig_path);
-                shared.push_log(LogLevel::Error, failure.message.clone());
+                let detail = failure.detail.as_ref().unwrap_or(&failure.message);
+                shared.push_log(LogLevel::Error, detail.clone());
                 ConnectionState::Failed {
                     kind: failure.kind,
                     message: failure.message,

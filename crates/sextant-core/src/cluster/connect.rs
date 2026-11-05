@@ -18,7 +18,10 @@ use tokio::time::{timeout, timeout_at, Instant};
 use super::distribution::detect_distribution;
 use super::manager::{ClusterHandle, LogLevel};
 use super::state::{ClusterInfo, FailureKind};
-use crate::error::{auth_error_text, error_chain, find_auth_error, sanitize_text, ErrorCode};
+use crate::error::{
+    auth_error_text, error_chain, find_auth_error, friendly_transport_message, sanitize_text,
+    ErrorCode,
+};
 use crate::kubeconfig::{extract_context, ContextEntry};
 use crate::prefs::ClusterSettings;
 
@@ -48,6 +51,8 @@ impl Default for ConnectTimeouts {
 pub(crate) struct Failure {
     pub(crate) kind: FailureKind,
     pub(crate) message: String,
+    /// The sanitized original text when `message` was reworded; it goes to the log.
+    pub(crate) detail: Option<String>,
 }
 
 impl Failure {
@@ -55,6 +60,19 @@ impl Failure {
         Self {
             kind,
             message: sanitize_text(&message.into()),
+            detail: None,
+        }
+    }
+
+    /// A transport failure: people get plain wording, the log keeps the original.
+    fn transport(message: String) -> Self {
+        match friendly_transport_message(&message) {
+            Some(friendly) => Self {
+                kind: FailureKind::Unreachable,
+                message: friendly,
+                detail: Some(sanitize_text(&message)),
+            },
+            None => Self::new(FailureKind::Unreachable, message),
         }
     }
 
@@ -146,7 +164,7 @@ impl Classifier {
                 Failure::new(kind, message)
             }
             kube::Error::Service(_) | kube::Error::HyperError(_) | kube::Error::HttpError(_) => {
-                Failure::new(FailureKind::Unreachable, error_chain(err))
+                Failure::transport(error_chain(err))
             }
             kube::Error::ProxyProtocolUnsupported { proxy_url } => Failure::config(format!(
                 "the proxy URL uses an unsupported protocol: {}",

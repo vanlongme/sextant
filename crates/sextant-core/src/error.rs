@@ -26,13 +26,13 @@ static BEARER_VALUE: LazyLock<Regex> =
 // A quoted string may be cut short, and then it runs to the end of the text.
 static KEY_VALUE: LazyLock<Regex> = LazyLock::new(|| {
     pattern(
-        r#"(?is)(access_token|id_token|refresh_token|token|password|passwd|secret|client-key-data|client-certificate-data|api-key|apikey)([\\"']*\s*[:=]\s*)(\\"(?:[^\\]|\\[^"])*(?:\\"|\z)|"(?:[^"\\]|\\.)*(?:"|\z)|'[^']*(?:'|\z)|\S+)"#,
+        r#"(?is)([A-Za-z0-9_-]*(?:token|password|passwd|secret|client-key-data|client-certificate-data|api[-_]?key|access[-_]?key)[A-Za-z0-9_-]*)([\\"']*\s*[:=]\s*)(\\"(?:[^\\]|\\[^"])*(?:\\"|\z)|"(?:[^"\\]|\\.)*(?:"|\z)|'[^']*(?:'|\z)|\S+)"#,
     )
 });
 static JWT: LazyLock<Regex> =
     LazyLock::new(|| pattern(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*"));
 // A proxy URL from a kubeconfig reaches `kube`'s error text with its password.
-static URL_USERINFO: LazyLock<Regex> = LazyLock::new(|| pattern(r"://[^/\s@]+@"));
+static URL_USERINFO: LazyLock<Regex> = LazyLock::new(|| pattern(r"://[^/\s]+@"));
 
 /// Removes what looks like a credential and limits the length. All `IpcError`
 /// text and connection log lines pass through here.
@@ -51,6 +51,28 @@ pub fn sanitize_text(input: &str) -> String {
     let text = JWT.replace_all(&text, REDACTED);
     let text = URL_USERINFO.replace_all(&text, format!("://{REDACTED}@").as_str());
     truncate(&text)
+}
+
+/// Plain wording for the transport failures people meet most. `None` means the
+/// raw text has nothing better to say.
+pub fn friendly_transport_message(raw: &str) -> Option<String> {
+    let lower = raw.to_ascii_lowercase();
+    let text = if lower.contains("connection refused") {
+        "Connection refused by the server. Check that the cluster is running and the address is right."
+    } else if lower.contains("dns error")
+        || lower.contains("name or service not known")
+        || lower.contains("failed to lookup address")
+    {
+        "The server address could not be resolved. Check the server name in the kubeconfig and your network."
+    } else if lower.contains("invalid peer certificate")
+        || lower.contains("certificate verify failed")
+        || lower.contains("unknownissuer")
+    {
+        "The server certificate is not trusted. Check the certificate authority in the kubeconfig."
+    } else {
+        return None;
+    };
+    Some(text.to_owned())
 }
 
 fn truncate(text: &str) -> String {
@@ -397,6 +419,44 @@ mod tests {
             }
             assert!(out.contains("[redacted]"), "{case:?} gave {out:?}");
         }
+    }
+
+    #[test]
+    fn sanitizer_covers_prefixed_secret_names() {
+        for case in [
+            "API_KEY=S3CRET",
+            "AWS_SECRET_ACCESS_KEY=S3CRET",
+            "GITHUB_TOKEN: S3CRET",
+            "x-api-key: S3CRET",
+        ] {
+            let out = sanitize_text(case);
+            assert!(!out.contains("S3CRET"), "{case:?} gave {out:?}");
+        }
+    }
+
+    #[test]
+    fn sanitizer_handles_at_sign_in_url_password() {
+        let out = sanitize_text("proxy http://user:p@ss-S3CRET@proxy.local:3128 failed");
+        assert!(!out.contains("S3CRET"), "{out}");
+        assert!(out.contains("proxy.local:3128"), "{out}");
+    }
+
+    #[test]
+    fn friendly_transport_message_rewrites_common_failures() {
+        let refused = "ServiceError: client error (Connect): tcp connect error: Connection refused (os error 111)";
+        assert_eq!(
+            friendly_transport_message(refused).as_deref(),
+            Some("Connection refused by the server. Check that the cluster is running and the address is right.")
+        );
+        let dns = "ServiceError: client error (Connect): dns error: failed to lookup address information: Name or service not known";
+        assert!(friendly_transport_message(dns)
+            .unwrap()
+            .contains("could not be resolved"));
+        let tls = "ServiceError: client error (Connect): invalid peer certificate: UnknownIssuer";
+        assert!(friendly_transport_message(tls)
+            .unwrap()
+            .contains("certificate"));
+        assert_eq!(friendly_transport_message("something else"), None);
     }
 
     #[test]
