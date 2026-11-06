@@ -46,3 +46,8 @@ jobs:
           releaseName: Sextant ${{ github.ref_name }}
           releaseDraft: true
           args: ${{ matrix.args }} --config crates/sextant-app/tauri.conf.json
+      - name: Verify the macOS signature
+        if: runner.os == 'macOS'
+        run: |
+          codesign --verify --deep --strict --verbose=2 target/*/release/bundle/macos/Sextant.app
+          codesign --display --verbose=2 target/*/release/bundle/macos/Sextant.app

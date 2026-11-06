@@ -51,7 +51,7 @@ make e2e-smoke  # smoke end-to-end tests, no Docker
 
 Release builds are unsigned for now.
 
-- **macOS**: run `xattr -cr Sextant.app`, or right-click the app and choose Open.
+- **macOS**: builds carry an ad-hoc signature, not one from Apple. Drag the app to Applications and open it. When macOS blocks it, go to System Settings > Privacy & Security and choose Open Anyway, or run `xattr -cr /Applications/Sextant.app`.
 - **Windows**: in SmartScreen choose "More info", then "Run anyway".
 - **Linux**: mark the AppImage executable with `chmod +x` and run it.
 
