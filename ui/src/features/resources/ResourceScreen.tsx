@@ -1,6 +1,6 @@
 import { Columns3 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { useParams } from "react-router";
+import { useParams, useSearchParams } from "react-router";
 import {
   Badge,
   Button,
@@ -21,6 +21,7 @@ import { defaultColumns, kindSpec } from "../../kinds/registry";
 import { findResource, useResourceList } from "../../stores/resources";
 import { useUiState } from "../../stores/uiState";
 import { useClusterContext } from "../cluster/ClusterLayout";
+import { DetailDrawer, type SummaryItem } from "../details/DetailDrawer";
 import { DeleteDialog } from "./DeleteDialog";
 import { matchesSearch } from "./filter";
 import { NamespaceFilter, namespaceFilterKey } from "./NamespaceFilter";
@@ -29,6 +30,13 @@ import styles from "./ResourceScreen.module.css";
 
 const ACTIONS_COLUMN = "actions";
 /** Always shown, so a row can always be told apart. */
+/** Shown in the drawer's own sections already. */
+const SUMMARY_SKIP: ReadonlySet<string> = new Set([
+  "name",
+  "namespace",
+  "age",
+  ACTIONS_COLUMN,
+]);
 const FIXED_COLUMNS: ReadonlySet<string> = new Set(["name", ACTIONS_COLUMN]);
 
 /** A choice made in the columns menu, which wins over the column's default. */
@@ -100,6 +108,8 @@ export function ResourceScreen(props: {
   const crd = useCustomResourceDefinition(clusterId, info, resources);
   const { context, confirmDialog } = useActionContext(clusterId, resource);
 
+  const [params, setParams] = useSearchParams();
+  const openKey = params.get("object");
   const [search, setSearch] = useState("");
   // Kept here because the table unmounts while no row matches.
   const [sort, setSort] = useState<TableSort | null>(null);
@@ -159,6 +169,27 @@ export function ResourceScreen(props: {
 
   // Only what is on screen is deleted, so a search cannot hide part of a bulk delete.
   const selectedRows = rows.filter((o) => selected.has(objectKey(o)));
+
+  const openObject = (key: string | null) =>
+    setParams(
+      (p) => {
+        const next = new URLSearchParams(p);
+        if (key === null) next.delete("object");
+        else next.set("object", key);
+        return next;
+      },
+      { replace: false },
+    );
+
+  const opened =
+    openKey === null
+      ? undefined
+      : list.items.find((o) => objectKey(o) === openKey);
+  const summary: SummaryItem[] = opened
+    ? columns
+        .filter((c) => !SUMMARY_SKIP.has(c.id))
+        .map((c) => ({ id: c.id, label: c.header, value: c.render(opened) }))
+    : [];
 
   if (list.status === "notServed" || list.status === "forbidden") {
     return (
@@ -252,31 +283,45 @@ export function ResourceScreen(props: {
         </Button>
       </div>
 
-      {list.loading ? (
-        <Spinner label={`Loading ${kind} objects`} />
-      ) : rows.length === 0 ? (
-        <EmptyState
-          title={`No ${kind} objects`}
-          body={
-            search.trim() !== ""
-              ? `No ${kind} objects match "${search.trim()}".`
-              : emptyText(kind, namespaced, namespaces)
-          }
+      <div className={styles.body}>
+        <div className={styles.main}>
+          {list.loading ? (
+            <Spinner label={`Loading ${kind} objects`} />
+          ) : rows.length === 0 ? (
+            <EmptyState
+              title={`No ${kind} objects`}
+              body={
+                search.trim() !== ""
+                  ? `No ${kind} objects match "${search.trim()}".`
+                  : emptyText(kind, namespaced, namespaces)
+              }
+            />
+          ) : (
+            <VirtualTable
+              rows={rows}
+              columns={columns}
+              rowKey={objectKey}
+              rowTestId={rowTestId}
+              hiddenColumns={hiddenColumns}
+              sort={sort}
+              onSortChange={setSort}
+              selected={selected}
+              onSelectedChange={setSelected}
+              testId="resource-table"
+              onRowClick={(o) => openObject(objectKey(o))}
+              activeKey={openKey ?? undefined}
+            />
+          )}
+        </div>
+        <DetailDrawer
+          clusterId={clusterId}
+          resource={resource}
+          objectKey={openKey}
+          onClose={() => openObject(null)}
+          resources={resources}
+          summary={summary}
         />
-      ) : (
-        <VirtualTable
-          rows={rows}
-          columns={columns}
-          rowKey={objectKey}
-          rowTestId={rowTestId}
-          hiddenColumns={hiddenColumns}
-          sort={sort}
-          onSortChange={setSort}
-          selected={selected}
-          onSelectedChange={setSelected}
-          testId="resource-table"
-        />
-      )}
+      </div>
 
       {deleting ? (
         <DeleteDialog

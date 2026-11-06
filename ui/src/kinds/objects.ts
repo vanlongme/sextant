@@ -9,6 +9,7 @@ export interface KubeObject {
     labels?: Record<string, string>;
     annotations?: Record<string, string>;
     ownerReferences?: {
+      apiVersion?: string;
       kind: string;
       name: string;
       uid: string;

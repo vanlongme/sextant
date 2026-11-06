@@ -831,3 +831,14 @@ test("the route shows the table for a served resource", async () => {
   } as WatchEvent);
   expect(row("default", "a")).toBeTruthy();
 });
+
+test("clicking a row opens its detail drawer through the object param, and Escape closes it", async () => {
+  const fake = fakeBackend();
+  await show(fake, [pod("web", "team-a")]);
+  expect(screen.queryByTestId("detail-drawer")).toBeNull();
+  fireEvent.click(row("team-a", "web") as HTMLElement);
+  expect(screen.getByTestId("detail-title").textContent).toBe("web");
+  expect(row("team-a", "web")?.getAttribute("aria-current")).toBe("true");
+  fireEvent.keyDown(screen.getByTestId("detail-close"), { key: "Escape" });
+  expect(screen.queryByTestId("detail-drawer")).toBeNull();
+});

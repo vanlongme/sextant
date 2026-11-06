@@ -25,16 +25,19 @@ export interface ActionContext {
   openEditor(o: KubeObject): void;
 }
 
+export interface DetailProps {
+  clusterId: string;
+  object: KubeObject;
+  resource: ResourceRef;
+}
+
 export interface KindSpec {
   /** The whole set of columns for this kind, in place of the defaults. */
   columns?(resource: ApiResourceInfo): TableColumn<KubeObject>[];
   /** Row actions, shown above the Delete every kind has. */
   actions?: KindAction[];
-  detail?: ComponentType<{
-    clusterId: string;
-    object: KubeObject;
-    resource: ResourceRef;
-  }>;
+  /** The kind's own part of the detail drawer, in place of the generic field tree. */
+  detail?: ComponentType<DetailProps>;
 }
 
 const specs = new Map<string, KindSpec>();

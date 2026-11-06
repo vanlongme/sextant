@@ -1,0 +1,191 @@
+.drawer {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 420px;
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kind,
+.muted,
+.fieldHint {
+  color: var(--text-muted);
+}
+
+.grow {
+  flex: 1;
+}
+
+.content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-3);
+}
+
+.removed {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  color: var(--warn);
+  border-bottom: 1px solid var(--border);
+}
+
+.section {
+  margin-bottom: var(--space-4);
+}
+
+.heading {
+  margin: 0 0 var(--space-2);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.facts,
+.pairs {
+  margin: 0;
+}
+
+.fact {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: var(--space-2);
+  padding: 2px 0;
+}
+
+.key {
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.value,
+.valueFull,
+.valueClamped,
+.message {
+  margin: 0;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.valueFull {
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+}
+
+.valueClamped {
+  font-family: var(--font-mono);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.annotation {
+  padding: var(--space-1) 0;
+}
+
+.link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-2);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+}
+
+.link:focus-visible,
+.fieldToggle:focus-visible {
+  outline: 2px solid var(--accent);
+}
+
+.chips,
+.rows,
+.fieldList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.chip {
+  padding: 2px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.rows > li {
+  padding: var(--space-1) 0;
+}
+
+.condition {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.conditionHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.fieldList {
+  padding-left: var(--space-3);
+}
+
+.fieldRow,
+.fieldToggle {
+  display: flex;
+  gap: var(--space-2);
+  padding: 1px 0;
+}
+
+.fieldToggle {
+  align-items: center;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.fieldName {
+  color: var(--text-muted);
+}
+
+.fieldValue {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
