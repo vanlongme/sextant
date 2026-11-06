@@ -14,6 +14,7 @@ import type { ResourceRef } from "../../ipc/generated/ResourceRef";
 import type { WatchEvent } from "../../ipc/generated/WatchEvent";
 import type { KubeObject } from "../../kinds/objects";
 import { registerKind } from "../../kinds/registry";
+import { resetDockForTest, useDock } from "../../stores/dock";
 import { resetResourcesForTest } from "../../stores/resources";
 import { flush, mockBackend } from "../../test/ipc";
 import { mockElementSize } from "../../test/size";
@@ -841,4 +842,25 @@ test("clicking a row opens its detail drawer through the object param, and Escap
   expect(row("team-a", "web")?.getAttribute("aria-current")).toBe("true");
   fireEvent.keyDown(screen.getByTestId("detail-close"), { key: "Escape" });
   expect(screen.queryByTestId("detail-drawer")).toBeNull();
+});
+
+test("Edit YAML in a row's menu opens the object in the dock", async () => {
+  const fake = fakeBackend();
+  await show(fake, [pod("web", "team-a")]);
+
+  openMenu("row-menu-web");
+  fireEvent.click(screen.getByTestId("menu-item-edit"));
+
+  const { tabs, activeId } = useDock.getState();
+  expect(tabs).toHaveLength(1);
+  expect(tabs[0]).toMatchObject({
+    kind: "edit",
+    clusterId: "c1",
+    title: "Pod team-a/web",
+    resource: PODS.resource,
+    namespace: "team-a",
+    name: "web",
+  });
+  expect(activeId).toBe(tabs[0].id);
+  resetDockForTest();
 });

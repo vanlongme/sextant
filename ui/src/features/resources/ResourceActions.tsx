@@ -6,6 +6,7 @@ import { failureMessage } from "../../ipc/client";
 import type { ResourceRef } from "../../ipc/generated/ResourceRef";
 import type { KubeObject } from "../../kinds/objects";
 import type { ActionContext, KindAction } from "../../kinds/registry";
+import { editTab, useDock } from "../../stores/dock";
 
 type ConfirmOptions = Parameters<ActionContext["confirm"]>[0];
 
@@ -37,7 +38,17 @@ export function useActionContext(
             },
           });
         }),
-      openEditor: () => toast.info("The YAML editor is not available yet."),
+      openEditor: (object) =>
+        useDock
+          .getState()
+          .open(
+            editTab(
+              clusterId,
+              resource,
+              object.metadata.namespace,
+              object.metadata.name,
+            ),
+          ),
     }),
     [clusterId, resource, navigate],
   );
@@ -69,7 +80,7 @@ async function runAction(
   }
 }
 
-/** The menu at the end of a row: the kind's own actions, then Delete. */
+/** The menu at the end of a row: the kind's own actions, then Edit YAML and Delete. */
 export function RowActions(props: {
   object: KubeObject;
   actions: KindAction[];
@@ -103,6 +114,11 @@ export function RowActions(props: {
             danger: a.danger,
             onSelect: () => void runAction(a, context, object),
           })),
+        {
+          id: "edit",
+          label: "Edit YAML",
+          onSelect: () => context.openEditor(object),
+        },
         {
           id: "delete",
           label: "Delete",

@@ -24,7 +24,7 @@ fmt:
 	cargo fmt --all
 	pnpm -C ui exec biome check --write .
 e2e-build:
-	pnpm tauri build --debug --no-bundle --features e2e --config crates/sextant-app/tauri.conf.json --config crates/sextant-app/tauri.e2e.conf.json
+	VITE_E2E=1 pnpm tauri build --debug --no-bundle --features e2e --config crates/sextant-app/tauri.conf.json --config crates/sextant-app/tauri.e2e.conf.json
 e2e: e2e-build
 	scripts/kind-up.sh
 	cargo build -p sextant-fakekube

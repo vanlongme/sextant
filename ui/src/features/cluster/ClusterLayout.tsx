@@ -6,6 +6,7 @@ import {
   useApiResources,
   useResourceList,
 } from "../../stores/resources";
+import { Dock } from "../dock/Dock";
 import styles from "./ClusterLayout.module.css";
 import { Sidebar } from "./Sidebar";
 
@@ -85,7 +86,10 @@ export function ClusterLayout(props: {
         onRetry={() => void refresh()}
       />
       <div className={styles.main}>
-        <Outlet context={context} />
+        <div className={styles.content}>
+          <Outlet context={context} />
+        </div>
+        <Dock clusterId={clusterId} />
       </div>
     </div>
   );
