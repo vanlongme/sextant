@@ -49,5 +49,8 @@ jobs:
       - name: Verify the macOS signature
         if: runner.os == 'macOS'
         run: |
-          codesign --verify --deep --strict --verbose=2 target/*/release/bundle/macos/Sextant.app
-          codesign --display --verbose=2 target/*/release/bundle/macos/Sextant.app
+          mount_point="$(mktemp -d)"
+          hdiutil attach target/*/release/bundle/dmg/*.dmg -nobrowse -readonly -mountpoint "$mount_point"
+          codesign --verify --deep --strict --verbose=2 "$mount_point/Sextant.app"
+          codesign --display --verbose=2 "$mount_point/Sextant.app"
+          hdiutil detach "$mount_point"
