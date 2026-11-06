@@ -16,9 +16,9 @@ jobs:
         include:
           - os: ubuntu-24.04
             args: ""
-          - os: macos-14
+          - os: macos-15
             args: "--target aarch64-apple-darwin"
-          - os: macos-14
+          - os: macos-15
             args: "--target x86_64-apple-darwin"
           - os: windows-2022
             args: ""
@@ -27,7 +27,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.os == 'macos-14' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.os == 'macos-15' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
