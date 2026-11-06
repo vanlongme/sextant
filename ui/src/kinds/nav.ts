@@ -11,6 +11,8 @@ export interface NavResource {
 export interface NavSection {
   id: string;
   label: string;
+  /** A first "Overview" entry that links to `/cluster/:id/<overview>`. */
+  overview?: string;
   items: NavResource[];
 }
 
@@ -20,7 +22,8 @@ function r(label: string, group: string, plural: string): NavResource {
 
 /**
  * The sidebar sections of F4, in order. Overview is the cluster home route and not
- * a resource. The Workloads overview page, Helm (Charts, Releases) and Port
+ * a resource. The Workloads Overview entry is in the sidebar, but its page is
+ * a placeholder until the overview screens (F17). Helm (Charts, Releases) and Port
  * Forwarding arrive in later phases (Helm in Phase 4, Port Forwarding in Phase 5),
  * so they are left out for now. Custom Resources starts with Definitions; the
  * entries for each CRD are added by `customResourceGroups`.
@@ -30,6 +33,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     id: "workloads",
     label: "Workloads",
+    overview: "workloads",
     items: [
       r("Pods", "", "pods"),
       r("Deployments", "apps", "deployments"),

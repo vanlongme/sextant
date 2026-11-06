@@ -69,15 +69,33 @@ function Section(props: {
 }
 
 function SectionItems(props: { clusterId: string; section: NavSection }) {
-  return props.section.items.map((i) => (
+  const { clusterId, section } = props;
+  const overview = section.overview;
+  const items = section.items.map((i) => (
     <Item
       key={`${i.group}/${i.plural}`}
-      clusterId={props.clusterId}
+      clusterId={clusterId}
       group={i.group}
       plural={i.plural}
       label={i.label}
     />
   ));
+  if (overview === undefined) return items;
+  return [
+    <li key="overview">
+      <NavLink
+        end
+        to={`/cluster/${encodeURIComponent(clusterId)}/${overview}`}
+        className={({ isActive }) =>
+          isActive ? `${styles.link} ${styles.active}` : styles.link
+        }
+        data-testid={`nav-overview-${overview}`}
+      >
+        Overview
+      </NavLink>
+    </li>,
+    ...items,
+  ];
 }
 
 /** The cluster navigation: Overview, then the resource sections the user can see. */

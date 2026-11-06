@@ -1,7 +1,10 @@
 import { createHashRouter, Navigate } from "react-router";
 import { CatalogScreen } from "../features/catalog/CatalogScreen";
 import { ClusterOverview } from "../features/cluster/ClusterHome";
-import { ResourceRoute } from "../features/cluster/ClusterLayout";
+import {
+  ResourceRoute,
+  WorkloadsOverview,
+} from "../features/cluster/ClusterLayout";
 import { ClusterScreen } from "../features/cluster/ClusterScreen";
 import { PreferencesScreen } from "../features/prefs/PreferencesScreen";
 import { Shell } from "./Shell";
@@ -20,6 +23,7 @@ export function createAppRouter() {
           element: <ClusterScreen />,
           children: [
             { index: true, element: <ClusterOverview /> },
+            { path: "workloads", element: <WorkloadsOverview /> },
             { path: "r/:group/:plural", element: <ResourceRoute /> },
           ],
         },

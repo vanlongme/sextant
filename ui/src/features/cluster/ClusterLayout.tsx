@@ -94,6 +94,11 @@ export function ClusterLayout(props: {
 }
 
 /** The route for one resource list. Task 8 replaces this with the table. */
+/** Placeholder for the Workloads overview screen (F17). */
+export function WorkloadsOverview() {
+  return <h2 data-testid="workloads-overview-title">Workloads</h2>;
+}
+
 export function ResourceRoute() {
   const { group = "", plural = "" } = useParams();
   const { resources, resourcesLoading } = useClusterContext();

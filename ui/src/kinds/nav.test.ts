@@ -168,3 +168,15 @@ test("the core group is spelled core in URLs", () => {
   expect(groupFromSegment("apps")).toBe("apps");
   expect(resourcePath("c1", "", "pods")).toBe("/cluster/c1/r/core/pods");
 });
+
+test("Workloads has an Overview entry and no other section does", () => {
+  expect(
+    NAV_SECTIONS.filter((s) => s.overview !== undefined).map((s) => [
+      s.id,
+      s.overview,
+    ]),
+  ).toEqual([["workloads", "workloads"]]);
+  expect(
+    visibleSections(allServed()).find((s) => s.id === "workloads")?.overview,
+  ).toBe("workloads");
+});

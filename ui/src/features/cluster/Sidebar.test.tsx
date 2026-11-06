@@ -61,6 +61,7 @@ test("shows the visible sections and items", async () => {
   await show();
   expect(screen.getByTestId("cluster-sidebar")).toBeTruthy();
   expect(screen.getByTestId("nav-section-workloads")).toBeTruthy();
+  expect(screen.getByTestId("nav-overview-workloads")).toBeTruthy();
   expect(screen.getByTestId("nav-item-core-pods")).toBeTruthy();
   expect(screen.getByTestId("nav-item-apps-deployments")).toBeTruthy();
   expect(screen.queryByTestId("nav-section-network")).toBeNull();
