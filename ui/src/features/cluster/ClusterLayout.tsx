@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Outlet, useOutletContext } from "react-router";
 import type { ApiResourceInfo } from "../../ipc/generated/ApiResourceInfo";
+import type { KubeObject } from "../../kinds/objects";
 import {
   findResource,
   useApiResources,
@@ -24,9 +25,27 @@ export function useClusterContext(): ClusterOutletContext {
   return useOutletContext<ClusterOutletContext>();
 }
 
+/** How long to wait before each new look at a discovery that lags the definitions. */
+const REDISCOVER_DELAYS_MS = [500, 1000, 2000, 4000, 8000];
+
+/** The `group/plural` a custom resource definition serves. */
+function definedResource(crd: KubeObject): string {
+  return `${crd.spec?.group}/${crd.spec?.names?.plural}`;
+}
+
+function isEstablished(crd: KubeObject): boolean {
+  const conditions: { type?: string; status?: string }[] =
+    crd.status?.conditions ?? [];
+  return conditions.some(
+    (c) => c.type === "Established" && c.status === "True",
+  );
+}
+
 /**
  * Re-discovers the served resources when the set of custom resource definitions
- * changes, so new custom resources appear in the sidebar.
+ * changes, so new custom resources appear in the sidebar. The API server serves a
+ * new definition, and stops serving a deleted one, some time after the watch says
+ * so. So discovery is asked again, a limited number of times, until it agrees.
  */
 function useRefreshOnCrdChange(
   clusterId: string,
@@ -57,6 +76,40 @@ function useRefreshOnCrdChange(
     last.current = names;
     if (previous !== null && previous !== names) void refresh();
   }, [names, refresh]);
+
+  const seen = useRef(new Set<string>());
+  const crds = ref === null || list.loading ? null : list.items;
+  let behind = "";
+  if (crds !== null) {
+    const served = new Set(
+      resources.map((r) => `${r.resource.group}/${r.resource.plural}`),
+    );
+    const defined = new Set(crds.map(definedResource));
+    for (const resource of defined) seen.current.add(resource);
+    const missing = crds
+      .filter(isEstablished)
+      .map(definedResource)
+      .filter((resource) => !served.has(resource));
+    const stale = [...seen.current].filter(
+      (resource) => !defined.has(resource) && served.has(resource),
+    );
+    behind = [...missing, ...stale].sort().join("\n");
+  }
+
+  const attempts = useRef({ behind: "", count: 0 });
+  // biome-ignore lint/correctness/useExhaustiveDependencies: each answer, in `resources`, arms the next look.
+  useEffect(() => {
+    if (attempts.current.behind !== behind) {
+      attempts.current = { behind, count: 0 };
+    }
+    const delay = REDISCOVER_DELAYS_MS[attempts.current.count];
+    if (behind === "" || delay === undefined) return;
+    const timer = setTimeout(() => {
+      attempts.current.count += 1;
+      void refresh();
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [behind, resources, refresh]);
 }
 
 /** The sidebar and the routed content of a connected cluster. */

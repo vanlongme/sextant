@@ -72,6 +72,14 @@ async function startSmokeFixture() {
   };
 }
 
+/** The kind cluster and nothing else. */
+async function startKindFixture() {
+  return {
+    kubeconfigs: { kind: fs.readFileSync(KIND_KUBECONFIG, "utf8") },
+    async stop() {},
+  };
+}
+
 const FIXTURES: Record<string, SpecFixture> = {
   catalog: { kubeconfigs: { config: kubeconfig(["alpha", "beta"]) } },
   "hotbar-restart-1-save": {
@@ -81,6 +89,9 @@ const FIXTURES: Record<string, SpecFixture> = {
   "hotbar-restart-2-verify": { kubeconfigs: {}, envGroup: "hotbar-restart" },
   connection: { kubeconfigs: {}, start: startConnectionFixture },
   smoke: { kubeconfigs: {}, start: startSmokeFixture },
+  resources: { kubeconfigs: {}, start: startKindFixture },
+  editor: { kubeconfigs: {}, start: startKindFixture },
+  crd: { kubeconfigs: {}, start: startKindFixture },
 };
 
 /** Specs with no entry start with an empty `~/.kube`. */

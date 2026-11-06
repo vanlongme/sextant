@@ -25,6 +25,16 @@ export function ClusterHome(props: {
           {info.namespacesRestricted ? "Restricted" : info.namespaces.length}
         </dd>
       </dl>
+      {info.namespacesRestricted ? (
+        <p
+          className={styles.warn}
+          role="status"
+          data-testid="cluster-namespaces-warning"
+        >
+          You may not list this cluster's namespaces, so only these are used:{" "}
+          {info.namespaces.join(", ")}.
+        </p>
+      ) : null}
       <div className={styles.actions}>
         <Button
           disabled={props.busy}

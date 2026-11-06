@@ -59,6 +59,7 @@ export function Toaster() {
           key={t.id}
           className={`${styles.toast} ${styles[t.kind]}`}
           duration={durationOf(t)}
+          data-testid="toast"
           onOpenChange={(o) => {
             if (!o) dismiss(t.id);
           }}

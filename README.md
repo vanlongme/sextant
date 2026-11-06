@@ -6,8 +6,9 @@ clusters at once and lets you switch between them from a hotbar.
 
 ## Status
 
-Phase 1 (foundation). Sextant is not yet feature complete: today it provides
-the app shell, the cluster catalog, the hotbar and cluster connections. See
+Phase 2 (resource engine). Sextant is not yet feature complete: today it provides
+the app shell, the cluster catalog, the hotbar, cluster connections, live resource
+tables with a detail drawer, and a YAML editor for editing and creating objects. See
 [docs/roadmap.md](docs/roadmap.md) for what comes next.
 
 ## Prerequisites

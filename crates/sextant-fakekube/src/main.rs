@@ -24,6 +24,8 @@ async fn main() -> anyhow::Result<()> {
     };
     let fake = FakeKube::start(FakeKubeConfig::default()).await?;
     fake.write_kubeconfig(&kubeconfig, &context)?;
+    // The smoke suite opens Pods and looks for this one.
+    fake.add_pod("default", "fake-pod");
     println!("listening on {}", fake.url());
     tokio::signal::ctrl_c().await?;
     fake.shutdown().await;

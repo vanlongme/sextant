@@ -141,3 +141,21 @@ test("live state events update the screen", async () => {
   await setState({ status: "connected", info: INFO });
   expect(await screen.findByTestId("cluster-info-version")).toBeTruthy();
 });
+
+test("a connected cluster says when it cannot list namespaces", async () => {
+  await show({
+    status: "connected",
+    info: { ...INFO, namespaces: ["team-a"], namespacesRestricted: true },
+  });
+  const warning = await screen.findByTestId("cluster-namespaces-warning");
+  expect(warning.textContent).toContain("team-a");
+  expect(screen.getByTestId("cluster-info-namespaces").textContent).toBe(
+    "Restricted",
+  );
+});
+
+test("no namespace warning when namespaces can be listed", async () => {
+  await show({ status: "connected", info: INFO });
+  await screen.findByTestId("cluster-info-namespaces");
+  expect(screen.queryByTestId("cluster-namespaces-warning")).toBeNull();
+});
