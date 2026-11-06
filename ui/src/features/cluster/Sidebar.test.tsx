@@ -140,6 +140,15 @@ test("shows the error with a retry", async () => {
   expect(onRetry).toHaveBeenCalled();
 });
 
+test("a failed refresh keeps the navigation and shows the error with a retry", async () => {
+  const onRetry = vi.fn();
+  await show({ error: "boom", onRetry });
+  expect(screen.getByTestId("nav-section-workloads")).toBeTruthy();
+  expect(screen.getByRole("alert").textContent).toContain("boom");
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  expect(onRetry).toHaveBeenCalled();
+});
+
 test("Custom Resources lists Definitions before the CRD groups", async () => {
   await show();
   const section = screen.getByTestId("nav-section-custom");

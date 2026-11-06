@@ -118,16 +118,6 @@ export function Sidebar(props: {
         <Spinner label="Loading resources" />
       </div>
     );
-  } else if (props.error !== null) {
-    body = (
-      <div className={styles.state}>
-        <ErrorNotice
-          title="Could not load resources"
-          message={props.error}
-          onRetry={props.onRetry}
-        />
-      </div>
-    );
   } else {
     body = (
       <>
@@ -181,6 +171,16 @@ export function Sidebar(props: {
       >
         Overview
       </NavLink>
+      {/* A failed refresh keeps the last resources, so the error sits above them. */}
+      {props.error !== null ? (
+        <div className={styles.state}>
+          <ErrorNotice
+            title="Could not load resources"
+            message={props.error}
+            onRetry={props.onRetry}
+          />
+        </div>
+      ) : null}
       {body}
     </nav>
   );
