@@ -6,10 +6,12 @@ import type { ClusterEntry } from "./generated/ClusterEntry";
 import type { ClusterSettings } from "./generated/ClusterSettings";
 import type { ConnectionLogEntry } from "./generated/ConnectionLogEntry";
 import type { ConnectionState } from "./generated/ConnectionState";
+import type { DataChange } from "./generated/DataChange";
 import type { InvolvedRef } from "./generated/InvolvedRef";
 import type { Prefs } from "./generated/Prefs";
 import type { Propagation } from "./generated/Propagation";
 import type { ResourceRef } from "./generated/ResourceRef";
+import type { SecretValue } from "./generated/SecretValue";
 import type { SyncWarning } from "./generated/SyncWarning";
 import type { JsonValue } from "./generated/serde_json/JsonValue";
 import type { WatchEvent } from "./generated/WatchEvent";
@@ -106,6 +108,76 @@ export const api = {
     }),
   resourceEvents: (clusterId: string, involved: InvolvedRef) =>
     call<JsonValue[]>("resource_events", { clusterId, involved }),
+  workloadScale: (
+    clusterId: string,
+    resource: ResourceRef,
+    namespace: string,
+    name: string,
+    replicas: number,
+  ) =>
+    call<void>("workload_scale", {
+      clusterId,
+      resource,
+      namespace,
+      name,
+      replicas,
+    }),
+  workloadRestart: (
+    clusterId: string,
+    resource: ResourceRef,
+    namespace: string,
+    name: string,
+  ) => call<void>("workload_restart", { clusterId, resource, namespace, name }),
+  podEvict: (clusterId: string, namespace: string, name: string) =>
+    call<void>("pod_evict", { clusterId, namespace, name }),
+  cronjobTrigger: (clusterId: string, namespace: string, name: string) =>
+    call<string>("cronjob_trigger", { clusterId, namespace, name }),
+  cronjobSetSuspend: (
+    clusterId: string,
+    namespace: string,
+    name: string,
+    suspend: boolean,
+  ) =>
+    call<void>("cronjob_set_suspend", { clusterId, namespace, name, suspend }),
+  nodeSetUnschedulable: (
+    clusterId: string,
+    name: string,
+    unschedulable: boolean,
+  ) => call<void>("node_set_unschedulable", { clusterId, name, unschedulable }),
+  secretReveal: (
+    clusterId: string,
+    namespace: string,
+    name: string,
+    key: string,
+  ) => call<SecretValue>("secret_reveal", { clusterId, namespace, name, key }),
+  secretUpdate: (
+    clusterId: string,
+    namespace: string,
+    name: string,
+    resourceVersion: string,
+    changes: DataChange[],
+  ) =>
+    call<void>("secret_update", {
+      clusterId,
+      namespace,
+      name,
+      resourceVersion,
+      changes,
+    }),
+  configmapUpdate: (
+    clusterId: string,
+    namespace: string,
+    name: string,
+    resourceVersion: string,
+    changes: DataChange[],
+  ) =>
+    call<void>("configmap_update", {
+      clusterId,
+      namespace,
+      name,
+      resourceVersion,
+      changes,
+    }),
   uiStateGet: (key: string) => call<JsonValue | null>("ui_state_get", { key }),
   uiStateSet: (key: string, value: JsonValue) =>
     call<void>("ui_state_set", { key, value }),

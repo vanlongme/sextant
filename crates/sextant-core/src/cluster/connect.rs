@@ -303,6 +303,9 @@ async fn build_client(
             .map_err(|e| Failure::config(format!("the proxy URL setting is invalid: {e}")))?;
         config.proxy_url = Some(parsed);
     }
+    // A 429 is an answer to show, such as an eviction a disruption budget refuses.
+    // The default retry would hold the user's action for minutes.
+    config.default_retry = false;
     // Blocks for as long as an exec plugin runs, and cannot be stopped once started.
     let build = tokio::task::spawn_blocking(move || Client::try_from(config));
     timeout_at(deadline, build)

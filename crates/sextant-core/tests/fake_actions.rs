@@ -1,0 +1,425 @@
+//! Workload, pod, node, Secret and ConfigMap actions against the fake API server.
+//! Every kubeconfig lives in a temp `<home>/.kube`; `KUBECONFIG` is never read.
+
+use std::time::{Duration, Instant};
+
+use serde_json::{json, Value};
+use sextant_core::app_core::AppCore;
+use sextant_core::cluster::ConnectionState;
+use sextant_core::error::ErrorCode;
+use sextant_core::kubeconfig::ClusterId;
+use sextant_core::paths::AppPaths;
+use sextant_core::resources::{DataChange, ResourceRef};
+use sextant_fakekube::{DenyRule, FakeKube, FakeKubeConfig, FakeResource};
+use tempfile::TempDir;
+
+const CONTEXT: &str = "fake";
+
+async fn connected(cfg: FakeKubeConfig) -> (AppCore, FakeKube, ClusterId, TempDir) {
+    let fake = FakeKube::start(cfg).await.unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let kube_dir = root.path().join("home").join(".kube");
+    std::fs::create_dir_all(&kube_dir).unwrap();
+    fake.write_kubeconfig(&kube_dir.join("config"), CONTEXT)
+        .unwrap();
+    let paths = AppPaths::under(&root.path().join("app"), &root.path().join("home"));
+    let core = AppCore::start_with_kubeconfig_env(paths, None)
+        .await
+        .unwrap();
+    let started = Instant::now();
+    let id = loop {
+        let found = core
+            .catalog_list()
+            .into_iter()
+            .find(|entry| entry.context_name == CONTEXT);
+        if let Some(entry) = found {
+            break entry.id;
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(3),
+            "timed out waiting for the catalog entry"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+    let state = core.cluster_connect(&id).await.unwrap();
+    assert!(
+        matches!(state, ConnectionState::Connected { .. }),
+        "{state:?}"
+    );
+    (core, fake, id, root)
+}
+
+fn core_resource(kind: &str, plural: &str) -> ResourceRef {
+    ResourceRef {
+        group: String::new(),
+        version: "v1".into(),
+        plural: plural.into(),
+        kind: kind.into(),
+        namespaced: true,
+    }
+}
+
+fn configmaps() -> ResourceRef {
+    core_resource("ConfigMap", "configmaps")
+}
+
+fn secrets() -> ResourceRef {
+    core_resource("Secret", "secrets")
+}
+
+fn deployments() -> ResourceRef {
+    ResourceRef {
+        group: "apps".into(),
+        version: "v1".into(),
+        plural: "deployments".into(),
+        kind: "Deployment".into(),
+        namespaced: true,
+    }
+}
+
+fn deployment_json(namespace: &str, name: &str, replicas: i32) -> Value {
+    json!({ "metadata": { "name": name, "namespace": namespace }, "spec": { "replicas": replicas } })
+}
+
+fn upsert_secret(fake: &FakeKube, data: Value) {
+    fake.upsert(
+        "secrets",
+        json!({ "metadata": { "name": "s", "namespace": "default" }, "data": data }),
+    );
+}
+
+async fn version_of(core: &AppCore, id: &ClusterId, r: &ResourceRef, name: &str) -> String {
+    let object = core
+        .resource_get(id, r, Some("default"), name)
+        .await
+        .unwrap();
+    object["metadata"]["resourceVersion"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+#[tokio::test]
+async fn scale_patches_the_scale_subresource() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    fake.upsert("deployments", deployment_json("default", "web", 1));
+    core.workload_scale(&id, &deployments(), "default", "web", 3)
+        .await
+        .unwrap();
+    let writes = fake.writes(
+        "PATCH",
+        "/apis/apps/v1/namespaces/default/deployments/web/scale",
+    );
+    assert_eq!(writes[0].body, json!({ "spec": { "replicas": 3 } }));
+}
+
+#[tokio::test]
+async fn scale_rejects_a_negative_count() {
+    let (core, _fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    let error = core
+        .workload_scale(&id, &deployments(), "default", "web", -1)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::InvalidInput);
+}
+
+#[tokio::test]
+async fn restart_sets_the_restarted_at_annotation() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    fake.upsert("deployments", deployment_json("default", "web", 1));
+    core.workload_restart(&id, &deployments(), "default", "web")
+        .await
+        .unwrap();
+    let writes = fake.writes("PATCH", "/apis/apps/v1/namespaces/default/deployments/web");
+    let stamp = writes[0]
+        .body
+        .pointer("/spec/template/metadata/annotations/kubectl.kubernetes.io~1restartedAt");
+    assert!(stamp
+        .and_then(Value::as_str)
+        .is_some_and(|s| s.ends_with('Z')));
+}
+
+#[tokio::test]
+async fn restart_refuses_a_kind_with_no_rollout() {
+    let (core, _fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    let replica_sets = ResourceRef {
+        plural: "replicasets".into(),
+        kind: "ReplicaSet".into(),
+        ..deployments()
+    };
+    let error = core
+        .workload_restart(&id, &replica_sets, "default", "web")
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::InvalidInput);
+}
+
+#[tokio::test]
+async fn evict_posts_a_policy_v1_eviction() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    fake.add_pod("default", "p");
+    core.pod_evict(&id, "default", "p").await.unwrap();
+    let writes = fake.writes("POST", "/api/v1/namespaces/default/pods/p/eviction");
+    assert_eq!(
+        writes[0].body,
+        json!({ "apiVersion": "policy/v1", "kind": "Eviction", "metadata": { "name": "p", "namespace": "default" } }),
+    );
+}
+
+#[tokio::test]
+async fn evict_shows_the_disruption_budget_message() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    fake.add_pod("default", "p");
+    fake.fail_evictions_with("default", "p", 429, None);
+    let error = core.pod_evict(&id, "default", "p").await.unwrap_err();
+    assert!(
+        error.message.contains("disruption budget"),
+        "{}",
+        error.message
+    );
+}
+
+#[tokio::test]
+async fn a_forbidden_action_shows_the_api_message() {
+    let config = FakeKubeConfig {
+        deny: vec![DenyRule {
+            verb: "patch".into(),
+            plural: "deployments/scale".into(),
+            namespace: None,
+        }],
+        ..Default::default()
+    };
+    let (core, fake, id, _root) = connected(config).await;
+    fake.upsert("deployments", deployment_json("default", "web", 1));
+    let error = core
+        .workload_scale(&id, &deployments(), "default", "web", 2)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::Forbidden);
+    assert!(error.message.contains("forbidden"), "{}", error.message);
+}
+
+#[tokio::test]
+async fn trigger_builds_a_job_from_the_template() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    fake.serve_resource(FakeResource::new(
+        "batch", "v1", "CronJob", "cronjobs", true,
+    ));
+    fake.serve_resource(FakeResource::new("batch", "v1", "Job", "jobs", true));
+    fake.upsert(
+        "cronjobs",
+        json!({
+            "metadata": { "name": "tick", "namespace": "default", "uid": "u1" },
+            "spec": { "schedule": "* * * * *", "jobTemplate": {
+                "metadata": { "labels": { "team": "a" }, "annotations": { "note": "n" } },
+                "spec": { "template": { "spec": { "containers": [] } } },
+            } },
+        }),
+    );
+    let name = core.cronjob_trigger(&id, "default", "tick").await.unwrap();
+    assert!(
+        name.starts_with("tick-manual-") && name.len() <= 63,
+        "{name}"
+    );
+    let writes = fake.writes("POST", "/apis/batch/v1/namespaces/default/jobs");
+    let body = &writes[0].body;
+    assert_eq!(body["metadata"]["name"], name.as_str());
+    assert_eq!(body["metadata"]["labels"]["team"], "a");
+    assert_eq!(body["metadata"]["annotations"]["note"], "n");
+    assert_eq!(
+        body["metadata"]["annotations"]["cronjob.kubernetes.io/instantiate"],
+        "manual"
+    );
+    assert_eq!(
+        body["metadata"]["ownerReferences"][0],
+        json!({
+            "apiVersion": "batch/v1", "kind": "CronJob", "name": "tick", "uid": "u1",
+            "controller": true, "blockOwnerDeletion": true,
+        })
+    );
+    assert_eq!(body["spec"]["template"]["spec"]["containers"], json!([]));
+}
+
+#[tokio::test]
+async fn suspend_and_resume_patch_the_spec() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    fake.serve_resource(FakeResource::new(
+        "batch", "v1", "CronJob", "cronjobs", true,
+    ));
+    fake.upsert(
+        "cronjobs",
+        json!({ "metadata": { "name": "tick", "namespace": "default" }, "spec": {} }),
+    );
+    core.cronjob_set_suspend(&id, "default", "tick", true)
+        .await
+        .unwrap();
+    core.cronjob_set_suspend(&id, "default", "tick", false)
+        .await
+        .unwrap();
+    let writes = fake.writes("PATCH", "/apis/batch/v1/namespaces/default/cronjobs/tick");
+    assert_eq!(writes[0].body, json!({ "spec": { "suspend": true } }));
+    assert_eq!(writes[1].body, json!({ "spec": { "suspend": false } }));
+}
+
+#[tokio::test]
+async fn cordon_and_uncordon_patch_unschedulable() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    fake.upsert("nodes", json!({ "metadata": { "name": "n1" } }));
+    core.node_set_unschedulable(&id, "n1", true).await.unwrap();
+    core.node_set_unschedulable(&id, "n1", false).await.unwrap();
+    let writes = fake.writes("PATCH", "/api/v1/nodes/n1");
+    assert_eq!(writes[0].body, json!({ "spec": { "unschedulable": true } }));
+    assert_eq!(writes[1].body, json!({ "spec": { "unschedulable": null } }));
+}
+
+#[tokio::test]
+async fn secret_reveal_returns_one_key_only() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    upsert_secret(&fake, json!({ "a": "dmFsdWU=", "b": "b3RoZXI=" }));
+    let value = core.secret_reveal(&id, "default", "s", "a").await.unwrap();
+    assert_eq!(value.value, "value");
+    assert!(!value.binary);
+    assert!(!serde_json::to_string(&value).unwrap().contains("other"));
+}
+
+#[tokio::test]
+async fn secret_reveal_marks_a_binary_value() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    upsert_secret(&fake, json!({ "a": "/w==" })); // 0xFF is not UTF-8
+    let value = core.secret_reveal(&id, "default", "s", "a").await.unwrap();
+    assert!(value.binary);
+    assert_eq!(value.value, "/w==");
+}
+
+#[tokio::test]
+async fn secret_reveal_of_a_missing_key_is_not_found() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    upsert_secret(&fake, json!({ "other": "dmFsdWU=" }));
+    let error = core
+        .secret_reveal(&id, "default", "s", "a")
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::NotFound);
+    assert!(
+        !error.message.contains("dmFsdWU=") && !error.message.contains("other"),
+        "{}",
+        error.message
+    );
+}
+
+#[tokio::test]
+async fn secret_update_encodes_values_and_removes_keys() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    upsert_secret(&fake, json!({ "a": "eA==", "gone": "eQ==" }));
+    let version = version_of(&core, &id, &secrets(), "s").await;
+    core.secret_update(
+        &id,
+        "default",
+        "s",
+        &version,
+        vec![
+            DataChange {
+                key: "a".into(),
+                value: Some("value".into()),
+            },
+            DataChange {
+                key: "gone".into(),
+                value: None,
+            },
+        ],
+    )
+    .await
+    .unwrap();
+    let writes = fake.writes("PATCH", "/api/v1/namespaces/default/secrets/s");
+    assert_eq!(
+        writes[0].body,
+        json!({
+            "metadata": { "resourceVersion": version },
+            "data": { "a": "dmFsdWU=", "gone": null },
+        })
+    );
+}
+
+#[tokio::test]
+async fn secret_update_conflict_changes_nothing() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    upsert_secret(&fake, json!({ "a": "eA==" }));
+    let stale = version_of(&core, &id, &secrets(), "s").await;
+    upsert_secret(&fake, json!({ "a": "eA==" })); // Someone else saved in between.
+    let error = core
+        .secret_update(
+            &id,
+            "default",
+            "s",
+            &stale,
+            vec![DataChange {
+                key: "a".into(),
+                value: Some("S3CRET".into()),
+            }],
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::Conflict);
+    assert!(!error.message.contains("S3CRET"));
+    assert_eq!(
+        core.secret_reveal(&id, "default", "s", "a")
+            .await
+            .unwrap()
+            .value,
+        "x"
+    );
+}
+
+#[tokio::test]
+async fn update_without_a_resource_version_is_refused() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    let change = || {
+        vec![DataChange {
+            key: "a".into(),
+            value: Some("x".into()),
+        }]
+    };
+    let secret = core
+        .secret_update(&id, "default", "s", "", change())
+        .await
+        .unwrap_err();
+    let map = core
+        .configmap_update(&id, "default", "c", "", change())
+        .await
+        .unwrap_err();
+    assert_eq!(secret.code, ErrorCode::InvalidInput);
+    assert_eq!(map.code, ErrorCode::InvalidInput);
+    assert!(fake
+        .writes("PATCH", "/api/v1/namespaces/default/secrets/s")
+        .is_empty());
+    assert!(fake
+        .writes("PATCH", "/api/v1/namespaces/default/configmaps/c")
+        .is_empty());
+}
+
+#[tokio::test]
+async fn configmap_update_patches_only_data() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    fake.upsert(
+        "configmaps",
+        json!({ "metadata": { "name": "c", "namespace": "default" }, "data": { "a": "1" } }),
+    );
+    let version = version_of(&core, &id, &configmaps(), "c").await;
+    core.configmap_update(
+        &id,
+        "default",
+        "c",
+        &version,
+        vec![DataChange {
+            key: "a".into(),
+            value: Some("2".into()),
+        }],
+    )
+    .await
+    .unwrap();
+    let writes = fake.writes("PATCH", "/api/v1/namespaces/default/configmaps/c");
+    assert_eq!(
+        writes[0].body,
+        json!({ "metadata": { "resourceVersion": version }, "data": { "a": "2" } })
+    );
+}

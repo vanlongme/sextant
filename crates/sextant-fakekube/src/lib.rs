@@ -84,6 +84,10 @@ struct State_ {
     watch_counts: BTreeMap<String, usize>,
     fail: BTreeMap<String, u16>,
     fail_discovery: Option<u16>,
+    /// (namespace, name) of a pod -> scripted eviction failure and the answers left.
+    eviction_failures: BTreeMap<(String, String), (u16, Option<usize>)>,
+    /// Whether an accepted eviction leaves the pod in place.
+    hold_evicted_pods: bool,
     /// (method, path) -> the writes received, oldest first.
     writes: BTreeMap<(String, String), Vec<WriteRequest>>,
 }
@@ -238,6 +242,8 @@ impl FakeKube {
                 watch_counts: BTreeMap::new(),
                 fail: BTreeMap::new(),
                 fail_discovery: None,
+                eviction_failures: BTreeMap::new(),
+                hold_evicted_pods: false,
                 writes: BTreeMap::new(),
             }),
             events,
@@ -331,6 +337,26 @@ impl FakeKube {
     /// answer with this HTTP status until cleared with `None`.
     pub fn fail_discovery_with(&self, http_status: Option<u16>) {
         self.inner.lock().fail_discovery = http_status;
+    }
+
+    /// Makes evicting the pod fail with `http_status`, `times` times or, for
+    /// `None`, always.
+    pub fn fail_evictions_with(
+        &self,
+        namespace: &str,
+        name: &str,
+        http_status: u16,
+        times: Option<usize>,
+    ) {
+        self.inner.lock().eviction_failures.insert(
+            (namespace.to_string(), name.to_string()),
+            (http_status, times),
+        );
+    }
+
+    /// With `true`, an accepted eviction answers 201 but leaves the pod in place.
+    pub fn hold_evicted_pods(&self, hold: bool) {
+        self.inner.lock().hold_evicted_pods = hold;
     }
 
     /// Adds a pod and emits a watch ADDED event.
@@ -624,7 +650,7 @@ fn request_verb(method: &Method, has_name: bool, watch: bool) -> Option<&'static
         ("GET", false) if watch => "watch",
         ("GET", false) => "list",
         ("GET", true) => "get",
-        ("POST", false) => "create",
+        ("POST", false) | ("POST", true) => "create",
         ("PUT", true) => "update",
         ("PATCH", true) => "patch",
         ("DELETE", true) => "delete",
@@ -669,7 +695,13 @@ async fn generic(
         return not_found();
     }
     let watch = q.get("watch").is_some_and(|v| v == "true" || v == "1");
-    let Some(verb) = request_verb(&method, t.name.is_some(), watch) else {
+    let named_post = method == Method::POST && t.name.is_some() && t.subresource.is_none();
+    let verb = if named_post {
+        None
+    } else {
+        request_verb(&method, t.name.is_some(), watch)
+    };
+    let Some(verb) = verb else {
         return status(
             405,
             "MethodNotAllowed",
@@ -686,8 +718,15 @@ async fn generic(
             && t.name.is_none()
             && verb == "list"
             && s.cfg.forbid_cluster_wide_pods);
-    if legacy_forbid || s.denied(verb, &res.plural, ns) {
+    let denied_plural = match &t.subresource {
+        Some(sub) => format!("{}/{sub}", res.plural),
+        None => res.plural.clone(),
+    };
+    if legacy_forbid || s.denied(verb, &denied_plural, ns) {
         return forbidden(&res, verb, ns);
+    }
+    if let Some(sub) = t.subresource.as_deref() {
+        return subresource(&s, &res, &t, sub, &method, &headers, &body);
     }
     if t.name.is_none() && method == Method::GET {
         let failure = s.lock().fail.get(&res.plural).copied();
@@ -703,6 +742,98 @@ async fn generic(
         "update" => update(&s, &res, &t, &body),
         "patch" => patch(&s, &res, &t, &headers, &body),
         _ => delete_one(&s, &res, &t),
+    }
+}
+
+/// The subresources the fake knows: `scale` and `eviction`.
+fn subresource(
+    s: &Shared,
+    res: &FakeResource,
+    t: &Target,
+    sub: &str,
+    method: &Method,
+    headers: &HeaderMap,
+    body: &[u8],
+) -> Response {
+    let key = key_of(res, t);
+    match (sub, method.as_str(), res.plural.as_str()) {
+        ("scale", "PATCH", "deployments" | "statefulsets" | "replicasets") => {
+            let is_merge = headers
+                .get(header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .is_some_and(|c| c.contains("merge-patch"));
+            if !is_merge {
+                return status(415, "UnsupportedMediaType", "unsupported patch type");
+            }
+            let doc = match parse_object(body) {
+                Ok(v) => v,
+                Err(r) => return *r,
+            };
+            let mut st = s.lock();
+            let Some(mut current) = st
+                .objects
+                .get(&res.plural)
+                .and_then(|m| m.get(&key))
+                .cloned()
+            else {
+                return not_found_object(res, &key.1);
+            };
+            let replicas = doc
+                .pointer("/spec/replicas")
+                .cloned()
+                .unwrap_or(Value::Null);
+            if !current["spec"].is_object() {
+                current["spec"] = json!({});
+            }
+            current["spec"]["replicas"] = replicas.clone();
+            s.commit(&mut st, res, current);
+            json_ok(json!({
+                "kind": "Scale",
+                "apiVersion": "autoscaling/v1",
+                "metadata": { "name": key.1, "namespace": key.0 },
+                "spec": { "replicas": replicas },
+            }))
+        }
+        ("eviction", "POST", "pods") => {
+            let mut st = s.lock();
+            let failure = st
+                .eviction_failures
+                .get_mut(&key)
+                .and_then(|(code, left)| match left {
+                    Some(0) => None,
+                    Some(n) => {
+                        *n -= 1;
+                        Some(*code)
+                    }
+                    None => Some(*code),
+                });
+            if let Some(code) = failure {
+                return if code == 429 {
+                    status(
+                        429,
+                        "TooManyRequests",
+                        "Cannot evict pod as it would violate the pod's disruption budget.",
+                    )
+                } else {
+                    status_for_code(code)
+                };
+            }
+            let exists = st
+                .objects
+                .get(&res.plural)
+                .is_some_and(|m| m.contains_key(&key));
+            if !exists {
+                return not_found_object(res, &key.1);
+            }
+            if !st.hold_evicted_pods {
+                s.remove(&mut st, &res.plural, &key.0, &key.1);
+            }
+            json_code(
+                StatusCode::CREATED,
+                json!({ "kind": "Status", "apiVersion": "v1", "status": "Success", "metadata": {} }),
+            )
+        }
+        _ => not_found(),
     }
 }
 

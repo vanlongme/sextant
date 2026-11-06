@@ -117,10 +117,11 @@ pub struct Target {
     pub namespace: Option<String>,
     pub plural: String,
     pub name: Option<String>,
+    pub subresource: Option<String>,
 }
 
-/// Parses `/api/v1/...` and `/apis/{group}/{version}/...` resource paths.
-/// Subresources are not supported and give `None`.
+/// Parses `/api/v1/...` and `/apis/{group}/{version}/...` resource paths, with an
+/// optional subresource after the object name. Anything longer gives `None`.
 pub fn parse_path(path: &str) -> Option<Target> {
     let segs: Vec<&str> = path.trim_matches('/').split('/').collect();
     let (group, version, rest): (String, String, &[&str]) = match segs.as_slice() {
@@ -128,11 +129,13 @@ pub fn parse_path(path: &str) -> Option<Target> {
         ["apis", g, v, rest @ ..] => ((*g).to_string(), (*v).to_string(), rest),
         _ => return None,
     };
-    let (namespace, plural, name) = match rest {
-        ["namespaces", ns, plural] => (Some(*ns), *plural, None),
-        ["namespaces", ns, plural, name] => (Some(*ns), *plural, Some(*name)),
-        [plural] => (None, *plural, None),
-        [plural, name] => (None, *plural, Some(*name)),
+    let (namespace, plural, name, subresource) = match rest {
+        ["namespaces", ns, plural] => (Some(*ns), *plural, None, None),
+        ["namespaces", ns, plural, name] => (Some(*ns), *plural, Some(*name), None),
+        [plural] => (None, *plural, None, None),
+        [plural, name] => (None, *plural, Some(*name), None),
+        ["namespaces", ns, plural, name, sub] => (Some(*ns), *plural, Some(*name), Some(*sub)),
+        [plural, name, sub] => (None, *plural, Some(*name), Some(*sub)),
         _ => return None,
     };
     if plural.is_empty() {
@@ -144,6 +147,7 @@ pub fn parse_path(path: &str) -> Option<Target> {
         namespace: namespace.map(str::to_string),
         plural: plural.to_string(),
         name: name.map(str::to_string),
+        subresource: subresource.map(str::to_string),
     })
 }
 
@@ -277,7 +281,10 @@ mod tests {
             (t.group.as_str(), t.plural.as_str()),
             ("example.com", "widgets")
         );
-        assert!(parse_path("/api/v1/namespaces/a/pods/p/log").is_none());
+        let t = parse_path("/api/v1/namespaces/a/pods/p/log").unwrap();
+        assert_eq!(t.subresource.as_deref(), Some("log"));
+        assert!(t.name.as_deref() == Some("p") && t.plural == "pods");
+        assert!(parse_path("/api/v1/namespaces/a/pods/p/log/x").is_none());
     }
 
     #[test]

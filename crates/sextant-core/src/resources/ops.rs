@@ -69,7 +69,11 @@ pub(super) async fn send(
 
 /// The requests for one object. A namespaced resource needs a namespace, and a
 /// cluster-scoped one ignores it.
-fn object_request(r: &ResourceRef, namespace: Option<&str>, name: &str) -> CoreResult<Request> {
+pub(super) fn object_request(
+    r: &ResourceRef,
+    namespace: Option<&str>,
+    name: &str,
+) -> CoreResult<Request> {
     if !is_path_segment(name) {
         return Err(invalid("the object name is not valid"));
     }
@@ -178,7 +182,7 @@ fn last_seen(event: &Value) -> Option<Timestamp> {
 }
 
 impl AppCore {
-    async fn fetch_object(
+    pub(super) async fn fetch_object(
         &self,
         id: &ClusterId,
         r: &ResourceRef,

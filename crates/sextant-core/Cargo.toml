@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+base64 = "0.22"
 dashmap.workspace = true
 futures.workspace = true
 directories = "6"
@@ -26,5 +27,4 @@ tracing.workspace = true
 ts-rs.workspace = true
 
 [dev-dependencies]
-base64 = "0.22"
 sextant-fakekube = { path = "../sextant-fakekube" }

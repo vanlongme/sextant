@@ -1,6 +1,7 @@
 //! The resource engine: what a cluster serves, and what the user may do with it.
 
 mod access;
+mod actions;
 mod apply;
 mod discovery;
 mod hub;
@@ -8,6 +9,7 @@ mod ops;
 mod sanitize;
 mod types;
 
+pub use actions::{DataChange, SecretValue};
 pub use apply::ApplyResult;
 pub(crate) use hub::WatchHub;
 pub use ops::{InvolvedRef, Propagation};
