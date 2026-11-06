@@ -431,10 +431,10 @@ describe("resource browsing on a real cluster", () => {
     });
     expect(Date.now() - started).toBeLessThan(LIVE_UPDATE_LIMIT_MS);
 
-    // The age is drawn from the clock, so it moves without any event.
+    // The age is drawn from a shared 30 s clock, so it moves without any event.
     const before = await byTestId(row).getText();
     await browser.waitUntil(async () => (await byTestId(row).getText()) !== before, {
-      timeout: 30000,
+      timeout: 45000,
       timeoutMsg: "the age column never changed",
     });
   });
@@ -455,7 +455,7 @@ describe("resource browsing on a real cluster", () => {
     await shown("detail-drawer");
     await browser.waitUntil(
       async () =>
-        (await shown("detail-annotations")).getText().then((t) => t.includes("note=first")),
+        (await shown("detail-annotations")).getText().then((t) => /note\s*first/.test(t)),
       { timeoutMsg: "the annotation never showed" },
     );
 
@@ -471,7 +471,7 @@ describe("resource browsing on a real cluster", () => {
     ]);
     await browser.waitUntil(
       async () =>
-        (await byTestId("detail-annotations").getText()).includes("note=second"),
+        /note\s*second/.test(await byTestId("detail-annotations").getText()),
       { timeout: 15000, timeoutMsg: "the open drawer never updated" },
     );
 
