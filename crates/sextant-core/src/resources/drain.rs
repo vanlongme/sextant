@@ -1,11 +1,12 @@
 //! Draining a node, as `kubectl drain` does: cordon it, plan which pods go, evict
 //! them through the Eviction API, and wait until they are gone.
 
-use std::collections::BTreeSet;
+use std::collections::{btree_map, BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use dashmap::mapref::entry::Entry;
 use futures::stream::{self, StreamExt};
+use k8s_openapi::api::apps::v1::DaemonSet;
 use k8s_openapi::api::core::v1::Pod;
 use kube::api::{GetParams, ListParams};
 use kube::core::{Request, Resource};
@@ -27,6 +28,7 @@ const DELETE_POLL: Duration = Duration::from_secs(1);
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(300);
 const MAX_EVICTING: usize = 10;
 const MIRROR_ANNOTATION: &str = "kubernetes.io/config.mirror";
+const DAEMON_SET_API_VERSION: &str = "apps/v1";
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -131,21 +133,56 @@ struct DrainPlan {
     blockers: Vec<String>,
 }
 
+/// The DaemonSet a pod names as its controller.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct DaemonSetKey {
+    namespace: String,
+    name: String,
+    uid: String,
+}
+
+/// What reading a pod's DaemonSet found. `kubectl drain` skips the pod when it exists,
+/// treats the pod as an orphan when it does not, and refuses when it cannot tell.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum DaemonSetCheck {
+    Live,
+    Orphaned,
+    Unreadable(String),
+}
+
+type DaemonSetChecks = BTreeMap<DaemonSetKey, DaemonSetCheck>;
+
 fn text<'a>(pod: &'a Value, pointer: &str) -> Option<&'a str> {
     pod.pointer(pointer).and_then(Value::as_str)
 }
 
-fn controller_kind(pod: &Value) -> Option<&str> {
+fn controller_ref(pod: &Value) -> Option<&Value> {
     pod.pointer("/metadata/ownerReferences")?
         .as_array()?
         .iter()
         .find(|owner| owner.get("controller").and_then(Value::as_bool) == Some(true))
-        .map(|owner| {
-            owner
-                .get("kind")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-        })
+}
+
+fn is_finished(pod: &Value) -> bool {
+    matches!(text(pod, "/status/phase"), Some("Succeeded" | "Failed"))
+}
+
+/// The DaemonSet to check for this pod. As in `kubectl drain`, a finished pod needs no
+/// check, and a kind of the same name from another API group is an ordinary controller.
+fn daemon_set_key(pod: &Value) -> Option<DaemonSetKey> {
+    let owner = controller_ref(pod)?;
+    let is_daemon_set = text(owner, "/kind") == Some("DaemonSet")
+        && text(owner, "/apiVersion") == Some(DAEMON_SET_API_VERSION);
+    if !is_daemon_set || is_finished(pod) {
+        return None;
+    }
+    Some(DaemonSetKey {
+        namespace: text(pod, "/metadata/namespace")
+            .unwrap_or_default()
+            .to_owned(),
+        name: text(owner, "/name").unwrap_or_default().to_owned(),
+        uid: text(owner, "/uid").unwrap_or_default().to_owned(),
+    })
 }
 
 fn is_mirror(pod: &Value) -> bool {
@@ -165,7 +202,7 @@ fn uses_empty_dir(pod: &Value) -> bool {
 }
 
 /// Decides what happens to each pod, by the rules of `kubectl drain`.
-fn plan_drain(pods: &[Value], options: &DrainOptions) -> DrainPlan {
+fn plan_drain(pods: &[Value], options: &DrainOptions, daemon_sets: &DaemonSetChecks) -> DrainPlan {
     let mut plan = DrainPlan::default();
     for pod in pods {
         let reference = PodRef {
@@ -174,10 +211,11 @@ fn plan_drain(pods: &[Value], options: &DrainOptions) -> DrainPlan {
                 .to_owned(),
             name: text(pod, "/metadata/name").unwrap_or_default().to_owned(),
         };
-        let controller = controller_kind(pod);
+        let daemon_set = daemon_set_key(pod);
+        let check = daemon_set.as_ref().and_then(|key| daemon_sets.get(key));
         let skip_reason = if is_mirror(pod) {
             Some(SkipReason::Mirror)
-        } else if controller == Some("DaemonSet") {
+        } else if check == Some(&DaemonSetCheck::Live) {
             Some(SkipReason::DaemonSet)
         } else {
             None
@@ -189,7 +227,7 @@ fn plan_drain(pods: &[Value], options: &DrainOptions) -> DrainPlan {
             });
             continue;
         }
-        if !matches!(text(pod, "/status/phase"), Some("Succeeded" | "Failed")) {
+        if !is_finished(pod) {
             let path = reference.path();
             let mut blocked = false;
             if uses_empty_dir(pod) && !options.delete_empty_dir {
@@ -198,11 +236,27 @@ fn plan_drain(pods: &[Value], options: &DrainOptions) -> DrainPlan {
                 ));
                 blocked = true;
             }
-            if controller.is_none() && !options.force {
+            if controller_ref(pod).is_none() && !options.force {
                 plan.blockers.push(format!(
                     "{path} has no controller, so nothing would recreate it"
                 ));
                 blocked = true;
+            }
+            let owner = daemon_set.as_ref().map_or("", |key| key.name.as_str());
+            match check {
+                Some(DaemonSetCheck::Orphaned) if !options.force => {
+                    plan.blockers.push(format!(
+                        "{path} names DaemonSet {owner} as its controller, but that DaemonSet does not exist"
+                    ));
+                    blocked = true;
+                }
+                Some(DaemonSetCheck::Unreadable(message)) => {
+                    plan.blockers.push(format!(
+                        "could not read DaemonSet {owner} of {path}: {message}"
+                    ));
+                    blocked = true;
+                }
+                _ => {}
             }
             if blocked {
                 continue;
@@ -243,6 +297,49 @@ async fn read_pod(client: &Client, pod: &PodRef) -> Result<Value, kube::Error> {
     client.request(request).await
 }
 
+/// Whether the planned pod has left, even if another now holds its name.
+async fn pod_is_gone(client: &Client, planned: &PlannedEviction) -> bool {
+    match read_pod(client, &planned.pod).await {
+        Err(kube::Error::Api(status)) => status.code == 404,
+        Ok(current) => pod_uid(&current) != planned.uid.as_deref(),
+        Err(_) => false,
+    }
+}
+
+/// Stricter than `kubectl drain`, which goes by name alone: a controller reference is
+/// only as good as the pod's author, and a false one would keep the pod on the node.
+async fn check_daemon_set(client: &Client, key: &DaemonSetKey) -> DaemonSetCheck {
+    if !is_path_segment(&key.name) {
+        return DaemonSetCheck::Orphaned;
+    }
+    let request = Request::new(DaemonSet::url_path(&(), Some(&key.namespace)))
+        .get(&key.name, &GetParams::default())
+        .map_err(kube::Error::BuildRequest);
+    let found = match request {
+        Ok(request) => client.request::<Value>(request).await,
+        Err(error) => Err(error),
+    };
+    match found {
+        Ok(daemon_set) if text(&daemon_set, "/metadata/uid") == Some(key.uid.as_str()) => {
+            DaemonSetCheck::Live
+        }
+        Ok(_) => DaemonSetCheck::Orphaned,
+        Err(kube::Error::Api(status)) if status.code == 404 => DaemonSetCheck::Orphaned,
+        Err(error) => DaemonSetCheck::Unreadable(IpcError::from(error).message),
+    }
+}
+
+async fn check_daemon_sets(client: &Client, pods: &[Value]) -> DaemonSetChecks {
+    let mut checks = DaemonSetChecks::new();
+    for key in pods.iter().filter_map(daemon_set_key) {
+        if let btree_map::Entry::Vacant(slot) = checks.entry(key) {
+            let check = check_daemon_set(client, slot.key()).await;
+            slot.insert(check);
+        }
+    }
+    checks
+}
+
 /// Why a pod's eviction ended.
 enum PodEnd {
     Gone,
@@ -264,7 +361,9 @@ async fn evict_until_gone(
         message,
     };
     loop {
-        let request = match eviction_request(&pod.namespace, &pod.name) {
+        // The uid keeps a retry from evicting a pod recreated under the same name, which
+        // `kubectl drain` would, since a cordoned node sends that pod to another node.
+        let request = match eviction_request(&pod.namespace, &pod.name, planned.uid.as_deref()) {
             Ok(request) => request,
             Err(error) => {
                 report(failed(error.message)).await;
@@ -286,6 +385,14 @@ async fn evict_until_gone(
                 .await;
                 tokio::time::sleep(EVICT_RETRY).await;
             }
+            Err(kube::Error::Api(status)) if status.code == 409 => {
+                if pod_is_gone(client, planned).await {
+                    report(DrainEvent::PodGone { pod: pod.clone() }).await;
+                    return PodEnd::Gone;
+                }
+                report(failed(IpcError::from(kube::Error::Api(status)).message)).await;
+                return PodEnd::Failed;
+            }
             Err(error) => {
                 report(failed(IpcError::from(error).message)).await;
                 return PodEnd::Failed;
@@ -294,12 +401,7 @@ async fn evict_until_gone(
     }
     loop {
         tokio::time::sleep(DELETE_POLL).await;
-        let gone = match read_pod(client, pod).await {
-            Err(kube::Error::Api(status)) => status.code == 404,
-            Ok(current) => pod_uid(&current) != planned.uid.as_deref(),
-            Err(_) => false,
-        };
-        if gone {
+        if pod_is_gone(client, planned).await {
             report(DrainEvent::PodGone { pod: pod.clone() }).await;
             return PodEnd::Gone;
         }
@@ -369,7 +471,8 @@ async fn drain_steps(
             return finished(DrainOutcome::Failed, Some(IpcError::from(error).message));
         }
     };
-    let plan = plan_drain(&pods, options);
+    let daemon_sets = check_daemon_sets(client, &pods).await;
+    let plan = plan_drain(&pods, options, &daemon_sets);
     if !plan.blockers.is_empty() {
         // The cordon stays, as `kubectl drain` leaves it.
         return finished(DrainOutcome::Refused, Some(plan.blockers.join("; ")));
@@ -494,35 +597,118 @@ mod tests {
         timeout_seconds: None,
     };
 
+    const FORCE: DrainOptions = DrainOptions {
+        force: true,
+        ..NO_OPTIONS
+    };
+
+    /// A plan with no DaemonSet to consider.
+    fn plan_of(pods: &[Value], options: &DrainOptions) -> DrainPlan {
+        plan_drain(pods, options, &DaemonSetChecks::new())
+    }
+
+    fn daemon_pod(extra: Value) -> Value {
+        let owner = json!({ "metadata": { "ownerReferences": [{ "apiVersion": "apps/v1", "kind": "DaemonSet", "name": "o", "uid": "u", "controller": true }] } });
+        let mut pod = pod("d", owner);
+        json_patch_merge(&mut pod, &extra);
+        pod
+    }
+
+    fn checks(check: DaemonSetCheck) -> DaemonSetChecks {
+        let key = daemon_set_key(&daemon_pod(json!({}))).unwrap();
+        DaemonSetChecks::from([(key, check)])
+    }
+
     #[test]
     fn managed_pods_are_evicted() {
-        let plan = plan_drain(&[pod("a", owned("ReplicaSet"))], &NO_OPTIONS);
+        let plan = plan_of(&[pod("a", owned("ReplicaSet"))], &NO_OPTIONS);
         assert_eq!(names(&plan.evict), ["a"]);
         assert!(plan.blockers.is_empty());
     }
 
     #[test]
-    fn daemonset_and_mirror_pods_are_skipped() {
+    fn live_daemonset_and_mirror_pods_are_skipped() {
         let mirror =
             json!({ "metadata": { "annotations": { "kubernetes.io/config.mirror": "x" } } });
         let plan = plan_drain(
-            &[pod("d", owned("DaemonSet")), pod("m", mirror)],
+            &[daemon_pod(json!({})), pod("m", mirror)],
             &NO_OPTIONS,
+            &checks(DaemonSetCheck::Live),
         );
         assert!(plan.evict.is_empty() && plan.blockers.is_empty());
         assert_eq!(plan.skipped.len(), 2);
     }
 
     #[test]
+    fn an_orphaned_daemon_set_pod_blocks_without_force() {
+        let plan = plan_drain(
+            &[daemon_pod(json!({}))],
+            &NO_OPTIONS,
+            &checks(DaemonSetCheck::Orphaned),
+        );
+        assert!(plan.evict.is_empty() && plan.skipped.is_empty());
+        assert!(plan.blockers[0].contains("n/d"), "{:?}", plan.blockers);
+    }
+
+    #[test]
+    fn force_evicts_an_orphaned_daemon_set_pod() {
+        let plan = plan_drain(
+            &[daemon_pod(json!({}))],
+            &FORCE,
+            &checks(DaemonSetCheck::Orphaned),
+        );
+        assert_eq!(names(&plan.evict), ["d"]);
+        assert!(plan.blockers.is_empty());
+    }
+
+    #[test]
+    fn an_orphaned_daemon_set_pod_still_needs_the_empty_dir_option() {
+        let extra = json!({ "spec": { "volumes": [{ "name": "v", "emptyDir": {} }] } });
+        let plan = plan_drain(
+            &[daemon_pod(extra)],
+            &FORCE,
+            &checks(DaemonSetCheck::Orphaned),
+        );
+        assert!(plan.evict.is_empty());
+        assert_eq!(plan.blockers.len(), 1);
+    }
+
+    #[test]
+    fn an_unreadable_daemon_set_blocks_even_with_force() {
+        let plan = plan_drain(
+            &[daemon_pod(json!({}))],
+            &FORCE,
+            &checks(DaemonSetCheck::Unreadable("denied".to_owned())),
+        );
+        assert!(plan.evict.is_empty() && plan.skipped.is_empty());
+        assert!(plan.blockers[0].contains("denied"), "{:?}", plan.blockers);
+    }
+
+    #[test]
+    fn a_finished_daemon_set_pod_needs_no_check_and_is_evicted() {
+        let finished = daemon_pod(json!({ "status": { "phase": "Succeeded" } }));
+        assert_eq!(daemon_set_key(&finished), None);
+        assert_eq!(names(&plan_of(&[finished], &NO_OPTIONS).evict), ["d"]);
+    }
+
+    #[test]
+    fn a_daemon_set_kind_from_another_group_is_an_ordinary_controller() {
+        let extra = json!({ "metadata": { "ownerReferences": [{ "apiVersion": "apps.example.com/v1", "kind": "DaemonSet", "name": "o", "uid": "u", "controller": true }] } });
+        let other = pod("c", extra);
+        assert_eq!(daemon_set_key(&other), None);
+        assert_eq!(names(&plan_of(&[other], &NO_OPTIONS).evict), ["c"]);
+    }
+
+    #[test]
     fn an_unmanaged_pod_blocks_without_force() {
-        let plan = plan_drain(&[pod("u", json!({}))], &NO_OPTIONS);
+        let plan = plan_of(&[pod("u", json!({}))], &NO_OPTIONS);
         assert!(plan.blockers[0].contains("n/u"));
         let forced = DrainOptions {
             force: true,
             ..NO_OPTIONS
         };
         assert_eq!(
-            names(&plan_drain(&[pod("u", json!({}))], &forced).evict),
+            names(&plan_of(&[pod("u", json!({}))], &forced).evict),
             ["u"]
         );
     }
@@ -533,19 +719,19 @@ mod tests {
         let mut with_owner = pod("e", extra);
         json_patch_merge(&mut with_owner, &owned("ReplicaSet"));
         assert!(
-            plan_drain(std::slice::from_ref(&with_owner), &NO_OPTIONS).blockers[0].contains("n/e")
+            plan_of(std::slice::from_ref(&with_owner), &NO_OPTIONS).blockers[0].contains("n/e")
         );
         let allowed = DrainOptions {
             delete_empty_dir: true,
             ..NO_OPTIONS
         };
-        assert_eq!(names(&plan_drain(&[with_owner], &allowed).evict), ["e"]);
+        assert_eq!(names(&plan_of(&[with_owner], &allowed).evict), ["e"]);
     }
 
     #[test]
     fn a_finished_pod_never_blocks() {
         for phase in ["Succeeded", "Failed"] {
-            let plan = plan_drain(
+            let plan = plan_of(
                 &[pod("f", json!({ "status": { "phase": phase } }))],
                 &NO_OPTIONS,
             );
@@ -557,14 +743,14 @@ mod tests {
     #[test]
     fn a_pod_with_both_problems_gets_both_blockers() {
         let extra = json!({ "spec": { "volumes": [{ "name": "v", "emptyDir": {} }] } });
-        let plan = plan_drain(&[pod("b", extra)], &NO_OPTIONS);
+        let plan = plan_of(&[pod("b", extra)], &NO_OPTIONS);
         assert_eq!(plan.blockers.len(), 2);
     }
 
     #[test]
     fn an_owner_that_is_not_the_controller_does_not_manage_the_pod() {
         let extra = json!({ "metadata": { "ownerReferences": [{ "kind": "ReplicaSet", "name": "o", "uid": "u" }] } });
-        let plan = plan_drain(&[pod("o", extra)], &NO_OPTIONS);
+        let plan = plan_of(&[pod("o", extra)], &NO_OPTIONS);
         assert_eq!(plan.blockers.len(), 1);
     }
 
@@ -573,13 +759,13 @@ mod tests {
         let extra = json!({ "metadata": { "uid": "listed" } });
         let mut with_owner = pod("a", extra);
         json_patch_merge(&mut with_owner, &owned("ReplicaSet"));
-        let plan = plan_drain(&[with_owner], &NO_OPTIONS);
+        let plan = plan_of(&[with_owner], &NO_OPTIONS);
         assert_eq!(plan.evict[0].uid.as_deref(), Some("listed"));
     }
 
     #[test]
     fn a_pod_with_almost_nothing_in_it_does_not_panic() {
-        let plan = plan_drain(&[json!({})], &NO_OPTIONS);
+        let plan = plan_of(&[json!({})], &NO_OPTIONS);
         assert_eq!(plan.blockers.len(), 1);
     }
 

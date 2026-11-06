@@ -818,12 +818,17 @@ fn subresource(
                     status_for_code(code)
                 };
             }
-            let exists = st
-                .objects
-                .get(&res.plural)
-                .is_some_and(|m| m.contains_key(&key));
-            if !exists {
+            let Some(current) = st.objects.get(&res.plural).and_then(|m| m.get(&key)) else {
                 return not_found_object(res, &key.1);
+            };
+            let wanted_uid = serde_json::from_slice::<Value>(body).ok().and_then(|doc| {
+                doc.pointer("/deleteOptions/preconditions/uid")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            });
+            let found_uid = current.pointer("/metadata/uid").and_then(Value::as_str);
+            if wanted_uid.is_some_and(|uid| found_uid != Some(uid.as_str())) {
+                return status(409, "Conflict", "Precondition failed: the UID differs");
             }
             if !st.hold_evicted_pods {
                 s.remove(&mut st, &res.plural, &key.0, &key.1);

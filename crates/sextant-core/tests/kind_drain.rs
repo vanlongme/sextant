@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use futures::FutureExt;
 use k8s_openapi::api::apps::v1::Deployment;
 use k8s_openapi::api::core::v1::{Namespace, Pod};
+use k8s_openapi::api::policy::v1::PodDisruptionBudget;
 use kube::api::{DeleteParams, ListParams, ObjectMeta, PostParams};
 use kube::{Api, Client};
 use serde_json::json;
@@ -23,6 +24,7 @@ const CONTEXT: &str = "kind-sextant-e2e";
 const NAMESPACE: &str = "sextant-test-drain";
 const WORKER: &str = "sextant-e2e-worker";
 const APP: &str = "drained";
+const HELD: &str = "held";
 const WAIT: Duration = Duration::from_secs(120);
 const DRAIN_SECONDS: u32 = 150;
 
@@ -185,6 +187,98 @@ async fn drain_empties_the_worker_and_skips_daemonsets() {
             "{skipped:?}"
         );
         assert!(pods_on_worker(&client).await.is_empty());
+    };
+    let outcome = AssertUnwindSafe(body).catch_unwind().await;
+    let uncordoned = core.node_set_unschedulable(&id, WORKER, false).await;
+    let namespaces: Api<Namespace> = Api::all(client.clone());
+    let _ = namespaces.delete(NAMESPACE, &DeleteParams::default()).await;
+    if let Err(panic) = outcome {
+        std::panic::resume_unwind(panic);
+    }
+    uncordoned.unwrap();
+}
+
+fn held_pod() -> Pod {
+    serde_json::from_value(json!({
+        "metadata": { "name": HELD, "labels": { "app": APP } },
+        "spec": {
+            "nodeName": WORKER,
+            "terminationGracePeriodSeconds": 1,
+            "containers": [{ "name": "main", "image": "registry.k8s.io/pause:3.10" }],
+        },
+    }))
+    .unwrap()
+}
+
+/// A disruption budget refuses the first eviction. While the drain waits to retry,
+/// the pod is replaced under the same name, and the budget goes so the retry reaches
+/// the API server's precondition check.
+#[tokio::test]
+#[ignore = "needs make test-kind"]
+async fn a_retry_does_not_evict_a_pod_recreated_under_the_same_name() {
+    let (core, id, _root) = connected().await;
+    let client = core.cluster_client(&id).unwrap();
+    create_namespace(&client).await;
+    let body = async {
+        let pods: Api<Pod> = Api::namespaced(client.clone(), NAMESPACE);
+        let budgets: Api<PodDisruptionBudget> = Api::namespaced(client.clone(), NAMESPACE);
+        pods.create(&PostParams::default(), &held_pod())
+            .await
+            .unwrap();
+        wait_for_running_pod(&client).await;
+        let budget = serde_json::from_value(json!({
+            "metadata": { "name": APP },
+            "spec": { "minAvailable": 1, "selector": { "matchLabels": { "app": APP } } },
+        }))
+        .unwrap();
+        budgets
+            .create(&PostParams::default(), &budget)
+            .await
+            .unwrap();
+
+        let (tx, mut rx) = mpsc::channel(64);
+        let options = DrainOptions {
+            force: true,
+            delete_empty_dir: true,
+            timeout_seconds: Some(DRAIN_SECONDS),
+        };
+        core.node_drain_start(&id, WORKER, options, tx)
+            .await
+            .unwrap();
+        let mut replacement_uid = None;
+        let finished = tokio::time::timeout(WAIT + WAIT, async {
+            while let Some(event) = rx.recv().await {
+                match event {
+                    DrainEvent::PodBlocked { pod, .. }
+                        if pod.name == HELD && replacement_uid.is_none() =>
+                    {
+                        pods.delete(HELD, &DeleteParams::default().grace_period(0))
+                            .await
+                            .unwrap();
+                        let created = pods
+                            .create(&PostParams::default(), &held_pod())
+                            .await
+                            .unwrap();
+                        replacement_uid = created.metadata.uid;
+                        budgets.delete(APP, &DeleteParams::default()).await.unwrap();
+                    }
+                    DrainEvent::Finished { outcome, message } => return (outcome, message),
+                    _ => {}
+                }
+            }
+            panic!("the drain ended without Finished");
+        })
+        .await
+        .expect("the drain never finished");
+
+        assert_eq!(finished.0, DrainOutcome::Completed, "{:?}", finished.1);
+        assert!(replacement_uid.is_some(), "the budget never blocked");
+        let current = pods.get(HELD).await.unwrap();
+        assert_eq!(current.metadata.uid, replacement_uid);
+        assert!(
+            current.metadata.deletion_timestamp.is_none(),
+            "the replacement was evicted"
+        );
     };
     let outcome = AssertUnwindSafe(body).catch_unwind().await;
     let uncordoned = core.node_set_unschedulable(&id, WORKER, false).await;

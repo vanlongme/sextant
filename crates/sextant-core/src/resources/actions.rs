@@ -132,14 +132,22 @@ fn core_resource(
 }
 
 /// The POST that asks the API server to evict a pod.
-pub(super) fn eviction_request(namespace: &str, name: &str) -> CoreResult<http::Request<Vec<u8>>> {
+/// With `uid`, the API server answers 409 instead of evicting a pod that has another one.
+pub(super) fn eviction_request(
+    namespace: &str,
+    name: &str,
+    uid: Option<&str>,
+) -> CoreResult<http::Request<Vec<u8>>> {
     let pods = core_resource("Pod", "pods", "", "v1", true);
     let request = object_request(&pods, Some(namespace), name)?;
-    let body = json!({
+    let mut body = json!({
         "apiVersion": "policy/v1",
         "kind": "Eviction",
         "metadata": { "name": name, "namespace": namespace },
     });
+    if let Some(uid) = uid {
+        body["deleteOptions"] = json!({ "preconditions": { "uid": uid } });
+    }
     let body = serde_json::to_vec(&body).map_err(|e| invalid(e.to_string()))?;
     let request = request
         .create_subresource("eviction", name, &PostParams::default(), body)
@@ -210,7 +218,7 @@ impl AppCore {
     }
 
     pub async fn pod_evict(&self, id: &ClusterId, namespace: &str, name: &str) -> CoreResult<()> {
-        let request = eviction_request(namespace, name)?;
+        let request = eviction_request(namespace, name, None)?;
         let client = self.cluster_client(id)?;
         send(&client, Ok(request)).await?;
         Ok(())

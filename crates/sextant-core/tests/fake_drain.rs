@@ -3,6 +3,8 @@
 
 use std::time::{Duration, Instant};
 
+use k8s_openapi::api::core::v1::Pod;
+use kube::Api;
 use serde_json::{json, Value};
 use sextant_core::app_core::AppCore;
 use sextant_core::cluster::ConnectionState;
@@ -10,7 +12,7 @@ use sextant_core::error::ErrorCode;
 use sextant_core::kubeconfig::ClusterId;
 use sextant_core::paths::AppPaths;
 use sextant_core::resources::{DrainEvent, DrainOptions, DrainOutcome};
-use sextant_fakekube::{DenyRule, FakeKube, FakeKubeConfig};
+use sextant_fakekube::{DenyRule, FakeKube, FakeKubeConfig, FakeResource};
 use tempfile::TempDir;
 use tokio::sync::mpsc;
 
@@ -22,6 +24,12 @@ const NO_OPTIONS: DrainOptions = DrainOptions {
 };
 const LIMIT: Duration = Duration::from_secs(30);
 const EVICTION_OF_A: &str = "/api/v1/namespaces/default/pods/a/eviction";
+const DAEMON_SET_UID: &str = "daemon-set-uid";
+const FORCE: DrainOptions = DrainOptions {
+    force: true,
+    delete_empty_dir: false,
+    timeout_seconds: None,
+};
 
 async fn connected(cfg: FakeKubeConfig) -> (AppCore, FakeKube, ClusterId, TempDir) {
     let fake = FakeKube::start(cfg).await.unwrap();
@@ -77,6 +85,29 @@ fn pod_on(fake: &FakeKube, node: &str, name: &str, owners: Value) {
 fn managed_pod(fake: &FakeKube, name: &str) {
     let owner = json!([{ "apiVersion": "apps/v1", "kind": "ReplicaSet", "name": "rs", "uid": "u", "controller": true }]);
     pod_on(fake, "n1", name, owner);
+}
+
+fn serve_daemon_sets(fake: &FakeKube) {
+    fake.serve_resource(FakeResource::new(
+        "apps",
+        "v1",
+        "DaemonSet",
+        "daemonsets",
+        true,
+    ));
+}
+
+fn daemon_set(fake: &FakeKube) {
+    fake.upsert(
+        "daemonsets",
+        json!({ "metadata": { "name": "ds", "namespace": "default", "uid": DAEMON_SET_UID } }),
+    );
+}
+
+/// Pod `a`, naming DaemonSet `ds` with this uid as its controller.
+fn daemon_pod(fake: &FakeKube, owner_uid: &str) {
+    let owner = json!([{ "apiVersion": "apps/v1", "kind": "DaemonSet", "name": "ds", "uid": owner_uid, "controller": true }]);
+    pod_on(fake, "n1", "a", owner);
 }
 
 /// Receives until an event matches, and returns everything received so far.
@@ -227,6 +258,107 @@ async fn a_pod_recreated_with_a_new_uid_counts_as_gone() {
     fake.delete_pod("default", "a");
     managed_pod(&fake, "a");
     assert_eq!(*outcome(&collect(&mut rx).await).0, DrainOutcome::Completed);
+}
+
+#[tokio::test]
+async fn a_retry_does_not_evict_a_pod_recreated_under_the_same_name() {
+    let (core, fake, id, _root) = fake_with_node(FakeKubeConfig::default()).await;
+    managed_pod(&fake, "a");
+    fake.fail_evictions_with("default", "a", 429, Some(1));
+    let (_drain, mut rx) = start(&core, &id, NO_OPTIONS).await;
+    wait_until(&mut rx, |e| matches!(e, DrainEvent::PodBlocked { .. })).await;
+    fake.delete_pod("default", "a");
+    managed_pod(&fake, "a");
+    assert_eq!(*outcome(&collect(&mut rx).await).0, DrainOutcome::Completed);
+    let pods: Api<Pod> = Api::namespaced(core.cluster_client(&id).unwrap(), "default");
+    assert!(
+        pods.get_opt("a").await.unwrap().is_some(),
+        "the replacement was evicted"
+    );
+}
+
+#[tokio::test]
+async fn a_conflict_on_a_pod_that_is_still_there_fails_it() {
+    let (core, fake, id, _root) = fake_with_node(FakeKubeConfig::default()).await;
+    managed_pod(&fake, "a");
+    fake.fail_evictions_with("default", "a", 409, None);
+    let (_drain, mut rx) = start(&core, &id, NO_OPTIONS).await;
+    let events = collect(&mut rx).await;
+    let (result, message) = outcome(&events);
+    assert_eq!(*result, DrainOutcome::Failed);
+    assert!(message.contains("default/a"), "{message}");
+}
+
+#[tokio::test]
+async fn a_pod_of_a_live_daemon_set_is_skipped() {
+    let (core, fake, id, _root) = fake_with_node(FakeKubeConfig::default()).await;
+    serve_daemon_sets(&fake);
+    daemon_set(&fake);
+    daemon_pod(&fake, DAEMON_SET_UID);
+    let (_drain, mut rx) = start(&core, &id, FORCE).await;
+    let events = collect(&mut rx).await;
+    assert_eq!(*outcome(&events).0, DrainOutcome::Completed);
+    assert!(events
+        .iter()
+        .any(|e| matches!(e, DrainEvent::Planned { skipped, .. } if skipped.len() == 1)));
+    assert!(fake.writes("POST", EVICTION_OF_A).is_empty());
+}
+
+#[tokio::test]
+async fn a_pod_whose_daemon_set_is_missing_refuses_the_drain() {
+    let (core, fake, id, _root) = fake_with_node(FakeKubeConfig::default()).await;
+    serve_daemon_sets(&fake);
+    daemon_pod(&fake, DAEMON_SET_UID);
+    let (_drain, mut rx) = start(&core, &id, NO_OPTIONS).await;
+    let events = collect(&mut rx).await;
+    let (result, message) = outcome(&events);
+    assert_eq!(*result, DrainOutcome::Refused);
+    assert!(message.contains("default/a"), "{message}");
+    assert!(fake.writes("POST", EVICTION_OF_A).is_empty());
+}
+
+#[tokio::test]
+async fn force_evicts_a_pod_whose_daemon_set_is_missing() {
+    let (core, fake, id, _root) = fake_with_node(FakeKubeConfig::default()).await;
+    serve_daemon_sets(&fake);
+    daemon_pod(&fake, DAEMON_SET_UID);
+    let (_drain, mut rx) = start(&core, &id, FORCE).await;
+    assert_eq!(*outcome(&collect(&mut rx).await).0, DrainOutcome::Completed);
+    assert_eq!(fake.writes("POST", EVICTION_OF_A).len(), 1);
+}
+
+#[tokio::test]
+async fn a_daemon_set_with_another_uid_does_not_protect_the_pod() {
+    let (core, fake, id, _root) = fake_with_node(FakeKubeConfig::default()).await;
+    serve_daemon_sets(&fake);
+    daemon_set(&fake);
+    daemon_pod(&fake, "forged");
+    let (_drain, mut rx) = start(&core, &id, NO_OPTIONS).await;
+    assert_eq!(*outcome(&collect(&mut rx).await).0, DrainOutcome::Refused);
+    assert!(fake.writes("POST", EVICTION_OF_A).is_empty());
+}
+
+#[tokio::test]
+async fn a_daemon_set_that_cannot_be_read_refuses_the_drain_even_with_force() {
+    let rule = DenyRule {
+        verb: "get".into(),
+        plural: "daemonsets".into(),
+        namespace: None,
+    };
+    let (core, fake, id, _root) = fake_with_node(FakeKubeConfig {
+        deny: vec![rule],
+        ..Default::default()
+    })
+    .await;
+    serve_daemon_sets(&fake);
+    daemon_set(&fake);
+    daemon_pod(&fake, DAEMON_SET_UID);
+    let (_drain, mut rx) = start(&core, &id, FORCE).await;
+    let events = collect(&mut rx).await;
+    let (result, message) = outcome(&events);
+    assert_eq!(*result, DrainOutcome::Refused);
+    assert!(message.contains("forbidden"), "{message}");
+    assert!(fake.writes("POST", EVICTION_OF_A).is_empty());
 }
 
 #[tokio::test]
