@@ -128,9 +128,14 @@ fn run_app(core: AppCore, mut log_guard: Option<WorkerGuard>, context: Context<W
             Ok(())
         })
         .on_page_load(|webview, payload| {
-            if payload.event() == PageLoadEvent::Finished {
-                let state = webview.state::<AppState>();
-                events::send_startup_warnings(webview.app_handle(), &state.core);
+            let state = webview.state::<AppState>();
+            match payload.event() {
+                // The one window is replacing its page, and the new one cannot know
+                // the old one's drains. Route changes use the hash, so they load nothing.
+                PageLoadEvent::Started => state.core.node_drain_cancel_all(),
+                PageLoadEvent::Finished => {
+                    events::send_startup_warnings(webview.app_handle(), &state.core);
+                }
             }
         })
         .build(context);

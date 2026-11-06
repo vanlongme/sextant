@@ -442,6 +442,15 @@ impl AppCore {
             running.token.cancel();
         }
     }
+
+    /// Stops every running drain, on all clusters. For when the page that started
+    /// them goes away: it took their ids with it, and a Tauri channel can still be
+    /// written after a reload, so nothing else would stop them.
+    pub fn node_drain_cancel_all(&self) {
+        for running in self.drains().iter() {
+            running.token.cancel();
+        }
+    }
 }
 
 #[cfg(test)]

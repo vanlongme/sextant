@@ -348,6 +348,48 @@ async fn closing_the_event_channel_cancels_the_drain() {
 }
 
 #[tokio::test]
+async fn cancelling_all_stops_every_drain_and_frees_their_nodes() {
+    let (core, fake, id, _root) = fake_with_node(FakeKubeConfig::default()).await;
+    fake.upsert("nodes", json!({ "metadata": { "name": "n2" } }));
+    let owner = json!([{ "kind": "ReplicaSet", "name": "rs", "uid": "u", "controller": true }]);
+    pod_on(&fake, "n1", "a", owner.clone());
+    pod_on(&fake, "n2", "b", owner);
+    fake.fail_evictions_with("default", "a", 429, None);
+    fake.fail_evictions_with("default", "b", 429, None);
+    let (_first, mut first_rx) = start(&core, &id, NO_OPTIONS).await;
+    let (tx, mut second_rx) = mpsc::channel(32);
+    core.node_drain_start(&id, "n2", NO_OPTIONS, tx)
+        .await
+        .unwrap();
+    wait_until(&mut first_rx, |e| {
+        matches!(e, DrainEvent::PodBlocked { .. })
+    })
+    .await;
+    wait_until(&mut second_rx, |e| {
+        matches!(e, DrainEvent::PodBlocked { .. })
+    })
+    .await;
+
+    core.node_drain_cancel_all();
+
+    let first = collect(&mut first_rx).await;
+    let second = collect(&mut second_rx).await;
+    assert_eq!(*outcome(&first).0, DrainOutcome::Cancelled);
+    assert_eq!(*outcome(&second).0, DrainOutcome::Cancelled);
+    // The connection survives, so the node can be drained again.
+    let (_again, _rx) = start(&core, &id, NO_OPTIONS).await;
+}
+
+#[tokio::test]
+async fn cancelling_all_with_nothing_running_changes_nothing() {
+    let (core, fake, id, _root) = fake_with_node(FakeKubeConfig::default()).await;
+    managed_pod(&fake, "a");
+    core.node_drain_cancel_all();
+    let (_drain, mut rx) = start(&core, &id, NO_OPTIONS).await;
+    assert_eq!(*outcome(&collect(&mut rx).await).0, DrainOutcome::Completed);
+}
+
+#[tokio::test]
 async fn an_invalid_node_name_is_refused() {
     let (core, _fake, id, _root) = fake_with_node(FakeKubeConfig::default()).await;
     let (tx, _rx) = mpsc::channel(32);
