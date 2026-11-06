@@ -72,47 +72,49 @@ function Body(props: {
   tab: string;
 }) {
   const { clusterId, resource, object, resources, summary, tab } = props;
-  if (tab === "events") {
-    return (
-      <EventsSection
-        clusterId={clusterId}
-        kind={resource.kind}
-        object={object}
-      />
-    );
-  }
   const Detail = kindSpec(resource.group, resource.plural)?.detail;
   const { metadata: _metadata, ...rest } = object;
+  // The overview stays mounted under the Events tab, so unsaved edits survive a
+  // tab switch.
   return (
     <>
-      {summary.length > 0 ? (
-        <section className={styles.section} data-testid="detail-summary">
-          <dl className={styles.facts}>
-            {summary.map((s) => (
-              <div key={s.id} className={styles.fact}>
-                <dt className={styles.key}>{s.label}</dt>
-                <dd className={styles.value}>{s.value}</dd>
-              </div>
-            ))}
-          </dl>
-        </section>
+      {tab === "events" ? (
+        <EventsSection
+          clusterId={clusterId}
+          kind={resource.kind}
+          object={object}
+        />
       ) : null}
-      <MetadataSection object={object} />
-      <Owners clusterId={clusterId} object={object} resources={resources} />
-      <ConditionsSection status={object.status} />
-      <section className={styles.section}>
-        <h4 className={styles.heading}>{Detail ? "Details" : "Fields"}</h4>
-        {Detail ? (
-          <Detail
-            clusterId={clusterId}
-            object={object}
-            resource={resource}
-            resources={resources}
-          />
-        ) : (
-          <FieldTree value={rest} />
-        )}
-      </section>
+      <div hidden={tab === "events"}>
+        {summary.length > 0 ? (
+          <section className={styles.section} data-testid="detail-summary">
+            <dl className={styles.facts}>
+              {summary.map((s) => (
+                <div key={s.id} className={styles.fact}>
+                  <dt className={styles.key}>{s.label}</dt>
+                  <dd className={styles.value}>{s.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        ) : null}
+        <MetadataSection object={object} />
+        <Owners clusterId={clusterId} object={object} resources={resources} />
+        <ConditionsSection status={object.status} />
+        <section className={styles.section}>
+          <h4 className={styles.heading}>{Detail ? "Details" : "Fields"}</h4>
+          {Detail ? (
+            <Detail
+              clusterId={clusterId}
+              object={object}
+              resource={resource}
+              resources={resources}
+            />
+          ) : (
+            <FieldTree value={rest} />
+          )}
+        </section>
+      </div>
     </>
   );
 }
@@ -174,6 +176,8 @@ export function DetailDrawer(props: {
       onKeyDown={(e) => {
         if (e.key === "Escape") {
           e.stopPropagation();
+          // Escape in a text box must not throw away what is being typed.
+          if (e.target instanceof HTMLTextAreaElement) return;
           onClose();
         }
       }}

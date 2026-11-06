@@ -132,6 +132,7 @@ test("closing the dialog after the drain finished cancels nothing", async () => 
 test("a refused drain says the node stays cordoned", async () => {
   const { emit, start } = setup();
   await start();
+  await emit({ type: "cordoned" });
   await emit({
     type: "finished",
     outcome: "refused",
@@ -141,6 +142,14 @@ test("a refused drain says the node stays cordoned", async () => {
     "n/u has no controller",
   );
   expect(screen.getByTestId("drain-still-cordoned")).toBeTruthy();
+});
+
+test("a failed cordon does not claim the node is cordoned", async () => {
+  const { emit, start } = setup();
+  await start();
+  await emit({ type: "finished", outcome: "failed", message: "forbidden" });
+  expect(screen.getByTestId("drain-outcome")).toBeTruthy();
+  expect(screen.queryByTestId("drain-still-cordoned")).toBeNull();
 });
 
 test("a completed drain does not offer the cordon warning", async () => {

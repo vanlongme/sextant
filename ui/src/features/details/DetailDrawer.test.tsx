@@ -402,3 +402,31 @@ test("moving to another object goes back to the overview without fetching events
     screen.getByRole("tab", { name: "Overview" }).getAttribute("data-state"),
   ).toBe("active");
 });
+
+test("Escape inside a textarea does not close the drawer", async () => {
+  const f = fake();
+  const onClose = vi.fn();
+  render(drawer(onClose));
+  await act(flush);
+  await f.snapshot([pod()]);
+  const area = document.createElement("textarea");
+  screen.getByTestId("detail-drawer").appendChild(area);
+  fireEvent.keyDown(area, { key: "Escape" });
+  expect(onClose).not.toHaveBeenCalled();
+});
+
+test("the overview stays mounted while the Events tab is open", async () => {
+  const f = fake();
+  render(drawer(() => {}));
+  await act(flush);
+  await f.snapshot([pod()]);
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "Events" }), {
+    button: 0,
+  });
+  await act(flush);
+  const hidden = screen
+    .getByTestId("detail-drawer")
+    .querySelector<HTMLElement>("[hidden]");
+  expect(hidden).not.toBeNull();
+  expect(hidden?.textContent).toContain("Labels");
+});

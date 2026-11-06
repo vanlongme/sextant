@@ -197,7 +197,7 @@ export function DrainDialog(props: {
               {state.message ? ` ${state.message}` : ""}
             </p>
           ) : null}
-          {state.outcome && state.outcome !== "completed" ? (
+          {state.outcome && state.outcome !== "completed" && state.cordoned ? (
             <p data-testid="drain-still-cordoned">
               The node stays cordoned. Uncordon it to allow scheduling again.
             </p>

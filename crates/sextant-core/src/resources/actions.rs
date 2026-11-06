@@ -73,6 +73,7 @@ fn manual_job(cronjob: &Value, suffix: &str) -> CoreResult<Value> {
         .collect();
     let mut annotations = template
         .pointer("/metadata/annotations")
+        .filter(|v| v.is_object())
         .cloned()
         .unwrap_or_else(|| json!({}));
     annotations[INSTANTIATE] = json!("manual");
@@ -369,5 +370,26 @@ impl AppCore {
         }
         let patch = Patch::Merge(data_patch(resource_version, changes, encode));
         self.patch_object(id, r, Some(namespace), name, patch).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn manual_job_ignores_non_object_template_annotations() {
+        let cronjob = json!({
+            "metadata": {"name": "nightly", "uid": "u1"},
+            "spec": {"jobTemplate": {
+                "metadata": {"annotations": "x"},
+                "spec": {}
+            }},
+        });
+        let job = manual_job(&cronjob, "abcde").unwrap();
+        assert_eq!(
+            job.pointer("/metadata/annotations"),
+            Some(&json!({ INSTANTIATE: "manual" }))
+        );
     }
 }
