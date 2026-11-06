@@ -8,6 +8,7 @@ import {
 } from "../columns";
 import type { KubeObject } from "../objects";
 import { registerKind } from "../registry";
+import "./jobs";
 import { PodDetail } from "./PodDetail";
 import { podStatus, podSummary } from "./pod";
 import { RolloutDetail } from "./RolloutDetail";
