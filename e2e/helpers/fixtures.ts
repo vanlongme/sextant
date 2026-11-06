@@ -92,6 +92,9 @@ const FIXTURES: Record<string, SpecFixture> = {
   resources: { kubeconfigs: {}, start: startKindFixture },
   editor: { kubeconfigs: {}, start: startKindFixture },
   crd: { kubeconfigs: {}, start: startKindFixture },
+  kinds: { kubeconfigs: {}, start: startKindFixture },
+  "config-kinds": { kubeconfigs: {}, start: startKindFixture },
+  drain: { kubeconfigs: {}, start: startKindFixture },
 };
 
 /** Specs with no entry start with an empty `~/.kube`. */

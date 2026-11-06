@@ -11,6 +11,7 @@ import {
   gone,
   openCluster,
   openResource,
+  pointerClick,
   resourceRowMenu,
   rowId,
   shown,
@@ -39,6 +40,9 @@ rules:
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ${JSON.stringify(verbs)}
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -183,5 +187,29 @@ describe("a user limited by RBAC", () => {
       "name",
     ]);
     expect(stillThere.trim()).toBe(`pod/${POD}`);
+  });
+
+  it("a forbidden scale shows the API's message", async () => {
+    await kubectl(
+      ["-n", NS, "create", "deployment", "web", "--image=registry.k8s.io/pause:3.10"],
+    );
+    await openResource("nav-item-apps-deployments", "Deployment");
+    await shown(rowId(NS, "web"));
+    await resourceRowMenu("web", "scale");
+    await (await shown("scale-replicas")).setValue("2");
+    await clickWhenShown("scale-confirm");
+    const alert = await $('//*[@role="dialog"]//*[@role="alert"]');
+    await alert.waitForDisplayed({ timeout: 15000 });
+    await browser.waitUntil(async () => (await alert.getText()).includes("forbidden"), {
+      timeoutMsg: "the dialog never quoted the API's message",
+    });
+    await browser.keys("Escape");
+  });
+
+  it("a patch-gated action is disabled for a user who may not patch", async () => {
+    await pointerClick(await shown("row-menu-web"));
+    const item = await shown("menu-item-restart");
+    expect(await item.getAttribute("aria-disabled")).toBe("true");
+    await browser.keys("Escape");
   });
 });

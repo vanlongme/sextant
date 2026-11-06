@@ -6,9 +6,12 @@ clusters at once and lets you switch between them from a hotbar.
 
 ## Status
 
-Phase 2 (resource engine). Sextant is not yet feature complete: today it provides
+Phase 3 (kinds). Sextant is not yet feature complete: today it provides
 the app shell, the cluster catalog, the hotbar, cluster connections, live resource
-tables with a detail drawer, and a YAML editor for editing and creating objects. See
+tables with a detail drawer, and a YAML editor for editing and creating objects.
+Each kind now has its own columns, status badges, detail panels and actions,
+including node drain and ConfigMap and Secret editing. Logs, shells and
+port-forward come next. See
 [docs/roadmap.md](docs/roadmap.md) for what comes next.
 
 ## Prerequisites
