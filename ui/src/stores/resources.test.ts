@@ -6,6 +6,7 @@ import type { KubeObject } from "../kinds/objects";
 import { flush, mockBackend } from "../test/ipc";
 import {
   findResource,
+  type ResourceListState,
   resetResourcesForTest,
   useApiResources,
   useResourceList,
@@ -157,6 +158,44 @@ test("clusters_do_not_share_rows", async () => {
   ]);
 });
 
+/** Keeps the state of every render, including those before the effects run. */
+function recordRenders(initial: string) {
+  const renders: ResourceListState[] = [];
+  const hook = renderHook(
+    ({ c }: { c: string }) => {
+      const state = useResourceList(c, pods);
+      renders.push(state);
+      return state;
+    },
+    { initialProps: { c: initial } },
+  );
+  return { renders, hook };
+}
+
+test("changing to a list nobody has open never renders the old rows", async () => {
+  const { subs } = setup();
+  const { renders, hook } = recordRenders("a");
+  await act(flush);
+  await subs[0].send(snapshot(pod("only-in-a")));
+  renders.length = 0;
+
+  hook.rerender({ c: "never-opened" });
+
+  expect(renders.length).toBeGreaterThan(0);
+  for (const state of renders) {
+    expect(state.items).toEqual([]);
+    expect(state.loading).toBe(true);
+  }
+});
+
+test("the first render of a list is loading, not an empty list", async () => {
+  setup();
+  const { renders } = recordRenders("a");
+  await act(flush);
+  expect(renders[0].items).toEqual([]);
+  expect(renders[0].loading).toBe(true);
+});
+
 test("two components share one subscription and unsubscribe on the last unmount", async () => {
   const { subs, backend } = setup();
   const one = await mount();
@@ -256,7 +295,20 @@ test("a subscribe that fails shows the message and stops loading", async () => {
   });
   const { result } = await mount();
   expect(result.current.loading).toBe(false);
+  expect(result.current.status).toBe("notServed");
   expect(result.current.message).toBe("cluster a is disconnected");
+});
+
+test("a subscribe refused as forbidden reports forbidden", async () => {
+  mockBackend({
+    resources_subscribe: () => {
+      throw { code: "Forbidden", message: "pods is forbidden" };
+    },
+  });
+  const { result } = await mount();
+  expect(result.current.loading).toBe(false);
+  expect(result.current.status).toBe("forbidden");
+  expect(result.current.message).toBe("pods is forbidden");
 });
 
 test("unmounting before the subscription id arrives still unsubscribes", async () => {

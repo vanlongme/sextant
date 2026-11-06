@@ -6,7 +6,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { api } from "../ipc/api";
-import { failureMessage } from "../ipc/client";
+import { failureMessage, IpcFailure } from "../ipc/client";
 import type { ApiResourceInfo } from "../ipc/generated/ApiResourceInfo";
 import type { ObjectKey } from "../ipc/generated/ObjectKey";
 import type { ResourceRef } from "../ipc/generated/ResourceRef";
@@ -16,6 +16,12 @@ import { type KubeObject, objectKey } from "../kinds/objects";
 
 export interface ResourceListState {
   items: KubeObject[];
+  /**
+   * `notServed` and `forbidden` are final. They also stand for a subscribe call the
+   * backend refused: `forbidden` when access was denied, `notServed` for any other
+   * reason, such as a cluster that has just disconnected. `message` then holds the
+   * reason, so show it rather than assuming the resource type is gone.
+   */
   status: WatchStatus;
   message: string | null;
   loading: boolean;
@@ -27,6 +33,8 @@ const IDLE: ResourceListState = {
   message: null,
   loading: false,
 };
+
+const LOADING: ResourceListState = { ...IDLE, loading: true };
 
 /** One backend subscription, shared by every component showing the same list. */
 interface Entry {
@@ -94,7 +102,7 @@ function apply(entry: Entry, event: WatchEvent): void {
 function open(clusterId: string, resource: ResourceRef): Entry {
   const entry: Entry = {
     rows: new Map(),
-    state: { items: [], status: "syncing", message: null, loading: true },
+    state: LOADING,
     listeners: new Set(),
     refs: 0,
     subscriptionId: null,
@@ -113,7 +121,10 @@ function open(clusterId: string, resource: ResourceRef): Entry {
         if (entry.closed) return;
         entry.state = {
           ...entry.state,
-          status: "notServed",
+          status:
+            error instanceof IpcFailure && error.code === "Forbidden"
+              ? "forbidden"
+              : "notServed",
           message: failureMessage(error),
           loading: false,
         };
@@ -178,11 +189,11 @@ export function useResourceList(
   );
   const snapshot = useCallback(() => entry?.state ?? IDLE, [entry]);
   const shown = useSyncExternalStore(subscribe, snapshot);
-  // Until the effect has run for this key, showing the old entry would leak rows
-  // across clusters, so the state of the entry that belongs to `key` is read.
-  const current = key === null ? undefined : entries.get(key);
   if (key === null) return IDLE;
-  return current && current !== entry ? current.state : shown;
+  // Until the effect has run for this key, `entry` is the previous list, whose rows
+  // belong to another cluster or resource, so they are never returned here.
+  const current = entries.get(key);
+  return current === entry ? shown : (current?.state ?? LOADING);
 }
 
 export function useApiResources(clusterId: string): {
