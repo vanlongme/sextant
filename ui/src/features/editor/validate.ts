@@ -1,4 +1,10 @@
-import { isScalar, LineCounter, parseAllDocuments, parseDocument } from "yaml";
+import {
+  isMap,
+  isScalar,
+  LineCounter,
+  parseAllDocuments,
+  parseDocument,
+} from "yaml";
 
 export type YamlCheck =
   | { ok: true; documents: number }
@@ -30,6 +36,22 @@ export function validateYaml(text: string): YamlCheck {
     const { line, col } = lineCounter.linePos(first.pos[0]);
     return { ok: false, line, column: col, message: first.message };
   }
+  // An alias that points nowhere only fails when the document is read. The
+  // library's message quotes the alias name, so a fixed sentence stands in.
+  if (Array.isArray(parsed)) {
+    for (const d of parsed) {
+      try {
+        d.toJS();
+      } catch {
+        return {
+          ok: false,
+          line: 1,
+          column: 1,
+          message: "An alias in the YAML cannot be resolved.",
+        };
+      }
+    }
+  }
   return {
     ok: true,
     documents: parsed.filter((d) => !isEmpty(d.contents)).length,
@@ -59,10 +81,16 @@ const SERVER_METADATA = [
  */
 export function stripServerFields(text: string): string {
   const document = parseDocument(text, { merge: true });
-  if (document.errors.length > 0) return text;
-  document.delete("status");
-  for (const field of SERVER_METADATA) {
-    document.deleteIn(["metadata", field]);
+  if (document.errors.length > 0 || !isMap(document.contents)) return text;
+  try {
+    document.delete("status");
+    if (isMap(document.get("metadata"))) {
+      for (const field of SERVER_METADATA) {
+        document.deleteIn(["metadata", field]);
+      }
+    }
+    return document.toString();
+  } catch {
+    return text;
   }
-  return document.toString();
 }

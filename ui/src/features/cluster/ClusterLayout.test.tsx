@@ -23,6 +23,7 @@ const CRD: ApiResourceInfo = {
   canWatch: true,
   canCreate: true,
   canUpdate: true,
+  canPatch: true,
   canDelete: true,
 };
 

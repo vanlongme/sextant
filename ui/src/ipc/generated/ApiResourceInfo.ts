@@ -4,4 +4,4 @@ import type { ResourceRef } from "./ResourceRef";
 /**
  * A served resource with what the current user may do with it.
  */
-export type ApiResourceInfo = { resource: ResourceRef, verbs: Array<string>, shortNames: Array<string>, canList: boolean, canWatch: boolean, canCreate: boolean, canUpdate: boolean, canDelete: boolean, };
+export type ApiResourceInfo = { resource: ResourceRef, verbs: Array<string>, shortNames: Array<string>, canList: boolean, canWatch: boolean, canCreate: boolean, canUpdate: boolean, canPatch: boolean, canDelete: boolean, };

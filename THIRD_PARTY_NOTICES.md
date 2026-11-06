@@ -1,7 +1,7 @@
 # Third-party notices
 
 Sextant is new code, written for this project. Parts of its logic are adapted from the
-open-source project below, whose license requires this notice to stay with the code.
+open-source projects below, whose license requires this notice to stay with the code.
 Libraries that Sextant depends on carry their own licenses in `Cargo.lock` and
 `pnpm-lock.yaml`.
 
@@ -35,6 +35,12 @@ COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
 IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
+
+## Kubernetes
+
+Status strings and the drain behaviour follow `kubectl`, part of the Kubernetes project
+(https://github.com/kubernetes/kubernetes and https://github.com/kubernetes/kubectl).
+Copyright The Kubernetes Authors. Licensed under Apache-2.0, the license in `LICENSE`.
 
 ## Reading the reference locally
 

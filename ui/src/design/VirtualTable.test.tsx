@@ -324,3 +324,31 @@ test("every clock reading comes from one shared 30 s timer", () => {
   unmount();
   expect(clear).toHaveBeenCalledTimes(1);
 });
+
+test("a hidden column does not keep sorting the rows", () => {
+  render(
+    <VirtualTable
+      rows={[row("a", "a", 2), row("b", "b", 1)]}
+      columns={columns}
+      rowKey={rowKey}
+      rowTestId={rowTestId}
+      hiddenColumns={["size"]}
+      sort={{ id: "size", dir: "asc" }}
+    />,
+  );
+  expect(shownIds()).toEqual(["a", "b"]);
+});
+
+test("the checkbox of a row reads its label", () => {
+  render(
+    <VirtualTable
+      rows={[row("a")]}
+      columns={columns}
+      rowKey={rowKey}
+      rowLabel={(r) => `row ${r.name}`}
+      selected={new Set()}
+      onSelectedChange={() => {}}
+    />,
+  );
+  expect(checkbox("Select row a")).toBeTruthy();
+});

@@ -107,3 +107,21 @@ test("stripServerFields leaves text it cannot parse as it is", () => {
   const broken = "a: 1\nb: [1, 2\n";
   expect(stripServerFields(broken)).toBe(broken);
 });
+
+test("stripServerFields leaves text alone when there is nothing to strip from", () => {
+  for (const text of [
+    "",
+    "42\n",
+    "[1, 2]\n",
+    "metadata: 3\n",
+    "metadata: null\n",
+  ]) {
+    expect(stripServerFields(text)).toBe(text);
+  }
+});
+
+test("an unresolved alias is a problem before any request, and is not quoted", () => {
+  const check = validateYaml("token: *missing\n");
+  expect(check.ok).toBe(false);
+  expect(JSON.stringify(check)).not.toContain("missing");
+});

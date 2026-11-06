@@ -133,9 +133,12 @@ export function DetailDrawer(props: {
   const lastSeen = useRef<{ key: string; object: KubeObject } | null>(null);
   const open = wanted !== null;
 
-  // Another object starts on its overview.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `wanted` is the trigger.
-  useEffect(() => setTab("overview"), [wanted]);
+  // Another object starts on its overview, with no render showing the old tab.
+  const [tabOwner, setTabOwner] = useState(wanted);
+  if (tabOwner !== wanted) {
+    setTabOwner(wanted);
+    setTab("overview");
+  }
 
   useEffect(() => {
     if (!open) return;

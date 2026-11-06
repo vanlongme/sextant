@@ -12,7 +12,7 @@ use kube::Client;
 use super::types::{ApiResourceInfo, ResourceRef};
 use crate::error::sanitize_text;
 
-const VERBS: [&str; 5] = ["list", "watch", "create", "update", "delete"];
+const VERBS: [&str; 6] = ["list", "watch", "create", "update", "patch", "delete"];
 const MAX_IN_FLIGHT: usize = 10;
 const MAX_NAMESPACES: usize = 20;
 const REVIEW_LIMIT: Duration = Duration::from_secs(10);
@@ -102,7 +102,7 @@ async fn allowed(
     (false, None)
 }
 
-/// Reviews every served resource for the five verbs, at most `MAX_IN_FLIGHT`
+/// Reviews every served resource for each verb in `VERBS`, at most `MAX_IN_FLIGHT`
 /// reviews at a time. A verb the resource does not serve is not allowed.
 pub(super) async fn check_access(
     client: &Client,
@@ -120,13 +120,14 @@ pub(super) async fn check_access(
             if !entry.verbs.iter().any(|served| served == verb) {
                 return (false, None);
             }
-            // Reading works through a narrower scope, and so does deleting a
-            // namespaced object: delete is offered when any accessible namespace
-            // allows it, and the API server answers for each object. Create and
-            // update are offered only when allowed cluster-wide.
+            // The API server answers for each object, so an action on a namespaced kind is
+            // offered when any accessible namespace allows it. Reading works through a narrower
+            // scope too. A review naming a namespace says nothing about a cluster-scoped object.
             let scope = match verb {
                 "list" | "watch" => Some(scope),
-                "delete" if entry.resource.namespaced => Some(scope),
+                "create" | "update" | "patch" | "delete" if entry.resource.namespaced => {
+                    Some(scope)
+                }
                 _ => None,
             };
             allowed(client, &entry.resource, verb, scope).await
@@ -163,7 +164,8 @@ pub(super) async fn check_access(
                 can_watch: flag(1),
                 can_create: flag(2),
                 can_update: flag(3),
-                can_delete: flag(4),
+                can_patch: flag(4),
+                can_delete: flag(5),
             }
         })
         .collect()

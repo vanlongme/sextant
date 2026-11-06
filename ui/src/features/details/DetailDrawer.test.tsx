@@ -38,6 +38,7 @@ const RS: ApiResourceInfo = {
   canWatch: true,
   canCreate: true,
   canUpdate: true,
+  canPatch: true,
   canDelete: true,
 };
 
@@ -379,4 +380,25 @@ test("long annotation values stay collapsed with an expand control", async () =>
     name: "Collapse annotation big",
   });
   expect(collapse.getAttribute("aria-expanded")).toBe("true");
+});
+
+test("moving to another object goes back to the overview without fetching events", async () => {
+  const f = fake();
+  const view = render(drawer(() => {}, "team-a/web"));
+  await act(flush);
+  await f.snapshot([
+    pod(),
+    pod({ metadata: { name: "other", namespace: "team-a" } }),
+  ]);
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "Events" }), {
+    button: 0,
+  });
+  await act(flush);
+  const before = f.backend.callsTo("resource_events").length;
+  view.rerender(drawer(() => {}, "team-a/other"));
+  await act(flush);
+  expect(f.backend.callsTo("resource_events")).toHaveLength(before);
+  expect(
+    screen.getByRole("tab", { name: "Overview" }).getAttribute("data-state"),
+  ).toBe("active");
 });

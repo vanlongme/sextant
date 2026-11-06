@@ -335,6 +335,7 @@ test("findResource matches group and plural", () => {
     canWatch: true,
     canCreate: true,
     canUpdate: true,
+    canPatch: true,
     canDelete: true,
   });
   const all = [info("", "pods"), info("apps", "deployments")];

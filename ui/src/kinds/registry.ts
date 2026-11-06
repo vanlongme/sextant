@@ -8,6 +8,8 @@ export interface KindAction {
   id: string;
   label: string;
   danger?: boolean;
+  /** The access the action needs; it is disabled without it. */
+  requires?: "update" | "patch";
   visible?(o: KubeObject): boolean;
   run(ctx: ActionContext, o: KubeObject): void | Promise<void>;
 }

@@ -95,6 +95,8 @@ export function VirtualTable<T>(props: {
   onSelectedChange?(s: Set<string>): void;
   onRowClick?(row: T): void;
   rowTestId?(row: T): string;
+  /** What a row's checkbox is named after: `Select <label>`. Defaults to the row key. */
+  rowLabel?(row: T): string;
   activeKey?: string;
   testId?: string;
   rowHeight?: number;
@@ -114,7 +116,7 @@ export function VirtualTable<T>(props: {
   }, [props.columns, props.hiddenColumns]);
 
   const rows = useMemo(() => {
-    const value = props.columns.find((c) => c.id === sort?.id)?.sortValue;
+    const value = columns.find((c) => c.id === sort?.id)?.sortValue;
     if (!sort || !value) return props.rows;
     const sign = sort.dir === "asc" ? 1 : -1;
     // Each row's value is read once: it may mean evaluating a JSONPath.
@@ -122,7 +124,7 @@ export function VirtualTable<T>(props: {
       .map((row) => ({ row, key: value(row) }))
       .sort((a, b) => sign * compare(a.key, b.key))
       .map(({ row }) => row);
-  }, [props.rows, props.columns, sort]);
+  }, [props.rows, columns, sort]);
 
   function changeSort(id: string): void {
     let next: TableSort | null = { id, dir: "asc" };
@@ -301,7 +303,7 @@ export function VirtualTable<T>(props: {
                   <td className={styles.cell}>
                     <input
                       type="checkbox"
-                      aria-label={`Select ${key}`}
+                      aria-label={`Select ${props.rowLabel?.(row) ?? key}`}
                       checked={isSelected}
                       onChange={(e) =>
                         toggleRow(

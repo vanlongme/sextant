@@ -3,6 +3,7 @@ import { type ReactNode, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { Button, ConfirmDialog, Menu, toast } from "../../design";
 import { failureMessage } from "../../ipc/client";
+import type { ApiResourceInfo } from "../../ipc/generated/ApiResourceInfo";
 import type { ResourceRef } from "../../ipc/generated/ResourceRef";
 import type { KubeObject } from "../../kinds/objects";
 import type { ActionContext, KindAction } from "../../kinds/registry";
@@ -85,10 +86,10 @@ export function RowActions(props: {
   object: KubeObject;
   actions: KindAction[];
   context: ActionContext;
-  canDelete: boolean;
+  info: ApiResourceInfo;
   onDelete(object: KubeObject): void;
 }) {
-  const { object, context } = props;
+  const { object, context, info } = props;
   const { name } = object.metadata;
   return (
     <Menu
@@ -112,6 +113,12 @@ export function RowActions(props: {
             id: a.id,
             label: a.label,
             danger: a.danger,
+            disabled:
+              a.requires === "patch"
+                ? !info.canPatch
+                : a.requires === "update"
+                  ? !info.canUpdate
+                  : false,
             onSelect: () => void runAction(a, context, object),
           })),
         {
@@ -123,7 +130,7 @@ export function RowActions(props: {
           id: "delete",
           label: "Delete",
           danger: true,
-          disabled: !props.canDelete,
+          disabled: !info.canDelete,
           onSelect: () => props.onDelete(object),
         },
       ]}

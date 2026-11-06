@@ -155,13 +155,13 @@ export function ResourceScreen(props: {
             object={o}
             actions={actions}
             context={context}
-            canDelete={canDelete}
+            info={info}
             onDelete={(object) => setDeleting([object])}
           />
         ),
       },
     ];
-  }, [info, crd, resource, context, canDelete]);
+  }, [info, crd, resource, context]);
 
   const isHidden = (c: TableColumn<KubeObject>) =>
     choices[c.id] ? choices[c.id] === "hidden" : Boolean(c.defaultHidden);
@@ -302,6 +302,11 @@ export function ResourceScreen(props: {
               columns={columns}
               rowKey={objectKey}
               rowTestId={rowTestId}
+              rowLabel={(o) =>
+                o.metadata.namespace
+                  ? `${o.metadata.namespace}/${o.metadata.name}`
+                  : o.metadata.name
+              }
               hiddenColumns={hiddenColumns}
               sort={sort}
               onSortChange={setSort}

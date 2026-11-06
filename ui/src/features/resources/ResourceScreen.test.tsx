@@ -39,6 +39,7 @@ function info(
     canWatch: true,
     canCreate: true,
     canUpdate: true,
+    canPatch: true,
     canDelete: true,
     ...over,
   };
@@ -863,4 +864,27 @@ test("Edit YAML in a row's menu opens the object in the dock", async () => {
   });
   expect(activeId).toBe(tabs[0].id);
   resetDockForTest();
+});
+
+const GADGET = { group: "example.com", plural: "gadgets", kind: "Gadget" };
+
+test.each([
+  [false, true],
+  [true, false],
+])(
+  "an action that needs patch, with canPatch %s, is disabled: %s",
+  async (canPatch, disabled) => {
+    registerKind("example.com", "gadgets", {
+      actions: [{ id: "go", label: "Go", requires: "patch", run: () => {} }],
+    });
+    await show(fakeBackend(), [pod("a")], info(GADGET, { canPatch }));
+    openMenu("row-menu-a");
+    const item = screen.getByTestId("menu-item-go");
+    expect(item.getAttribute("data-disabled") !== null).toBe(disabled);
+  },
+);
+
+test("a cluster-scoped row's checkbox names the object, not a path", async () => {
+  await show(fakeBackend(), [{ metadata: { name: "node-1" } }], NODES);
+  expect(screen.getByRole("checkbox", { name: "Select node-1" })).toBeTruthy();
 });

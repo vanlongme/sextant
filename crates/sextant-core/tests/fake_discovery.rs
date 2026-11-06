@@ -156,16 +156,6 @@ async fn restricted_user_can_list_if_any_accessible_namespace_allows() {
 
     let pods = find(&all, "", "pods");
     assert!(pods.can_list && pods.can_watch);
-    // Create needs the cluster-wide permission.
-    let (core, _fake, id, _root) = connected(FakeKubeConfig {
-        namespaces,
-        deny_cluster_wide: vec![deny("create", "pods", None)],
-        ..Default::default()
-    })
-    .await;
-    let all = core.resources_discover(&id, false).await.unwrap();
-    assert!(!find(&all, "", "pods").can_create);
-
     // Nothing is allowed anywhere.
     let (core, _fake, id, _root) = connected(FakeKubeConfig {
         namespaces: vec!["a".to_owned(), "b".to_owned()],
@@ -176,6 +166,57 @@ async fn restricted_user_can_list_if_any_accessible_namespace_allows() {
     let all = core.resources_discover(&id, false).await.unwrap();
     assert!(!find(&all, "", "pods").can_list);
     assert!(find(&all, "", "pods").can_watch);
+}
+
+#[tokio::test]
+async fn restricted_user_can_patch_if_any_accessible_namespace_allows() {
+    // A Role in namespace b only: the actions are offered, and the API server answers
+    // for each object.
+    let (core, _fake, id, _root) = connected(FakeKubeConfig {
+        namespaces: vec!["a".to_owned(), "b".to_owned()],
+        deny: vec![
+            deny("patch", "pods", Some("a")),
+            deny("update", "pods", Some("a")),
+            deny("create", "pods", Some("a")),
+        ],
+        deny_cluster_wide: vec![
+            deny("patch", "pods", None),
+            deny("update", "pods", None),
+            deny("create", "pods", None),
+        ],
+        ..Default::default()
+    })
+    .await;
+    let all = core.resources_discover(&id, false).await.unwrap();
+    let pods = find(&all, "", "pods");
+    assert!(pods.can_patch && pods.can_update && pods.can_create);
+
+    // Denied in every namespace, as with a read-only Role.
+    let (core, _fake, id, _root) = connected(FakeKubeConfig {
+        namespaces: vec!["a".to_owned(), "b".to_owned()],
+        deny: vec![
+            deny("patch", "pods", Some("a")),
+            deny("patch", "pods", Some("b")),
+        ],
+        deny_cluster_wide: vec![deny("patch", "pods", None)],
+        ..Default::default()
+    })
+    .await;
+    let all = core.resources_discover(&id, false).await.unwrap();
+    assert!(!find(&all, "", "pods").can_patch);
+}
+
+#[tokio::test]
+async fn patch_of_a_cluster_scoped_kind_needs_the_cluster_wide_permission() {
+    // A review naming a namespace says nothing about a cluster-scoped object.
+    let (core, _fake, id, _root) = connected(FakeKubeConfig {
+        namespaces: vec!["a".to_owned()],
+        deny_cluster_wide: vec![deny("patch", "nodes", None)],
+        ..Default::default()
+    })
+    .await;
+    let all = core.resources_discover(&id, false).await.unwrap();
+    assert!(!find(&all, "", "nodes").can_patch);
 }
 
 #[tokio::test]

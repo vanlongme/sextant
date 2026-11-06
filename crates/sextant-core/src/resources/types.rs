@@ -27,6 +27,7 @@ pub struct ApiResourceInfo {
     pub can_watch: bool,
     pub can_create: bool,
     pub can_update: bool,
+    pub can_patch: bool,
     pub can_delete: bool,
 }
 
