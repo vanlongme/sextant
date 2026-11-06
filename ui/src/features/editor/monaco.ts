@@ -1,6 +1,12 @@
 import * as monaco from "monaco-editor/editor/editor.api";
 import EditorWorker from "monaco-editor/editor/editor.worker?worker";
 import "monaco-editor/languages/definitions/yaml/register";
+// editor.api carries no commands. These add what a person expects of a text
+// editor: word navigation (Option/Ctrl+Arrow), line and comment commands, and find.
+import "monaco-editor/editor/contrib/wordOperations/browser/wordOperations";
+import "monaco-editor/editor/contrib/linesOperations/browser/linesOperations";
+import "monaco-editor/editor/contrib/comment/browser/comment";
+import "monaco-editor/editor/contrib/find/browser/findController";
 
 // Everything here is bundled by Vite and loaded from the app itself, never a CDN.
 self.MonacoEnvironment = { getWorker: () => new EditorWorker() };

@@ -167,6 +167,21 @@ describe("YAML editor", () => {
     await expectStored("conflict", "mine-2");
   });
 
+  it("shows an API validation error verbatim", async () => {
+    await createConfigMap("rejected", "kept");
+    const text = await openEditor("rejected", "kept");
+
+    // Valid YAML that the API server refuses: an immutable field.
+    await setEditorText(text.replace("name: rejected", "name: renamed"));
+    await editorContaining("name: renamed");
+    await clickSave();
+
+    const notice = await shown("yaml-api-error");
+    await browser.waitUntil(async () => (await notice.getText()).length > 0);
+    expect(await notice.getText()).toMatch(/rejected|renamed|immutable|name/i);
+    expect(await storedValue("rejected")).toBe("kept");
+  });
+
   it("creates multiple documents and reports each", async () => {
     await clickWhenShown("create-resource");
     await shown("create-apply");

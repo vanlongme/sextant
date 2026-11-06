@@ -237,7 +237,7 @@ impl Group {
             .take()
             .map(|(status, message)| WatchEvent::Status { status, message });
         let snapshot = std::mem::take(&mut subscriber.snapshot_due).then(|| WatchEvent::Snapshot {
-            items: state.store.values().cloned().collect(),
+            items: sorted_items(&state.store),
         });
         let batch = (!subscriber.changes.is_empty()).then(|| {
             let mut upserts = Vec::new();
@@ -798,9 +798,41 @@ impl AppCore {
     }
 }
 
+/// The store's objects in a stable order: by namespace (cluster-scoped first), then name.
+fn sorted_items(store: &HashMap<ObjectKey, Value>) -> Vec<Value> {
+    let mut entries: Vec<(&ObjectKey, &Value)> = store.iter().collect();
+    entries.sort_by(|a, b| (&a.0.namespace, &a.0.name).cmp(&(&b.0.namespace, &b.0.name)));
+    entries
+        .into_iter()
+        .map(|(_, value)| value.clone())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn snapshot_items_are_sorted_by_namespace_then_name() {
+        let mut store = HashMap::new();
+        for (namespace, name) in [
+            (Some("b"), "x"),
+            (Some("a"), "z"),
+            (None, "node"),
+            (Some("a"), "y"),
+        ] {
+            let key = ObjectKey {
+                namespace: namespace.map(str::to_owned),
+                name: name.to_owned(),
+            };
+            store.insert(key, serde_json::json!({ "n": namespace, "name": name }));
+        }
+        let names: Vec<_> = sorted_items(&store)
+            .iter()
+            .map(|v| v["name"].as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(names, ["node", "y", "z", "x"]);
+    }
 
     #[test]
     fn path_parts() {

@@ -219,12 +219,14 @@ export function useApiResources(clusterId: string): {
         }
       } catch (error) {
         if (isCurrent()) {
-          setState({
+          // A failed refresh keeps what the last answer showed; only a load with
+          // nothing to show leaves the list empty.
+          setState((s) => ({
             clusterId,
-            resources: [],
+            resources: s.clusterId === clusterId ? s.resources : [],
             loading: false,
             error: failureMessage(error),
-          });
+          }));
         }
       }
     },

@@ -407,4 +407,98 @@ describe("resource browsing on a real cluster", () => {
     expect(await leaks()).toBe(false);
     await clickWhenShown("detail-close");
   });
+
+  it("updates a changed row live and keeps the age column ticking", async () => {
+    await createConfigMap("live-row");
+    await openResource(CONFIGMAPS, "ConfigMap");
+    await searchResources("tier=blue");
+    await expectRowsExactly([]);
+
+    const row = rowId(NS, "live-row");
+    const started = Date.now();
+    await kubectl([
+      "-n",
+      NS,
+      "label",
+      "configmap",
+      "live-row",
+      "tier=blue",
+    ]);
+    await browser.waitUntil(() => byTestId(row).isExisting(), {
+      timeout: 15000,
+      interval: 50,
+      timeoutMsg: "the changed row never matched its new label",
+    });
+    expect(Date.now() - started).toBeLessThan(LIVE_UPDATE_LIMIT_MS);
+
+    // The age is drawn from the clock, so it moves without any event.
+    const before = await byTestId(row).getText();
+    await browser.waitUntil(async () => (await byTestId(row).getText()) !== before, {
+      timeout: 30000,
+      timeoutMsg: "the age column never changed",
+    });
+  });
+
+  it("shows annotations and conditions in the drawer, and updates it live", async () => {
+    await kubectl([
+      "-n",
+      NS,
+      "annotate",
+      "configmap",
+      "live-row",
+      "note=first",
+      "--overwrite",
+    ]);
+    await openResource(CONFIGMAPS, "ConfigMap");
+    await searchResources("live-row");
+    await byTestId(rowId(NS, "live-row")).click();
+    await shown("detail-drawer");
+    await browser.waitUntil(
+      async () =>
+        (await shown("detail-annotations")).getText().then((t) => t.includes("note=first")),
+      { timeoutMsg: "the annotation never showed" },
+    );
+
+    // The drawer follows the object while it is open.
+    await kubectl([
+      "-n",
+      NS,
+      "annotate",
+      "configmap",
+      "live-row",
+      "note=second",
+      "--overwrite",
+    ]);
+    await browser.waitUntil(
+      async () =>
+        (await byTestId("detail-annotations").getText()).includes("note=second"),
+      { timeout: 15000, timeoutMsg: "the open drawer never updated" },
+    );
+
+    // Pods carry status conditions.
+    await clickWhenShown("detail-close");
+    await openResource(PODS, "Pod");
+    await searchResources("app=web");
+    await expectRows("the two web pods", (ids) => ids.length === 2);
+    const [pod] = await rowIds();
+    await byTestId(pod).click();
+    await shown("detail-conditions");
+    expect(await byTestId("detail-conditions").getText()).toContain("Ready");
+    await clickWhenShown("detail-close");
+  });
+
+  it("navigates back and forward with the mouse buttons", async () => {
+    await openResource(PODS, "Pod");
+    await openResource(CONFIGMAPS, "ConfigMap");
+    const press = (button: number) =>
+      browser.execute((b) => {
+        window.dispatchEvent(
+          new MouseEvent("mouseup", { button: b, cancelable: true }),
+        );
+      }, button);
+    await press(3);
+    await expectResourceTitle("Pod");
+    await press(4);
+    await expectResourceTitle("ConfigMap");
+  });
 });

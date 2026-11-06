@@ -374,3 +374,28 @@ test("useApiResources reports a failure", async () => {
   expect(result.current.error).toBe("cluster a is disconnected");
   expect(result.current.loading).toBe(false);
 });
+
+test("useApiResources keeps the last resources when a refresh fails", async () => {
+  let fail = false;
+  mockBackend({
+    resources_discover: () => {
+      if (fail) throw { code: "InvalidInput", message: "api blip" };
+      return [
+        {
+          resource: pods,
+          canList: true,
+          canWatch: true,
+          canCreate: true,
+          canDelete: true,
+        },
+      ];
+    },
+  });
+  const { result } = renderHook(() => useApiResources("a"));
+  await act(flush);
+  expect(result.current.resources).toHaveLength(1);
+  fail = true;
+  await act(() => result.current.refresh());
+  expect(result.current.error).toBe("api blip");
+  expect(result.current.resources).toHaveLength(1);
+});

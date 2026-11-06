@@ -50,6 +50,7 @@ function isEstablished(crd: KubeObject): boolean {
 function useRefreshOnCrdChange(
   clusterId: string,
   resources: ApiResourceInfo[],
+  error: string | null,
   refresh: () => Promise<void>,
 ): void {
   const crd = findResource(
@@ -109,7 +110,7 @@ function useRefreshOnCrdChange(
       void refresh();
     }, delay);
     return () => clearTimeout(timer);
-  }, [behind, resources, refresh]);
+  }, [behind, resources, error, refresh]);
 }
 
 /** The sidebar and the routed content of a connected cluster. */
@@ -120,7 +121,7 @@ export function ClusterLayout(props: {
 }) {
   const { clusterId, busy, onDisconnect } = props;
   const { resources, loading, error, refresh } = useApiResources(clusterId);
-  useRefreshOnCrdChange(clusterId, resources, refresh);
+  useRefreshOnCrdChange(clusterId, resources, error, refresh);
   const context: ClusterOutletContext = {
     clusterId,
     busy,
