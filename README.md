@@ -53,4 +53,5 @@ Release builds are unsigned for now.
 
 ## License
 
-Apache-2.0. Copyright The Sextant Authors. See [LICENSE](LICENSE).
+Apache-2.0. Copyright The Sextant Authors. See [LICENSE](LICENSE). Third-party credits are in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
