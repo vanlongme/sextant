@@ -133,6 +133,33 @@ test("sorts numbers numerically and strings with locale compare", () => {
   expect(shownIds()).toEqual(["r3", "r1", "r2"]);
 });
 
+test("sorting 10000 rows reads each sort value once and shares one collator", () => {
+  const rows = Array.from({ length: 10000 }, (_, i) =>
+    row(`r${i}`, `pod-${(i * 7919) % 10000}`),
+  );
+  const sortValue = vi.fn((r: Row) => r.name);
+  // Building a collator per comparison is what makes a sort this size take a second.
+  const perCall = vi.spyOn(String.prototype, "localeCompare");
+  render(
+    <VirtualTable
+      rows={rows}
+      columns={[{ ...columns[0], sortValue }]}
+      rowKey={rowKey}
+      rowTestId={rowTestId}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: /Name/ }));
+
+  expect(sortValue).toHaveBeenCalledTimes(10000);
+  expect(perCall).not.toHaveBeenCalled();
+  // Numeric, so pod-2 comes before pod-10.
+  const names = screen
+    .getAllByTestId(/^row-/)
+    .slice(0, 3)
+    .map((el) => el.textContent);
+  expect(names).toEqual(["pod-0", "pod-1", "pod-2"]);
+});
+
 test("hidden columns are not rendered", () => {
   const withHidden: TableColumn<Row>[] = [
     ...columns,

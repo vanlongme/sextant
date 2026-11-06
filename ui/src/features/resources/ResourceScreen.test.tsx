@@ -335,6 +335,38 @@ test("search filters rows", async () => {
   expect(row("a", "web")).toBeTruthy();
 });
 
+test("the sort survives a search that matches nothing", async () => {
+  const fake = fakeBackend();
+  await show(fake, [
+    { metadata: { name: "b", namespace: "a", labels: { app: "web" } } },
+    { metadata: { name: "c", namespace: "a", labels: { app: "web" } } },
+    { metadata: { name: "a", namespace: "a", labels: { app: "web" } } },
+  ]);
+  const shownNames = () =>
+    screen
+      .getAllByTestId(/^resource-row-/)
+      .map((el) => (el.dataset.testid ?? "").replace("resource-row-a-", ""));
+  fireEvent.click(screen.getByRole("button", { name: "Name" }));
+  fireEvent.click(screen.getByRole("button", { name: "Name" }));
+  expect(shownNames()).toEqual(["c", "b", "a"]);
+
+  // Typing "app=web" passes through "app=", which only an empty label value matches.
+  const search = screen.getByTestId("resource-search");
+  fireEvent.change(search, { target: { value: "app=" } });
+  expect(screen.queryByTestId("resource-table")).toBeNull();
+
+  fireEvent.change(search, { target: { value: "app=web" } });
+  expect(shownNames()).toEqual(["c", "b", "a"]);
+  expect(
+    screen
+      .getByRole("columnheader", { name: "Name" })
+      .getAttribute("aria-sort"),
+  ).toBe("descending");
+
+  fireEvent.change(search, { target: { value: "" } });
+  expect(shownNames()).toEqual(["c", "b", "a"]);
+});
+
 test("reconnecting shows an indicator and keeps rows", async () => {
   const fake = fakeBackend();
   await show(fake, [pod("a")]);
@@ -453,6 +485,41 @@ test("bulk delete confirms with the names and count and reports each failure", a
 
   // What failed stays selected, so it can be tried again.
   expect(bulk.textContent).toContain("2");
+});
+
+test("a bulk delete with many failures reports each one in a toast that can be read", async () => {
+  const names = Array.from({ length: 60 }, (_, i) => `pod-${i}`);
+  const fake = fakeBackend({
+    resourceDelete: (a) =>
+      Promise.reject({
+        code: "Forbidden",
+        message: `${a.name} cannot be deleted by you`,
+        details: null,
+      }),
+  });
+  await show(
+    fake,
+    names.map((name) => pod(name)),
+  );
+  fireEvent.click(screen.getByRole("checkbox", { name: "Select all rows" }));
+  fireEvent.click(screen.getByTestId("bulk-delete"));
+  fireEvent.click(screen.getByTestId("delete-confirm"));
+
+  const title = await screen.findByText(
+    /Could not delete 60 of 60 Pod objects/,
+  );
+  const details = title.nextElementSibling as HTMLElement;
+  for (const name of names) {
+    expect(details.textContent).toContain(
+      `default/${name}: ${name} cannot be deleted by you`,
+    );
+  }
+  expect(getComputedStyle(details).overflowY).toBe("auto");
+  expect(getComputedStyle(details).maxHeight).not.toBe("none");
+
+  const toast = title.parentElement as HTMLElement;
+  fireEvent.click(within(toast).getByRole("button", { name: "Dismiss" }));
+  await waitFor(() => expect(screen.queryByText(/of 60 Pod/)).toBeNull());
 });
 
 test("a bulk delete only takes the rows still shown", async () => {

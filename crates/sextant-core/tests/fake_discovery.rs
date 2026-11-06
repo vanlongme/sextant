@@ -8,6 +8,7 @@ use sextant_core::cluster::ConnectionState;
 use sextant_core::error::ErrorCode;
 use sextant_core::kubeconfig::ClusterId;
 use sextant_core::paths::AppPaths;
+use sextant_core::prefs::ClusterSettings;
 use sextant_core::resources::ApiResourceInfo;
 use sextant_fakekube::{DenyRule, FakeKube, FakeKubeConfig, FakeResource};
 use tempfile::TempDir;
@@ -155,7 +156,7 @@ async fn restricted_user_can_list_if_any_accessible_namespace_allows() {
 
     let pods = find(&all, "", "pods");
     assert!(pods.can_list && pods.can_watch);
-    // Writes need the cluster-wide permission.
+    // Create needs the cluster-wide permission.
     let (core, _fake, id, _root) = connected(FakeKubeConfig {
         namespaces,
         deny_cluster_wide: vec![deny("create", "pods", None)],
@@ -175,6 +176,71 @@ async fn restricted_user_can_list_if_any_accessible_namespace_allows() {
     let all = core.resources_discover(&id, false).await.unwrap();
     assert!(!find(&all, "", "pods").can_list);
     assert!(find(&all, "", "pods").can_watch);
+}
+
+#[tokio::test]
+async fn delete_is_offered_if_any_accessible_namespace_allows() {
+    // A Role in namespace b only: the table offers delete, and the API server
+    // answers for each object.
+    let (core, _fake, id, _root) = connected(FakeKubeConfig {
+        namespaces: vec!["a".to_owned(), "b".to_owned()],
+        deny: vec![deny("delete", "pods", Some("a"))],
+        deny_cluster_wide: vec![deny("delete", "pods", None)],
+        ..Default::default()
+    })
+    .await;
+    let all = core.resources_discover(&id, false).await.unwrap();
+    assert!(find(&all, "", "pods").can_delete);
+
+    // Denied in every namespace, as with a read-only Role.
+    let (core, _fake, id, _root) = connected(FakeKubeConfig {
+        namespaces: vec!["a".to_owned(), "b".to_owned()],
+        deny: vec![
+            deny("delete", "pods", Some("a")),
+            deny("delete", "pods", Some("b")),
+        ],
+        deny_cluster_wide: vec![deny("delete", "pods", None)],
+        ..Default::default()
+    })
+    .await;
+    let all = core.resources_discover(&id, false).await.unwrap();
+    assert!(!find(&all, "", "pods").can_delete);
+}
+
+#[tokio::test]
+async fn delete_of_a_cluster_scoped_kind_needs_the_cluster_wide_permission() {
+    // A review naming a namespace says nothing about a cluster-scoped object, so a
+    // user limited to namespaces must not be offered this delete.
+    let (core, fake, id, _root) = core_with_fake(FakeKubeConfig {
+        forbid_namespace_list: true,
+        deny_cluster_wide: vec![deny("delete", "gadgets", None)],
+        ..Default::default()
+    })
+    .await;
+    core.cluster_settings_set(
+        &id,
+        ClusterSettings {
+            accessible_namespaces: vec!["a".into()],
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let state = core.cluster_connect(&id).await.unwrap();
+    assert!(
+        matches!(state, ConnectionState::Connected { .. }),
+        "{state:?}"
+    );
+    fake.serve_resource(FakeResource::new(
+        "example.com",
+        "v1",
+        "Gadget",
+        "gadgets",
+        false,
+    ));
+
+    let all = core.resources_discover(&id, true).await.unwrap();
+
+    assert!(!find(&all, "example.com", "gadgets").can_delete);
 }
 
 #[tokio::test]

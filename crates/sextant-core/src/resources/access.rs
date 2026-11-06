@@ -120,9 +120,15 @@ pub(super) async fn check_access(
             if !entry.verbs.iter().any(|served| served == verb) {
                 return (false, None);
             }
-            // Only reading can be done through a narrower scope; writes are
-            // offered only when allowed cluster-wide.
-            let scope = (verb == "list" || verb == "watch").then_some(scope);
+            // Reading works through a narrower scope, and so does deleting a
+            // namespaced object: delete is offered when any accessible namespace
+            // allows it, and the API server answers for each object. Create and
+            // update are offered only when allowed cluster-wide.
+            let scope = match verb {
+                "list" | "watch" => Some(scope),
+                "delete" if entry.resource.namespaced => Some(scope),
+                _ => None,
+            };
             allowed(client, &entry.resource, verb, scope).await
         })
         .buffered(MAX_IN_FLIGHT)

@@ -12,9 +12,12 @@ export interface Column<T> {
 
 type Sort = { id: string; dir: "asc" | "desc" };
 
+/** Shared: `localeCompare` with options builds one of these on every call. */
+const collator = new Intl.Collator(undefined, { numeric: true });
+
 export function compare(a: string | number, b: string | number): number {
   if (typeof a === "number" && typeof b === "number") return a - b;
-  return String(a).localeCompare(String(b), undefined, { numeric: true });
+  return collator.compare(String(a), String(b));
 }
 
 export function DataTable<T>(props: {

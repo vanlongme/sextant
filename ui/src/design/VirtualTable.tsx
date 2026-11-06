@@ -117,7 +117,11 @@ export function VirtualTable<T>(props: {
     const value = props.columns.find((c) => c.id === sort?.id)?.sortValue;
     if (!sort || !value) return props.rows;
     const sign = sort.dir === "asc" ? 1 : -1;
-    return [...props.rows].sort((a, b) => sign * compare(value(a), value(b)));
+    // Each row's value is read once: it may mean evaluating a JSONPath.
+    return props.rows
+      .map((row) => ({ row, key: value(row) }))
+      .sort((a, b) => sign * compare(a.key, b.key))
+      .map(({ row }) => row);
   }, [props.rows, props.columns, sort]);
 
   function changeSort(id: string): void {

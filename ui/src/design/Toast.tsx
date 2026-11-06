@@ -30,6 +30,16 @@ function subscribe(l: () => void): () => void {
   return () => listeners.delete(l);
 }
 
+/** One line per failed object: more than can be read before a timer runs out. */
+function isList(details: string | undefined): boolean {
+  return details?.includes("\n") ?? false;
+}
+
+function durationOf(item: Item): number {
+  if (isList(item.details)) return Number.POSITIVE_INFINITY;
+  return item.kind === "error" ? 10000 : 4000;
+}
+
 export const toast = {
   success: (m: string) => push("success", m),
   error: (m: string, details?: string) => push("error", m, details),
@@ -48,14 +58,17 @@ export function Toaster() {
         <RT.Root
           key={t.id}
           className={`${styles.toast} ${styles[t.kind]}`}
-          duration={t.kind === "error" ? 10000 : 4000}
+          duration={durationOf(t)}
           onOpenChange={(o) => {
             if (!o) dismiss(t.id);
           }}
         >
           <RT.Title className={styles.title}>{t.message}</RT.Title>
           {t.details ? (
-            <RT.Description className={styles.details}>
+            <RT.Description
+              className={styles.details}
+              tabIndex={isList(t.details) ? 0 : undefined}
+            >
               {t.details}
             </RT.Description>
           ) : null}

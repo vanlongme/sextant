@@ -10,6 +10,7 @@ import {
   Input,
   Spinner,
   type TableColumn,
+  type TableSort,
   VirtualTable,
 } from "../../design";
 import type { ApiResourceInfo } from "../../ipc/generated/ApiResourceInfo";
@@ -100,6 +101,8 @@ export function ResourceScreen(props: {
   const { context, confirmDialog } = useActionContext(clusterId, resource);
 
   const [search, setSearch] = useState("");
+  // Kept here because the table unmounts while no row matches.
+  const [sort, setSort] = useState<TableSort | null>(null);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [deleting, setDeleting] = useState<KubeObject[] | null>(null);
   const [savedNamespaces, setNamespaces] = useUiState<string[]>(
@@ -267,6 +270,8 @@ export function ResourceScreen(props: {
           rowKey={objectKey}
           rowTestId={rowTestId}
           hiddenColumns={hiddenColumns}
+          sort={sort}
+          onSortChange={setSort}
           selected={selected}
           onSelectedChange={setSelected}
           testId="resource-table"
