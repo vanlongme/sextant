@@ -56,3 +56,10 @@ export const RESOURCE_QUOTAS: ResourceRef = {
   kind: "ResourceQuota",
   namespaced: true,
 };
+export const NODES: ResourceRef = {
+  group: "",
+  version: "v1",
+  plural: "nodes",
+  kind: "Node",
+  namespaced: false,
+};
