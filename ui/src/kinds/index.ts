@@ -1,2 +1,2 @@
 // Imports each kind family for its registration.
-export {};
+import "./workloads";

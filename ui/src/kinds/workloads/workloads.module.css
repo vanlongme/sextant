@@ -1,0 +1,23 @@
+.container {
+  margin-bottom: var(--space-3);
+}
+
+.containerName {
+  margin: 0 0 var(--space-1);
+  font-weight: 600;
+}
+
+.list {
+  margin: 0;
+  padding-left: var(--space-4);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.link {
+  color: var(--accent);
+}
+
+.muted {
+  color: var(--text-muted);
+}
