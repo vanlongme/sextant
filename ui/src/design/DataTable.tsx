@@ -12,7 +12,7 @@ export interface Column<T> {
 
 type Sort = { id: string; dir: "asc" | "desc" };
 
-function compare(a: string | number, b: string | number): number {
+export function compare(a: string | number, b: string | number): number {
   if (typeof a === "number" && typeof b === "number") return a - b;
   return String(a).localeCompare(String(b), undefined, { numeric: true });
 }

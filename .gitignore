@@ -8,3 +8,4 @@ e2e/.tmp/
 .DS_Store
 crates/sextant-app/gen/schemas/
 .superpowers/
+tmp/

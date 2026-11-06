@@ -1,0 +1,91 @@
+.scroller {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.table {
+  display: block;
+  width: max(100%, var(--vt-min-width));
+  border-collapse: collapse;
+}
+
+.cell {
+  display: block;
+  min-width: 0;
+  padding: 0 var(--space-2);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.head {
+  display: block;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.head .cell {
+  color: var(--text-muted);
+  font-weight: 500;
+  text-align: left;
+}
+
+.body {
+  display: block;
+  position: relative;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: var(--vt-columns);
+  align-items: center;
+}
+
+.bodyRow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  border-bottom: 1px solid var(--border);
+}
+
+.bodyRow:hover {
+  background: var(--surface-2);
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.selected {
+  background: var(--surface-2);
+}
+
+.active {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.sort {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.sort:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

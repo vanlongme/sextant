@@ -6,7 +6,8 @@ import type { ResourceRef } from "../../ipc/generated/ResourceRef";
 import type { WatchEvent } from "../../ipc/generated/WatchEvent";
 import { resetResourcesForTest } from "../../stores/resources";
 import { flush, mockBackend } from "../../test/ipc";
-import { ClusterLayout, ResourceRoute } from "./ClusterLayout";
+import { ResourceRoute } from "../resources/ResourceScreen";
+import { ClusterLayout } from "./ClusterLayout";
 
 const CRD: ApiResourceInfo = {
   resource: {

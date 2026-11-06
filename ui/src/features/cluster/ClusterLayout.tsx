@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
-import { Outlet, useOutletContext, useParams } from "react-router";
-import { EmptyState } from "../../design";
+import { Outlet, useOutletContext } from "react-router";
 import type { ApiResourceInfo } from "../../ipc/generated/ApiResourceInfo";
-import { groupFromSegment } from "../../kinds/nav";
 import {
   findResource,
   useApiResources,
@@ -93,23 +91,7 @@ export function ClusterLayout(props: {
   );
 }
 
-/** The route for one resource list. Task 8 replaces this with the table. */
 /** Placeholder for the Workloads overview screen (F17). */
 export function WorkloadsOverview() {
   return <h2 data-testid="workloads-overview-title">Workloads</h2>;
-}
-
-export function ResourceRoute() {
-  const { group = "", plural = "" } = useParams();
-  const { resources, resourcesLoading } = useClusterContext();
-  const info = findResource(resources, groupFromSegment(group), plural);
-  if (!info) {
-    return resourcesLoading ? null : (
-      <EmptyState
-        title="Resource not available"
-        body="This cluster does not serve this resource."
-      />
-    );
-  }
-  return <h2 data-testid="resource-title">{info.resource.kind}</h2>;
 }
