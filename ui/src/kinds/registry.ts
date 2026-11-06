@@ -25,12 +25,15 @@ export interface ActionContext {
     danger?: boolean;
   }): Promise<boolean>;
   openEditor(o: KubeObject): void;
+  /** Shows a dialog of the kind's own; `render` gets the function that closes it. */
+  dialog(render: (close: () => void) => ReactNode): void;
 }
 
 export interface DetailProps {
   clusterId: string;
   object: KubeObject;
   resource: ResourceRef;
+  resources: ApiResourceInfo[];
 }
 
 export interface KindSpec {
@@ -58,6 +61,18 @@ export function registerKind(
 
 export function kindSpec(group: string, plural: string): KindSpec | undefined {
   return specs.get(specKey(group, plural));
+}
+
+/** Every registered kind, for tests that walk them all. */
+export function registeredKinds(): {
+  group: string;
+  plural: string;
+  spec: KindSpec;
+}[] {
+  return [...specs.entries()].map(([key, spec]) => {
+    const slash = key.indexOf("/");
+    return { group: key.slice(0, slash), plural: key.slice(slash + 1), spec };
+  });
 }
 
 function Age(props: { from: string | undefined }): string {

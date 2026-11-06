@@ -17,6 +17,7 @@ export function useActionContext(
   resource: ResourceRef,
 ): { context: ActionContext; confirmDialog: ReactNode } {
   const navigate = useNavigate();
+  const [custom, setCustom] = useState<ReactNode>(null);
   const [asking, setAsking] = useState<{
     options: ConfirmOptions;
     answer(yes: boolean): void;
@@ -39,6 +40,7 @@ export function useActionContext(
             },
           });
         }),
+      dialog: (render) => setCustom(render(() => setCustom(null))),
       openEditor: (object) =>
         useDock
           .getState()
@@ -54,7 +56,7 @@ export function useActionContext(
     [clusterId, resource, navigate],
   );
 
-  const confirmDialog = asking ? (
+  const confirmElement = asking ? (
     <ConfirmDialog
       open
       title={asking.options.title}
@@ -66,7 +68,15 @@ export function useActionContext(
     />
   ) : null;
 
-  return { context, confirmDialog };
+  return {
+    context,
+    confirmDialog: (
+      <>
+        {confirmElement}
+        {custom}
+      </>
+    ),
+  };
 }
 
 async function runAction(

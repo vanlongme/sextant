@@ -103,7 +103,12 @@ function Body(props: {
       <section className={styles.section}>
         <h4 className={styles.heading}>{Detail ? "Details" : "Fields"}</h4>
         {Detail ? (
-          <Detail clusterId={clusterId} object={object} resource={resource} />
+          <Detail
+            clusterId={clusterId}
+            object={object}
+            resource={resource}
+            resources={resources}
+          />
         ) : (
           <FieldTree value={rest} />
         )}

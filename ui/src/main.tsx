@@ -5,6 +5,7 @@ import { bootstrap } from "./app/bootstrap";
 import { Toaster, toast } from "./design";
 import "./design/global.css";
 import { failureMessage } from "./ipc/client";
+import "./kinds";
 
 bootstrap().catch((error) => {
   toast.error("Startup problem", failureMessage(error));
