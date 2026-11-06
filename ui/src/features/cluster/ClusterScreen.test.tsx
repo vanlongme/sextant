@@ -11,6 +11,7 @@ import type { ConnectionLogEntry } from "../../ipc/generated/ConnectionLogEntry"
 import type { ConnectionState } from "../../ipc/generated/ConnectionState";
 import { resetCatalogForTest, useCatalog } from "../../stores/catalog";
 import { clusterEntry, emitEvent, mockBackend } from "../../test/ipc";
+import { ClusterOverview } from "./ClusterHome";
 import { ClusterScreen } from "./ClusterScreen";
 
 const INFO = {
@@ -34,13 +35,16 @@ async function show(
     cluster_log: () => [],
     cluster_connect: () => ({ status: "connecting" }),
     cluster_disconnect: () => null,
+    resources_discover: () => [],
     ...over,
   });
   await useCatalog.getState().init();
   render(
     <MemoryRouter initialEntries={[`/cluster/${id}`]}>
       <Routes>
-        <Route path="/cluster/:id" element={<ClusterScreen />} />
+        <Route path="/cluster/:id" element={<ClusterScreen />}>
+          <Route index element={<ClusterOverview />} />
+        </Route>
         <Route path="/catalog" element={<p>catalog page</p>} />
       </Routes>
     </MemoryRouter>,

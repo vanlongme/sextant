@@ -1,8 +1,10 @@
 import { Button } from "../../design";
 import type { ClusterInfo } from "../../ipc/generated/ClusterInfo";
+import { useClusterState } from "../../stores/clusters";
+import { useClusterContext } from "./ClusterLayout";
 import styles from "./ClusterScreen.module.css";
 
-/** The content of a connected cluster. Navigation replaces it in Phase 2. */
+/** The content of a connected cluster. It is the Overview page of the sidebar. */
 export function ClusterHome(props: {
   info: ClusterInfo;
   busy: boolean;
@@ -33,5 +35,15 @@ export function ClusterHome(props: {
         </Button>
       </div>
     </section>
+  );
+}
+
+/** The index route of a connected cluster. */
+export function ClusterOverview() {
+  const { clusterId, busy, onDisconnect } = useClusterContext();
+  const state = useClusterState(clusterId);
+  if (state.status !== "connected") return null;
+  return (
+    <ClusterHome info={state.info} busy={busy} onDisconnect={onDisconnect} />
   );
 }

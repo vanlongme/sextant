@@ -4,7 +4,7 @@ import { clusterStatus } from "../../app/clusterStatus";
 import { Badge, EmptyState, Spinner } from "../../design";
 import { useCatalog } from "../../stores/catalog";
 import { useClusterState, useConnect } from "../../stores/clusters";
-import { ClusterHome } from "./ClusterHome";
+import { ClusterLayout } from "./ClusterLayout";
 import styles from "./ClusterScreen.module.css";
 import { ConnectionPanel } from "./ConnectionPanel";
 
@@ -37,8 +37,8 @@ function ClusterView({ id, name }: { id: string; name: string }) {
         </span>
       </div>
       {state.status === "connected" ? (
-        <ClusterHome
-          info={state.info}
+        <ClusterLayout
+          clusterId={id}
           busy={busy}
           onDisconnect={userDisconnect}
         />
