@@ -57,7 +57,7 @@ pub fn sanitize_text(input: &str) -> String {
 /// raw text has nothing better to say.
 pub fn friendly_transport_message(raw: &str) -> Option<String> {
     let lower = raw.to_ascii_lowercase();
-    let text = if lower.contains("connection refused") {
+    let text = if lower.contains("connection refused") || lower.contains("actively refused") {
         "Connection refused by the server. Check that the cluster is running and the address is right."
     } else if lower.contains("dns error")
         || lower.contains("name or service not known")
@@ -448,7 +448,12 @@ mod tests {
             friendly_transport_message(refused).as_deref(),
             Some("Connection refused by the server. Check that the cluster is running and the address is right.")
         );
-        let dns = "ServiceError: client error (Connect): dns error: failed to lookup address information: Name or service not known";
+        let refused_on_windows = "ServiceError: client error (Connect): tcp connect error: No connection could be made because the target machine actively refused it. (os error 10061)";
+        assert_eq!(
+            friendly_transport_message(refused_on_windows),
+            friendly_transport_message(refused)
+        );
+        let dns ="ServiceError: client error (Connect): dns error: failed to lookup address information: Name or service not known";
         assert!(friendly_transport_message(dns)
             .unwrap()
             .contains("could not be resolved"));
