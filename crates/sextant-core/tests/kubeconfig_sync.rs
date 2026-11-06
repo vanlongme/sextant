@@ -241,7 +241,16 @@ async fn watched_dir_deleted_and_recreated_is_watched_again() {
     let kube = root.path().join(".kube");
     std::fs::create_dir(&kube).unwrap();
     std::fs::write(kube.join("config"), config_with(&["one"])).unwrap();
-    let (sync, mut rx) = KubeconfigSync::start(vec![dir_source(&kube)], NO_POLL);
+    // FSEvents reports deleting a directory made seconds ago as a create and a remove,
+    // and notify-debouncer-full 0.7 drops that pair as something that came and went.
+    // On macOS only the polling safety net sees this deletion. The replaced-directory
+    // test above still proves the re-watch there without polling.
+    let poll = if cfg!(target_os = "macos") {
+        Duration::from_secs(1)
+    } else {
+        NO_POLL
+    };
+    let (sync, mut rx) = KubeconfigSync::start(vec![dir_source(&kube)], poll);
     wait_for(&mut rx, |s| s.entries.len() == 1).await;
 
     std::fs::remove_dir_all(&kube).unwrap();
