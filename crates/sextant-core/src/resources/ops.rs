@@ -142,7 +142,7 @@ fn set_resource_version(document: &mut Value, version: &str) {
 }
 
 /// A field selector value, with what the selector syntax gives a meaning escaped.
-fn selector_value(value: &str) -> String {
+pub(super) fn selector_value(value: &str) -> String {
     value
         .replace('\\', "\\\\")
         .replace(',', "\\,")

@@ -4,6 +4,7 @@ mod access;
 mod actions;
 mod apply;
 mod discovery;
+mod drain;
 mod hub;
 mod ops;
 mod sanitize;
@@ -11,6 +12,8 @@ mod types;
 
 pub use actions::{DataChange, SecretValue};
 pub use apply::ApplyResult;
+pub(crate) use drain::RunningDrain;
+pub use drain::{DrainEvent, DrainOptions, DrainOutcome, PodRef, SkipReason, SkippedPod};
 pub(crate) use hub::WatchHub;
 pub use ops::{InvolvedRef, Propagation};
 pub use sanitize::strip_for_list;

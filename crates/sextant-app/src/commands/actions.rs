@@ -1,9 +1,14 @@
 use sextant_core::error::IpcError;
 use sextant_core::kubeconfig::ClusterId;
-use sextant_core::resources::{DataChange, ResourceRef, SecretValue};
+use sextant_core::resources::{DataChange, DrainEvent, DrainOptions, ResourceRef, SecretValue};
+use tauri::ipc::Channel;
 use tauri::State;
+use tokio::sync::mpsc;
 
 use crate::state::AppState;
+
+/// Events wait here while the webview catches up.
+const DRAIN_BACKLOG: usize = 64;
 
 #[tauri::command]
 pub async fn workload_scale(
@@ -82,6 +87,41 @@ pub async fn node_set_unschedulable(
         .core
         .node_set_unschedulable(&cluster_id, &name, unschedulable)
         .await
+}
+
+#[tauri::command]
+pub async fn node_drain_start(
+    state: State<'_, AppState>,
+    cluster_id: ClusterId,
+    name: String,
+    options: DrainOptions,
+    on_event: Channel<DrainEvent>,
+) -> Result<String, IpcError> {
+    let (tx, mut rx) = mpsc::channel(DRAIN_BACKLOG);
+    let id = state
+        .core
+        .node_drain_start(&cluster_id, &name, options, tx)
+        .await?;
+    let core = state.core.clone();
+    let drain = id.clone();
+    tauri::async_runtime::spawn(async move {
+        while let Some(event) = rx.recv().await {
+            if on_event.send(event).is_err() {
+                core.node_drain_cancel(&drain);
+                break;
+            }
+        }
+    });
+    Ok(id)
+}
+
+#[tauri::command]
+pub async fn node_drain_cancel(
+    state: State<'_, AppState>,
+    drain_id: String,
+) -> Result<(), IpcError> {
+    state.core.node_drain_cancel(&drain_id);
+    Ok(())
 }
 
 #[tauri::command]

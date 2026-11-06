@@ -3,9 +3,11 @@
 use std::collections::{HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
+use dashmap::DashMap;
 use serde::Serialize;
 use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
@@ -20,7 +22,7 @@ use crate::kubeconfig::{
 };
 use crate::paths::AppPaths;
 use crate::prefs::{ClusterSettings, Prefs};
-use crate::resources::WatchHub;
+use crate::resources::{RunningDrain, WatchHub};
 use crate::store::{JsonStore, StoreWarning};
 use crate::ui_state::UiState;
 
@@ -66,6 +68,8 @@ struct Inner {
     pasted: PastedConfigs,
     connections: Arc<ClusterManager>,
     watches: Arc<WatchHub>,
+    drains: DashMap<(ClusterId, String), RunningDrain>,
+    next_drain: AtomicU64,
     /// Held across a preferences write and the matching source change, so
     /// concurrent calls cannot leave the sync on sources that were not saved last.
     sync: Mutex<Option<KubeconfigSync>>,
@@ -195,6 +199,8 @@ impl AppCore {
                 pasted,
                 connections,
                 watches: Arc::new(WatchHub::default()),
+                drains: DashMap::new(),
+                next_drain: AtomicU64::new(1),
                 sync: Mutex::new(Some(sync)),
                 snapshots,
                 sync_events: Mutex::new(Some(sync_events)),
@@ -379,6 +385,15 @@ impl AppCore {
 
     pub(crate) fn watches(&self) -> &Arc<WatchHub> {
         &self.inner.watches
+    }
+
+    pub(crate) fn drains(&self) -> &DashMap<(ClusterId, String), RunningDrain> {
+        &self.inner.drains
+    }
+
+    pub(crate) fn next_drain_id(&self) -> String {
+        let number = self.inner.next_drain.fetch_add(1, Ordering::Relaxed);
+        format!("drain-{number}")
     }
 
     pub fn set_connect_timeouts_for_test(&self, t: ConnectTimeouts) {

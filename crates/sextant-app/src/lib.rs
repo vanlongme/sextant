@@ -100,6 +100,8 @@ fn run_app(core: AppCore, mut log_guard: Option<WorkerGuard>, context: Context<W
             commands::actions::cronjob_trigger,
             commands::actions::cronjob_set_suspend,
             commands::actions::node_set_unschedulable,
+            commands::actions::node_drain_start,
+            commands::actions::node_drain_cancel,
             commands::actions::secret_reveal,
             commands::actions::secret_update,
             commands::actions::configmap_update,

@@ -130,6 +130,22 @@ fn core_resource(
     }
 }
 
+/// The POST that asks the API server to evict a pod.
+pub(super) fn eviction_request(namespace: &str, name: &str) -> CoreResult<http::Request<Vec<u8>>> {
+    let pods = core_resource("Pod", "pods", "", "v1", true);
+    let request = object_request(&pods, Some(namespace), name)?;
+    let body = json!({
+        "apiVersion": "policy/v1",
+        "kind": "Eviction",
+        "metadata": { "name": name, "namespace": namespace },
+    });
+    let body = serde_json::to_vec(&body).map_err(|e| invalid(e.to_string()))?;
+    let request = request
+        .create_subresource("eviction", name, &PostParams::default(), body)
+        .map_err(kube::Error::BuildRequest)?;
+    Ok(request)
+}
+
 impl AppCore {
     async fn patch_object(
         &self,
@@ -193,20 +209,9 @@ impl AppCore {
     }
 
     pub async fn pod_evict(&self, id: &ClusterId, namespace: &str, name: &str) -> CoreResult<()> {
-        let pods = core_resource("Pod", "pods", "", "v1", true);
-        let request = object_request(&pods, Some(namespace), name)?;
+        let request = eviction_request(namespace, name)?;
         let client = self.cluster_client(id)?;
-        let body = json!({
-            "apiVersion": "policy/v1",
-            "kind": "Eviction",
-            "metadata": { "name": name, "namespace": namespace },
-        });
-        let body = serde_json::to_vec(&body).map_err(|e| invalid(e.to_string()))?;
-        send(
-            &client,
-            request.create_subresource("eviction", name, &PostParams::default(), body),
-        )
-        .await?;
+        send(&client, Ok(request)).await?;
         Ok(())
     }
 

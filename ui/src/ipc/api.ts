@@ -7,6 +7,8 @@ import type { ClusterSettings } from "./generated/ClusterSettings";
 import type { ConnectionLogEntry } from "./generated/ConnectionLogEntry";
 import type { ConnectionState } from "./generated/ConnectionState";
 import type { DataChange } from "./generated/DataChange";
+import type { DrainEvent } from "./generated/DrainEvent";
+import type { DrainOptions } from "./generated/DrainOptions";
 import type { InvolvedRef } from "./generated/InvolvedRef";
 import type { Prefs } from "./generated/Prefs";
 import type { Propagation } from "./generated/Propagation";
@@ -144,6 +146,21 @@ export const api = {
     name: string,
     unschedulable: boolean,
   ) => call<void>("node_set_unschedulable", { clusterId, name, unschedulable }),
+  /** Returns the drain id. Events go to `onEvent`, the last being `finished`. */
+  nodeDrainStart: (
+    clusterId: string,
+    name: string,
+    options: DrainOptions,
+    onEvent: (event: DrainEvent) => void,
+  ) =>
+    call<string>("node_drain_start", {
+      clusterId,
+      name,
+      options,
+      onEvent: new Channel<DrainEvent>(onEvent),
+    }),
+  nodeDrainCancel: (drainId: string) =>
+    call<void>("node_drain_cancel", { drainId }),
   secretReveal: (
     clusterId: string,
     namespace: string,
