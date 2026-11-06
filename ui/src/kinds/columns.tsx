@@ -57,10 +57,11 @@ export function numberColumn(
 
 export function statusColumn(
   get: (o: KubeObject) => StatusInfo,
+  options: { id?: string; header?: string } = {},
 ): TableColumn<KubeObject> {
   return {
-    id: "status",
-    header: "Status",
+    id: options.id ?? "status",
+    header: options.header ?? "Status",
     width: 140,
     sortValue: (o) => get(o).label,
     render: (o) => {

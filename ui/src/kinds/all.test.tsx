@@ -75,3 +75,46 @@ describe.each(registeredKinds())(
     );
   },
 );
+
+test("every kind of the plan is registered", () => {
+  const registered = registeredKinds()
+    .map((k) => `${k.group}/${k.plural}`)
+    .sort();
+  expect(registered).toEqual([
+    "/configmaps",
+    "/events",
+    "/limitranges",
+    "/namespaces",
+    "/nodes",
+    "/persistentvolumeclaims",
+    "/persistentvolumes",
+    "/pods",
+    "/resourcequotas",
+    "/secrets",
+    "/serviceaccounts",
+    "/services",
+    "admissionregistration.k8s.io/mutatingwebhookconfigurations",
+    "admissionregistration.k8s.io/validatingwebhookconfigurations",
+    "apiextensions.k8s.io/customresourcedefinitions",
+    "apps/daemonsets",
+    "apps/deployments",
+    "apps/replicasets",
+    "apps/statefulsets",
+    "autoscaling/horizontalpodautoscalers",
+    "batch/cronjobs",
+    "batch/jobs",
+    "coordination.k8s.io/leases",
+    "discovery.k8s.io/endpointslices",
+    "networking.k8s.io/ingressclasses",
+    "networking.k8s.io/ingresses",
+    "networking.k8s.io/networkpolicies",
+    "node.k8s.io/runtimeclasses",
+    "policy/poddisruptionbudgets",
+    "rbac.authorization.k8s.io/clusterrolebindings",
+    "rbac.authorization.k8s.io/clusterroles",
+    "rbac.authorization.k8s.io/rolebindings",
+    "rbac.authorization.k8s.io/roles",
+    "scheduling.k8s.io/priorityclasses",
+    "storage.k8s.io/storageclasses",
+  ]);
+});

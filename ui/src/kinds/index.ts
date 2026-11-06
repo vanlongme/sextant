@@ -5,3 +5,5 @@ import "./network";
 import "./config";
 import "./storage";
 import "./policy";
+import "./access";
+import "./cluster";
