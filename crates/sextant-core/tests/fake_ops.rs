@@ -205,6 +205,41 @@ async fn resources_list_refuses_a_bad_namespace_before_any_request() {
     assert_eq!(error.code, ErrorCode::InvalidInput);
 }
 
+/// These parts become the URL path, and what gets blanked depends on them, so a path
+/// smuggled into one could read a Secret unblanked.
+#[tokio::test]
+async fn a_resource_reference_holding_a_path_is_refused() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    upsert_secret(&fake);
+    let thing = core_resource("Thing", "things");
+    let smuggled = [
+        ResourceRef {
+            plural: "things/../secrets".into(),
+            ..thing.clone()
+        },
+        ResourceRef {
+            version: "v1/namespaces/default/secrets?x=".into(),
+            ..thing.clone()
+        },
+        ResourceRef {
+            group: "../api/v1".into(),
+            ..thing
+        },
+    ];
+    for r in &smuggled {
+        let listed = core
+            .resources_list(&id, r, Some("default"), None, None)
+            .await
+            .unwrap_err();
+        assert_eq!(listed.code, ErrorCode::InvalidInput, "{r:?}");
+        let got = core
+            .resource_get(&id, r, Some("default"), "creds")
+            .await
+            .unwrap_err();
+        assert_eq!(got.code, ErrorCode::InvalidInput, "{r:?}");
+    }
+}
+
 #[tokio::test]
 async fn resources_list_reports_a_forbidden_list() {
     let (core, _fake, id, _root) = connected(FakeKubeConfig {

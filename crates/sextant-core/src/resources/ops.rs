@@ -15,7 +15,7 @@ use serde_json::Value;
 use ts_rs::TS;
 
 use super::apply::parse_documents;
-use super::hub::{api_version, stamped_kind};
+use super::hub::{api_version, stamped_kind, validate};
 use super::sanitize::strip_for_list;
 use super::types::ResourceRef;
 use crate::app_core::AppCore;
@@ -86,10 +86,13 @@ pub(super) fn object_request(
     } else {
         None
     };
-    Ok(resource_request(r, namespace))
+    resource_request(r, namespace)
 }
 
-fn resource_request(r: &ResourceRef, namespace: Option<&str>) -> Request {
+/// The parts of `r` become the URL path, and what gets blanked in the answer depends on
+/// them, so a reference holding a path is refused here, before any request.
+fn resource_request(r: &ResourceRef, namespace: Option<&str>) -> CoreResult<Request> {
+    validate(r)?;
     let resource = ApiResource {
         group: r.group.clone(),
         version: r.version.clone(),
@@ -97,7 +100,7 @@ fn resource_request(r: &ResourceRef, namespace: Option<&str>) -> Request {
         kind: r.kind.clone(),
         plural: r.plural.clone(),
     };
-    Request::new(DynamicObject::url_path(&resource, namespace))
+    Ok(Request::new(DynamicObject::url_path(&resource, namespace)))
 }
 
 /// Sets `kind` and `apiVersion` from the resource before stripping, which depends
@@ -214,6 +217,7 @@ impl AppCore {
         if namespace.is_some_and(|namespace| !is_path_segment(namespace)) {
             return Err(invalid("the namespace is not valid"));
         }
+        let request = resource_request(r, namespace)?;
         let client = self.cluster_client(id)?;
         let mut params = ListParams::default();
         if let Some(labels) = label_selector {
@@ -222,7 +226,6 @@ impl AppCore {
         if let Some(fields) = field_selector {
             params = params.fields(fields);
         }
-        let request = resource_request(r, namespace);
         let mut list = send(&client, request.list(&params)).await?;
         let items = match list.get_mut("items").map(Value::take) {
             Some(Value::Array(items)) => items,

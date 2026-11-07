@@ -742,7 +742,7 @@ fn is_valid_path_part(part: &str) -> bool {
     })
 }
 
-fn validate(resource: &ResourceRef) -> CoreResult<()> {
+pub(super) fn validate(resource: &ResourceRef) -> CoreResult<()> {
     let valid = (resource.group.is_empty() || is_valid_path_part(&resource.group))
         && is_valid_path_part(&resource.version)
         && is_valid_path_part(&resource.plural);
