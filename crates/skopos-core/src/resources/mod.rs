@@ -9,6 +9,7 @@ mod hub;
 mod ops;
 mod sanitize;
 mod service_account;
+mod trim;
 mod types;
 
 pub use actions::{DataChange, SecretValue};

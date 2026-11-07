@@ -50,7 +50,7 @@ unsafe impl GlobalAlloc for Counting {
 #[global_allocator]
 static ALLOCATOR: Counting = Counting;
 
-/// A pod shaped like one a Deployment makes, about 5 KB of JSON once listed.
+/// A pod shaped like one a Deployment makes, about 6 KB of JSON whole and 1 KB as a row.
 fn pod(n: usize) -> Value {
     let name = format!("web-7d9c6b5f4d-{n:05}");
     let container = |which: &str| {
@@ -214,8 +214,10 @@ async fn the_hub_keeps_a_watched_object_in_about_the_size_of_its_json() {
 
     let per_object = kept / PODS;
     let json_per_object = text / PODS;
+    // A Pod row is trimmed to about 1 KB, so the key, the map entry and the watch's own
+    // share weigh as much as the text. A parsed tree would cost about ten times the text.
     assert!(
-        per_object < json_per_object * 3 / 2,
+        per_object < json_per_object * 3 / 2 + 1024,
         "the hub keeps {per_object} bytes for each object of {json_per_object} bytes of JSON"
     );
     drop(rx);

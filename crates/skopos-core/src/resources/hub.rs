@@ -21,6 +21,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::discovery::state_name;
 use super::sanitize::strip_for_list;
+use super::trim::trim_for_watch;
 use super::types::{ObjectKey, ResourceRef, Row, WatchEvent, WatchStatus};
 use crate::app_core::AppCore;
 use crate::cluster::ConnectionState;
@@ -625,6 +626,7 @@ fn to_row(object: &DynamicObject, resource: &ResourceRef) -> Option<(ObjectKey, 
     fields.insert("apiVersion".to_owned(), api_version(resource).into());
     fields.insert("kind".to_owned(), stamped_kind(resource).into());
     strip_for_list(&mut value);
+    trim_for_watch(resource, &mut value);
     Some((key, Row::new(&value).ok()?))
 }
 

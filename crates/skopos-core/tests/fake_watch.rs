@@ -402,19 +402,22 @@ fn object_with_server_fields(name: &str) -> Value {
 #[tokio::test]
 async fn managed_fields_are_stripped() {
     let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
-    fake.upsert("pods", object_with_server_fields("listed"));
+    // Not Pods: their rows drop every annotation, and this checks that others stay.
+    fake.upsert("configmaps", object_with_server_fields("listed"));
 
-    let mut pods = Consumer::subscribe(&core, &id, pods()).await;
-    pods.until("the snapshot", |c| c.snapshots() == 1).await;
-    fake.upsert("pods", object_with_server_fields("watched"));
-    pods.until("the watched pod", |c| c.has("default", "watched"))
+    let configmaps = resource("", "ConfigMap", "configmaps", true);
+    let mut table = Consumer::subscribe(&core, &id, configmaps).await;
+    table.until("the snapshot", |c| c.snapshots() == 1).await;
+    fake.upsert("configmaps", object_with_server_fields("watched"));
+    table
+        .until("the watched object", |c| c.has("default", "watched"))
         .await;
 
-    let text = serde_json::to_string(&pods.seen).unwrap();
+    let text = serde_json::to_string(&table.seen).unwrap();
     assert!(!text.contains("marker-manager"), "{text}");
     assert!(!text.contains("managedFields"), "{text}");
     assert!(!text.contains("last-applied-configuration"), "{text}");
-    let row = pods.rows.values().next().unwrap();
+    let row = table.rows.values().next().unwrap();
     assert_eq!(row["metadata"]["annotations"]["keep"], "me");
 }
 
@@ -922,4 +925,47 @@ async fn subscribing_to_disconnected_cluster_errors() {
         .resources_subscribe(&"no-such-cluster".to_owned(), pods(), tx)
         .await
         .is_err());
+}
+
+/// A table holds every Pod row, so a row carries only what the UI reads outside the drawer.
+#[tokio::test]
+async fn a_watched_pod_row_is_trimmed_and_a_get_returns_the_whole_pod() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    fake.upsert(
+        "pods",
+        json!({
+            "metadata": {
+                "name": "full",
+                "namespace": "default",
+                "labels": { "app": "web" },
+                "annotations": { "note": "for the drawer" },
+            },
+            "spec": { "containers": [{
+                "name": "main",
+                "image": "registry.k8s.io/pause:3.10",
+                "env": [{ "name": "A", "value": "1" }],
+            }] },
+            "status": { "phase": "Running" },
+        }),
+    );
+    let mut table = Consumer::subscribe(&core, &id, pods()).await;
+    table.until("the pod", |c| c.has("default", "full")).await;
+    let row = &table.rows[&(Some("default".to_owned()), "full".to_owned())];
+    assert_eq!(row["metadata"]["labels"], json!({ "app": "web" }));
+    assert_eq!(row["spec"]["containers"], json!([{ "name": "main" }]));
+    assert_eq!(row["status"]["phase"], "Running");
+    assert!(row["metadata"].get("annotations").is_none(), "{row}");
+
+    let whole = core
+        .resource_get(&id, &pods(), Some("default"), "full")
+        .await
+        .unwrap();
+    assert_eq!(
+        whole["metadata"]["annotations"],
+        json!({ "note": "for the drawer" })
+    );
+    assert_eq!(
+        whole["spec"]["containers"][0]["env"],
+        json!([{ "name": "A", "value": "1" }])
+    );
 }
