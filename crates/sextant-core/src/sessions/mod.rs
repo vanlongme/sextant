@@ -6,6 +6,7 @@
 #![allow(dead_code)]
 
 mod flow;
+mod logs;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -21,6 +22,7 @@ use crate::app_core::AppCore;
 use crate::error::{CoreResult, ErrorCode, IpcError};
 
 pub(crate) use flow::FlowControl;
+pub use logs::LogLine;
 
 /// The size of a terminal, in character cells.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

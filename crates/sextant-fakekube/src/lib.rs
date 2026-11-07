@@ -90,6 +90,38 @@ struct State_ {
     hold_evicted_pods: bool,
     /// (method, path) -> the writes received, oldest first.
     writes: BTreeMap<(String, String), Vec<WriteRequest>>,
+    /// (namespace, pod, container) -> what the `log` subresource serves.
+    logs: BTreeMap<LogKey, Vec<FakeLogLine>>,
+    /// (namespace, pod, container) -> the status every log request gets instead.
+    log_failures: BTreeMap<LogKey, u16>,
+    /// The query of every log request, oldest first.
+    log_requests: Vec<BTreeMap<String, String>>,
+}
+
+type LogKey = (String, String, String);
+
+/// One line of a container's log.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FakeLogLine {
+    /// Exactly as a kubelet writes it, for example `2026-01-01T00:00:00.000000001Z`.
+    pub timestamp: String,
+    pub text: String,
+}
+
+impl FakeLogLine {
+    pub fn new(timestamp: &str, text: &str) -> Self {
+        FakeLogLine {
+            timestamp: timestamp.to_string(),
+            text: text.to_string(),
+        }
+    }
+}
+
+#[derive(Clone)]
+enum LogFeed {
+    Line(LogKey, FakeLogLine),
+    /// Ends the open follow streams of this container, as its death would.
+    End(LogKey),
 }
 
 struct Inner {
@@ -99,6 +131,8 @@ struct Inner {
     /// `None` ends every watch, `Some(plural)` ends the watches of that plural.
     stop_watches: broadcast::Sender<Option<String>>,
     open_watches: AtomicUsize,
+    log_feed: broadcast::Sender<LogFeed>,
+    open_logs: AtomicUsize,
 }
 
 impl Inner {
@@ -221,6 +255,7 @@ impl FakeKube {
     pub async fn start(cfg: FakeKubeConfig) -> anyhow::Result<FakeKube> {
         let (events, _) = broadcast::channel(1024);
         let (stop_watches, _) = broadcast::channel(16);
+        let (log_feed, _) = broadcast::channel(1024);
         let names: Vec<String> = if cfg.namespaces.is_empty() {
             vec!["default".into(), "kube-system".into()]
         } else {
@@ -245,10 +280,15 @@ impl FakeKube {
                 eviction_failures: BTreeMap::new(),
                 hold_evicted_pods: false,
                 writes: BTreeMap::new(),
+                logs: BTreeMap::new(),
+                log_failures: BTreeMap::new(),
+                log_requests: Vec::new(),
             }),
             events,
             stop_watches,
             open_watches: AtomicUsize::new(0),
+            log_feed,
+            open_logs: AtomicUsize::new(0),
         });
         let fake_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let addr = fake_listener.local_addr()?;
@@ -427,9 +467,73 @@ impl FakeKube {
         self.inner.open_watches.load(Ordering::SeqCst)
     }
 
+    /// Appends to a container's log, and to the follow streams open on it.
+    pub fn add_log_lines(
+        &self,
+        namespace: &str,
+        pod: &str,
+        container: &str,
+        lines: &[FakeLogLine],
+    ) {
+        let key = log_key(namespace, pod, container);
+        let mut st = self.inner.lock();
+        for line in lines {
+            st.logs.entry(key.clone()).or_default().push(line.clone());
+            // No receivers is fine.
+            let _ = self
+                .inner
+                .log_feed
+                .send(LogFeed::Line(key.clone(), line.clone()));
+        }
+    }
+
+    /// Ends the open follow streams of a container with a clean end of stream, which is
+    /// what a client sees when the container dies or the connection is dropped.
+    pub fn end_log_streams(&self, namespace: &str, pod: &str, container: &str) {
+        let _ = self
+            .inner
+            .log_feed
+            .send(LogFeed::End(log_key(namespace, pod, container)));
+    }
+
+    /// Makes every log request for a container answer with this HTTP status until
+    /// cleared with `None`.
+    pub fn fail_logs_with(
+        &self,
+        namespace: &str,
+        pod: &str,
+        container: &str,
+        http_status: Option<u16>,
+    ) {
+        let key = log_key(namespace, pod, container);
+        let mut st = self.inner.lock();
+        match http_status {
+            Some(code) => st.log_failures.insert(key, code),
+            None => st.log_failures.remove(&key),
+        };
+    }
+
+    /// The query of every log request received, oldest first.
+    pub fn log_requests(&self) -> Vec<BTreeMap<String, String>> {
+        self.inner.lock().log_requests.clone()
+    }
+
+    /// How many log streams are open right now.
+    pub fn open_log_count(&self) -> usize {
+        self.inner.open_logs.load(Ordering::SeqCst)
+    }
+
     pub async fn shutdown(self) {
         self.task.abort();
     }
+}
+
+fn log_key(namespace: &str, pod: &str, container: &str) -> LogKey {
+    (
+        namespace.to_string(),
+        pod.to_string(),
+        container.to_string(),
+    )
 }
 
 impl Drop for FakeKube {
@@ -726,7 +830,7 @@ async fn generic(
         return forbidden(&res, verb, ns);
     }
     if let Some(sub) = t.subresource.as_deref() {
-        return subresource(&s, &res, &t, sub, &method, &headers, &body);
+        return subresource(&s, &res, &t, sub, &method, &headers, &body, &q);
     }
     if t.name.is_none() && method == Method::GET {
         let failure = s.lock().fail.get(&res.plural).copied();
@@ -745,7 +849,8 @@ async fn generic(
     }
 }
 
-/// The subresources the fake knows: `scale` and `eviction`.
+/// The subresources the fake knows: `scale`, `eviction` and `log`.
+#[allow(clippy::too_many_arguments)]
 fn subresource(
     s: &Shared,
     res: &FakeResource,
@@ -754,9 +859,11 @@ fn subresource(
     method: &Method,
     headers: &HeaderMap,
     body: &[u8],
+    q: &BTreeMap<String, String>,
 ) -> Response {
     let key = key_of(res, t);
     match (sub, method.as_str(), res.plural.as_str()) {
+        ("log", "GET", "pods") => pod_log(s, res, &key, q),
         ("scale", "PATCH", "deployments" | "statefulsets" | "replicasets") => {
             let is_merge = headers
                 .get(header::CONTENT_TYPE)
@@ -1225,6 +1332,126 @@ fn watch_response(
         header::CONTENT_TYPE,
         HeaderValue::from_static("application/json"),
     );
+    resp
+}
+
+/// Counts a log stream as open for as long as its response body lives.
+struct OpenLog(Shared);
+
+impl OpenLog {
+    fn new(s: Shared) -> Self {
+        s.open_logs.fetch_add(1, Ordering::SeqCst);
+        OpenLog(s)
+    }
+}
+
+impl Drop for OpenLog {
+    fn drop(&mut self) {
+        self.0.open_logs.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+fn declared_containers(pod: &Value) -> Vec<String> {
+    ["/spec/initContainers", "/spec/containers"]
+        .iter()
+        .filter_map(|pointer| pod.pointer(pointer).and_then(Value::as_array))
+        .flatten()
+        .filter_map(|container| container.get("name").and_then(Value::as_str))
+        .map(str::to_string)
+        .collect()
+}
+
+/// A real API server passes `sinceTime` to the kubelet in whole seconds, so a client that
+/// resumes gets the lines of that second again.
+fn same_second_or_later(timestamp: &str, since: &str) -> bool {
+    const SECONDS: usize = "2026-01-01T00:00:00".len();
+    timestamp.get(..SECONDS).unwrap_or(timestamp) >= since.get(..SECONDS).unwrap_or(since)
+}
+
+fn format_log_line(line: &FakeLogLine, timestamps: bool) -> Bytes {
+    Bytes::from(if timestamps {
+        format!("{} {}\n", line.timestamp, line.text)
+    } else {
+        format!("{}\n", line.text)
+    })
+}
+
+/// `GET .../pods/{name}/log`, with the query the client sends.
+fn pod_log(
+    s: &Shared,
+    res: &FakeResource,
+    (namespace, pod): &(String, String),
+    q: &BTreeMap<String, String>,
+) -> Response {
+    let flag = |name: &str| q.get(name).is_some_and(|v| v == "true" || v == "1");
+    let mut st = s.lock();
+    st.log_requests.push(q.clone());
+    let Some(object) = st
+        .objects
+        .get(&res.plural)
+        .and_then(|m| m.get(&(namespace.clone(), pod.clone())))
+    else {
+        return not_found_object(res, pod);
+    };
+    let declared = declared_containers(object);
+    let container = match q.get("container") {
+        Some(name) => name.clone(),
+        None if declared.len() == 1 => declared[0].clone(),
+        None => {
+            return status(400, "BadRequest", "a container name must be specified");
+        }
+    };
+    if !declared.is_empty() && !declared.contains(&container) {
+        return status(
+            400,
+            "BadRequest",
+            &format!("container {container} is not valid for pod {pod}"),
+        );
+    }
+    let key = log_key(namespace, pod, &container);
+    if let Some(code) = st.log_failures.get(&key) {
+        return status_for_code(*code);
+    }
+    let timestamps = flag("timestamps");
+    let mut lines = st.logs.get(&key).cloned().unwrap_or_default();
+    if let Some(since) = q.get("sinceTime") {
+        lines.retain(|line| same_second_or_later(&line.timestamp, since));
+    }
+    if let Some(tail) = q.get("tailLines").and_then(|v| v.parse::<usize>().ok()) {
+        lines = lines.split_off(lines.len().saturating_sub(tail));
+    }
+    let backlog: VecDeque<Bytes> = lines
+        .iter()
+        .map(|l| format_log_line(l, timestamps))
+        .collect();
+    // Subscribed under the lock, so no line is missed or sent twice.
+    let feed = flag("follow").then(|| s.log_feed.subscribe());
+    drop(st);
+    let open = OpenLog::new(s.clone());
+    let state = (open, backlog, feed, key);
+    let stream = futures::stream::unfold(
+        state,
+        move |(open, mut backlog, mut feed, key)| async move {
+            if let Some(chunk) = backlog.pop_front() {
+                return Some((Ok::<Bytes, Infallible>(chunk), (open, backlog, feed, key)));
+            }
+            let receiver = feed.as_mut()?;
+            loop {
+                match receiver.recv().await {
+                    Ok(LogFeed::Line(from, line)) if from == key => {
+                        let chunk = format_log_line(&line, timestamps);
+                        return Some((Ok(chunk), (open, backlog, feed, key)));
+                    }
+                    Ok(LogFeed::End(from)) if from == key => return None,
+                    Ok(_) => {}
+                    Err(_) => return None,
+                }
+            }
+        },
+    );
+    let mut resp = Response::new(Body::from_stream(stream));
+    resp.headers_mut()
+        .insert(header::CONTENT_TYPE, HeaderValue::from_static("text/plain"));
     resp
 }
 
