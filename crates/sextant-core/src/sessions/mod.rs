@@ -2,6 +2,7 @@
 //! a stop needs, so that every stop rule ends a session the same way: its token is
 //! cancelled, its task cleans up, and dropping its `SessionGuard` removes the entry.
 
+mod exec;
 mod flow;
 mod logs;
 mod pty;

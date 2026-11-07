@@ -62,6 +62,49 @@ pub async fn terminal_start(
     Ok(id)
 }
 
+// The IPC contract fixes these arguments, and a command takes them one by one.
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn pod_exec_start(
+    state: State<'_, AppState>,
+    cluster_id: ClusterId,
+    namespace: String,
+    pod: String,
+    container: Option<String>,
+    size: TerminalSize,
+    on_data: Channel<InvokeResponseBody>,
+    on_event: Channel<SessionEvent>,
+) -> Result<String, IpcError> {
+    let (tx, rx) = mpsc::channel(OUTPUT_BACKLOG);
+    let id = state
+        .core
+        .pod_exec_start(&cluster_id, &namespace, &pod, container, size, tx)
+        .await?;
+    forward_output(state.core.clone(), id.clone(), rx, on_data, on_event);
+    Ok(id)
+}
+
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn pod_attach_start(
+    state: State<'_, AppState>,
+    cluster_id: ClusterId,
+    namespace: String,
+    pod: String,
+    container: Option<String>,
+    size: TerminalSize,
+    on_data: Channel<InvokeResponseBody>,
+    on_event: Channel<SessionEvent>,
+) -> Result<String, IpcError> {
+    let (tx, rx) = mpsc::channel(OUTPUT_BACKLOG);
+    let id = state
+        .core
+        .pod_attach_start(&cluster_id, &namespace, &pod, container, size, tx)
+        .await?;
+    forward_output(state.core.clone(), id.clone(), rx, on_data, on_event);
+    Ok(id)
+}
+
 #[tauri::command]
 pub fn session_write(
     state: State<'_, AppState>,
