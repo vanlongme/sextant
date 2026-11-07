@@ -348,6 +348,16 @@ enum PodEnd {
 
 /// Evicts one pod, retrying while a disruption budget refuses, and waits until it
 /// is gone. `IpcError` maps 429 to `Unreachable`, so this works on the raw error.
+fn namespace_terminating(status: &kube::core::Status) -> bool {
+    status.code == 403
+        && status.details.as_ref().is_some_and(|details| {
+            details
+                .causes
+                .iter()
+                .any(|cause| cause.reason == "NamespaceTerminating")
+        })
+}
+
 async fn evict_until_gone(
     client: &Client,
     planned: &PlannedEviction,
@@ -385,6 +395,9 @@ async fn evict_until_gone(
                 .await;
                 tokio::time::sleep(EVICT_RETRY).await;
             }
+            // The API server refuses every eviction in a namespace being deleted, and the
+            // namespace controller deletes the pod anyway, so wait for it as for an eviction.
+            Err(kube::Error::Api(status)) if namespace_terminating(&status) => break,
             Err(kube::Error::Api(status)) if status.code == 409 => {
                 if pod_is_gone(client, planned).await {
                     report(DrainEvent::PodGone { pod: pod.clone() }).await;

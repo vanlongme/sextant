@@ -9,7 +9,7 @@ use futures::FutureExt;
 use k8s_openapi::api::apps::v1::Deployment;
 use k8s_openapi::api::core::v1::{Namespace, Pod};
 use k8s_openapi::api::policy::v1::PodDisruptionBudget;
-use kube::api::{DeleteParams, ListParams, ObjectMeta, PostParams};
+use kube::api::{DeleteParams, ListParams, ObjectMeta, Patch, PatchParams, PostParams};
 use kube::{Api, Client};
 use serde_json::json;
 use sextant_core::app_core::AppCore;
@@ -332,6 +332,91 @@ async fn a_retry_does_not_evict_a_pod_recreated_under_the_same_name() {
     let outcome = AssertUnwindSafe(body).catch_unwind().await;
     let uncordoned = core.node_set_unschedulable(&id, WORKER, false).await;
     let namespaces: Api<Namespace> = Api::all(client.clone());
+    let _ = namespaces.delete(NAMESPACE, &DeleteParams::default()).await;
+    if let Err(panic) = outcome {
+        std::panic::resume_unwind(panic);
+    }
+    uncordoned.unwrap();
+}
+
+const HOLD: &str = "sextant.test/hold";
+
+async fn release(pods: &Api<Pod>) {
+    let patch = Patch::Merge(json!({ "metadata": { "finalizers": null } }));
+    let _ = pods.patch(HELD, &PatchParams::default(), &patch).await;
+}
+
+/// The API server refuses to evict a pod whose namespace is terminating. The namespace
+/// controller deletes such a pod anyway, so the drain waits for it to go. A finalizer holds
+/// the pod, and with it the namespace, until the drain has tried the eviction.
+#[tokio::test]
+#[ignore = "needs make test-kind"]
+async fn a_drain_waits_for_a_pod_whose_namespace_is_terminating() {
+    let (core, id, _root) = connected().await;
+    let client = core.cluster_client(&id).unwrap();
+    create_namespace(&client).await;
+    let pods: Api<Pod> = Api::namespaced(client.clone(), NAMESPACE);
+    let namespaces: Api<Namespace> = Api::all(client.clone());
+    let body = async {
+        wait_for_foreign_pods_to_leave(&client).await;
+        let mut pod = held_pod();
+        pod.metadata.finalizers = Some(vec![HOLD.to_owned()]);
+        pods.create(&PostParams::default(), &pod).await.unwrap();
+        wait_for_running_pod(&client).await;
+        namespaces
+            .delete(NAMESPACE, &DeleteParams::default())
+            .await
+            .unwrap();
+        let started = Instant::now();
+        while pods
+            .get(HELD)
+            .await
+            .unwrap()
+            .metadata
+            .deletion_timestamp
+            .is_none()
+        {
+            assert!(
+                started.elapsed() < WAIT,
+                "the namespace never deleted the pod"
+            );
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+
+        let (tx, mut rx) = mpsc::channel(64);
+        let options = DrainOptions {
+            force: true,
+            delete_empty_dir: true,
+            timeout_seconds: Some(DRAIN_SECONDS),
+        };
+        core.node_drain_start(&id, WORKER, options, tx)
+            .await
+            .unwrap();
+        let mut failures = Vec::new();
+        let finished = tokio::time::timeout(WAIT + WAIT, async {
+            while let Some(event) = rx.recv().await {
+                match event {
+                    DrainEvent::PodEvicting { pod } if pod.name == HELD => {
+                        // Long enough for the eviction to be answered, refused or not.
+                        tokio::time::sleep(Duration::from_secs(3)).await;
+                        release(&pods).await;
+                    }
+                    DrainEvent::PodFailed { pod, message } => failures.push((pod, message)),
+                    DrainEvent::Finished { outcome, message } => return (outcome, message),
+                    _ => {}
+                }
+            }
+            panic!("the drain ended without Finished");
+        })
+        .await
+        .expect("the drain never finished");
+
+        assert!(failures.is_empty(), "{failures:?}");
+        assert_eq!(finished.0, DrainOutcome::Completed, "{:?}", finished.1);
+    };
+    let outcome = AssertUnwindSafe(body).catch_unwind().await;
+    release(&pods).await;
+    let uncordoned = core.node_set_unschedulable(&id, WORKER, false).await;
     let _ = namespaces.delete(NAMESPACE, &DeleteParams::default()).await;
     if let Err(panic) = outcome {
         std::panic::resume_unwind(panic);
