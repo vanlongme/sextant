@@ -113,6 +113,7 @@ fn run_app(core: AppCore, mut log_guard: Option<WorkerGuard>, context: Context<W
             commands::portforward::portforward_start,
             commands::portforward::portforward_stop,
             commands::portforward::portforward_remove,
+            commands::portforward::open_external,
             commands::sessions::terminal_start,
             commands::sessions::pod_exec_start,
             commands::sessions::pod_attach_start,

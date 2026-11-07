@@ -26,6 +26,7 @@ tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
 ts-rs.workspace = true
+url = "2"
 
 [dev-dependencies]
 sextant-fakekube = { path = "../sextant-fakekube" }

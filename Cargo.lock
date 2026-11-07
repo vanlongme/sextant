@@ -4394,6 +4394,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "ts-rs",
+ "url",
 ]
 
 [[package]]

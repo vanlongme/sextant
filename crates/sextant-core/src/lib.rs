@@ -2,6 +2,7 @@ pub mod app_core;
 pub mod catalog;
 pub mod cluster;
 pub mod error;
+pub mod external_url;
 pub mod kubeconfig;
 pub mod paths;
 pub mod portforward;

@@ -1,6 +1,8 @@
-use sextant_core::error::IpcError;
+use sextant_core::error::{ErrorCode, IpcError};
+use sextant_core::external_url::check_external_url;
 use sextant_core::portforward::{PortForward, PortForwardSpec};
-use tauri::State;
+use tauri::{AppHandle, State};
+use tauri_plugin_opener::OpenerExt;
 
 use crate::state::AppState;
 
@@ -34,4 +36,14 @@ pub async fn portforward_stop(state: State<'_, AppState>, id: String) -> Result<
 #[tauri::command]
 pub async fn portforward_remove(state: State<'_, AppState>, id: String) -> Result<(), IpcError> {
     state.core.portforward_remove(&id).await
+}
+
+/// The only way a URL leaves the app. The webview holds no opener permission, so this check
+/// cannot be stepped around (section 5.5 of the milestone spec).
+#[tauri::command]
+pub async fn open_external(app: AppHandle, url: String) -> Result<(), IpcError> {
+    let checked = check_external_url(&url)?;
+    app.opener()
+        .open_url(checked, None::<&str>)
+        .map_err(|error| IpcError::new(ErrorCode::Internal, error.to_string()))
 }
