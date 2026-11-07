@@ -16,7 +16,7 @@ use sextant_core::app_core::AppCore;
 use sextant_core::cluster::ConnectionState;
 use sextant_core::kubeconfig::ClusterId;
 use sextant_core::paths::AppPaths;
-use sextant_core::resources::{ResourceRef, WatchEvent};
+use sextant_core::resources::{ResourceRef, Row, WatchEvent};
 use tempfile::TempDir;
 use tokio::sync::mpsc;
 
@@ -136,10 +136,14 @@ impl Table {
                 .unwrap_or_else(|| panic!("closed before {what}"));
             match event {
                 WatchEvent::Snapshot { items } => {
-                    self.rows = items.into_iter().map(|o| (row_name(&o), o)).collect();
+                    self.rows = items
+                        .iter()
+                        .map(Row::to_value)
+                        .map(|o| (row_name(&o), o))
+                        .collect();
                 }
                 WatchEvent::Batch { upserts, deletes } => {
-                    for object in upserts {
+                    for object in upserts.iter().map(Row::to_value) {
                         self.rows.insert(row_name(&object), object);
                     }
                     for key in deletes {

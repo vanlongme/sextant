@@ -15,14 +15,13 @@ use futures::stream::{FuturesUnordered, StreamExt};
 use kube::api::{ApiResource, DynamicObject};
 use kube::runtime::watcher;
 use kube::{Api, Client};
-use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio::time::{Instant, MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
 
 use super::discovery::state_name;
 use super::sanitize::strip_for_list;
-use super::types::{ObjectKey, ResourceRef, WatchEvent, WatchStatus};
+use super::types::{ObjectKey, ResourceRef, Row, WatchEvent, WatchStatus};
 use crate::app_core::AppCore;
 use crate::cluster::ConnectionState;
 use crate::error::{CoreResult, ErrorCode, IpcError};
@@ -71,7 +70,7 @@ type StatusUpdate = (WatchStatus, Option<String>);
 #[derive(Default)]
 struct Subscriber {
     /// Latest wins, so this holds at most one entry per object.
-    changes: HashMap<ObjectKey, Option<Value>>,
+    changes: HashMap<ObjectKey, Option<Row>>,
     status: Option<StatusUpdate>,
     /// Built from the store when flushed, so a stalled subscriber holds no copy.
     snapshot_due: bool,
@@ -79,7 +78,7 @@ struct Subscriber {
 }
 
 struct GroupState {
-    store: HashMap<ObjectKey, Value>,
+    store: HashMap<ObjectKey, Row>,
     partitions: HashMap<Partition, PartitionState>,
     subscribers: HashMap<String, Subscriber>,
     status: StatusUpdate,
@@ -133,7 +132,7 @@ impl GroupState {
         }
     }
 
-    fn record_change(&mut self, key: &ObjectKey, value: Option<&Value>) {
+    fn record_change(&mut self, key: &ObjectKey, value: Option<&Row>) {
         // Whoever is waiting for a snapshot gets this change in it.
         if !self.synced() {
             return;
@@ -268,7 +267,7 @@ impl Group {
     }
 
     /// Replaces what the partition holds with a completed listing.
-    fn finish_init(&self, partition: &Partition, listed: HashMap<ObjectKey, Value>) {
+    fn finish_init(&self, partition: &Partition, listed: HashMap<ObjectKey, Row>) {
         let mut state = self.lock();
         match partition {
             None => state.store = listed,
@@ -287,7 +286,7 @@ impl Group {
         state.queue_snapshot();
     }
 
-    fn apply(&self, key: ObjectKey, value: Value) {
+    fn apply(&self, key: ObjectKey, value: Row) {
         let mut state = self.lock();
         state.record_change(&key, Some(&value));
         state.store.insert(key, value);
@@ -619,14 +618,14 @@ fn object_key(object: &DynamicObject) -> Option<ObjectKey> {
 
 /// The row for a subscriber. List items come without `kind` and `apiVersion`, so
 /// these are set from the resource before stripping, which depends on them.
-fn to_row(object: &DynamicObject, resource: &ResourceRef) -> Option<(ObjectKey, Value)> {
+fn to_row(object: &DynamicObject, resource: &ResourceRef) -> Option<(ObjectKey, Row)> {
     let key = object_key(object)?;
     let mut value = serde_json::to_value(object).ok()?;
     let fields = value.as_object_mut()?;
     fields.insert("apiVersion".to_owned(), api_version(resource).into());
     fields.insert("kind".to_owned(), stamped_kind(resource).into());
     strip_for_list(&mut value);
-    Some((key, value))
+    Some((key, Row::new(&value).ok()?))
 }
 
 /// Sleeps unless cancelled first, and lengthens the next pause.
@@ -799,8 +798,8 @@ impl AppCore {
 }
 
 /// The store's objects in a stable order: by namespace (cluster-scoped first), then name.
-fn sorted_items(store: &HashMap<ObjectKey, Value>) -> Vec<Value> {
-    let mut entries: Vec<(&ObjectKey, &Value)> = store.iter().collect();
+fn sorted_items(store: &HashMap<ObjectKey, Row>) -> Vec<Row> {
+    let mut entries: Vec<(&ObjectKey, &Row)> = store.iter().collect();
     entries.sort_by(|a, b| (&a.0.namespace, &a.0.name).cmp(&(&b.0.namespace, &b.0.name)));
     entries
         .into_iter()
@@ -825,11 +824,12 @@ mod tests {
                 namespace: namespace.map(str::to_owned),
                 name: name.to_owned(),
             };
-            store.insert(key, serde_json::json!({ "n": namespace, "name": name }));
+            let row = Row::new(&serde_json::json!({ "n": namespace, "name": name })).unwrap();
+            store.insert(key, row);
         }
         let names: Vec<_> = sorted_items(&store)
             .iter()
-            .map(|v| v["name"].as_str().unwrap().to_owned())
+            .map(|row| row.to_value()["name"].as_str().unwrap().to_owned())
             .collect();
         assert_eq!(names, ["node", "y", "z", "x"]);
     }

@@ -190,3 +190,27 @@ pub async fn ui_state_set(
 ) -> Result<(), IpcError> {
     state.core.ui_state_set(&key, value)
 }
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+    use sextant_core::resources::Row;
+    use tauri::ipc::{InvokeResponseBody, IpcResponse};
+
+    use super::*;
+
+    /// A row is kept as text, and must still reach the webview as the object.
+    #[test]
+    fn a_watched_row_crosses_the_channel_as_its_object() {
+        let object =
+            json!({ "kind": "Pod", "metadata": { "name": "web", "labels": { "app": "web" } } });
+        let event = WatchEvent::Snapshot {
+            items: vec![Row::new(&object).unwrap()],
+        };
+        let InvokeResponseBody::Json(body) = event.body().unwrap() else {
+            panic!("the event did not cross as JSON");
+        };
+        let sent: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(sent, json!({ "type": "snapshot", "items": [object] }));
+    }
+}

@@ -1,6 +1,9 @@
 //! Types describing a served API resource and the events of a watch on one.
 
-use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+
+use serde::{Deserialize, Serialize, Serializer};
+use serde_json::value::RawValue;
 use ts_rs::TS;
 
 /// Identifies one resource type by group, version and plural.
@@ -53,6 +56,34 @@ pub enum WatchStatus {
     Forbidden,
 }
 
+/// One watched object, kept as the JSON text it crosses to the webview as. Parsed,
+/// an object costs about ten times its text, and the hub never reads inside one.
+/// Clones share the text.
+#[derive(Debug, Clone)]
+pub struct Row(Arc<RawValue>);
+
+impl Row {
+    pub fn new(object: &serde_json::Value) -> serde_json::Result<Self> {
+        serde_json::value::to_raw_value(object).map(|raw| Self(raw.into()))
+    }
+
+    pub fn json(&self) -> &str {
+        self.0.get()
+    }
+
+    /// Parses the text again, for a reader that needs the fields.
+    pub fn to_value(&self) -> serde_json::Value {
+        serde_json::from_str(self.0.get()).expect("a row holds the JSON of a value")
+    }
+}
+
+/// Writes the text as it is, so the object reaches the webview unchanged.
+impl Serialize for Row {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
+    }
+}
+
 /// What a subscriber receives. A `Snapshot` replaces everything it holds, and a
 /// `Batch` changes it.
 #[derive(Debug, Clone, Serialize, TS)]
@@ -60,10 +91,12 @@ pub enum WatchStatus {
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum WatchEvent {
     Snapshot {
-        items: Vec<serde_json::Value>,
+        #[ts(as = "Vec<serde_json::Value>")]
+        items: Vec<Row>,
     },
     Batch {
-        upserts: Vec<serde_json::Value>,
+        #[ts(as = "Vec<serde_json::Value>")]
+        upserts: Vec<Row>,
         deletes: Vec<ObjectKey>,
     },
     Status {

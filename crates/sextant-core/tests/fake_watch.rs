@@ -9,7 +9,7 @@ use sextant_core::app_core::AppCore;
 use sextant_core::cluster::ConnectionState;
 use sextant_core::kubeconfig::ClusterId;
 use sextant_core::paths::AppPaths;
-use sextant_core::resources::{ObjectKey, ResourceRef, WatchEvent, WatchStatus};
+use sextant_core::resources::{ObjectKey, ResourceRef, Row, WatchEvent, WatchStatus};
 use sextant_fakekube::{DenyRule, FakeKube, FakeKubeConfig, FakeResource};
 use tempfile::TempDir;
 use tokio::sync::mpsc;
@@ -149,15 +149,15 @@ impl Consumer {
         match &event {
             WatchEvent::Snapshot { items } => {
                 self.rows.clear();
-                for item in items {
-                    let row = row_of(item);
-                    self.rows.insert((row.namespace, row.name), item.clone());
+                for item in items.iter().map(Row::to_value) {
+                    let row = row_of(&item);
+                    self.rows.insert((row.namespace, row.name), item);
                 }
             }
             WatchEvent::Batch { upserts, deletes } => {
-                for item in upserts {
-                    let row = row_of(item);
-                    self.rows.insert((row.namespace, row.name), item.clone());
+                for item in upserts.iter().map(Row::to_value) {
+                    let row = row_of(&item);
+                    self.rows.insert((row.namespace, row.name), item);
                 }
                 for row in deletes {
                     self.rows.remove(&(row.namespace.clone(), row.name.clone()));
@@ -572,7 +572,7 @@ async fn slow_subscriber_does_not_block_others() {
     for event in &slow.seen {
         if let WatchEvent::Batch { upserts, .. } = event {
             assert!(upserts.len() <= OBJECTS, "{}", upserts.len());
-            let unique: HashSet<_> = upserts.iter().map(|o| row_of(o).name).collect();
+            let unique: HashSet<_> = upserts.iter().map(|o| row_of(&o.to_value()).name).collect();
             assert_eq!(unique.len(), upserts.len());
         }
     }

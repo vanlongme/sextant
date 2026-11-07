@@ -20,4 +20,4 @@ pub(crate) use ops::{invalid, is_path_segment};
 pub use ops::{InvolvedRef, Propagation};
 pub use sanitize::strip_for_list;
 pub use service_account::SavedKubeconfig;
-pub use types::{ApiResourceInfo, ObjectKey, ResourceRef, WatchEvent, WatchStatus};
+pub use types::{ApiResourceInfo, ObjectKey, ResourceRef, Row, WatchEvent, WatchStatus};
