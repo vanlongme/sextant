@@ -108,6 +108,7 @@ fn run_app(core: AppCore, mut log_guard: Option<WorkerGuard>, context: Context<W
             commands::logs::logs_start,
             commands::logs::logs_stop,
             commands::logs::logs_download,
+            commands::sessions::terminal_start,
             commands::sessions::session_write,
             commands::sessions::session_resize,
             commands::sessions::session_ack,

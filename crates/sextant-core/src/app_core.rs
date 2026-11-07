@@ -72,6 +72,7 @@ struct Inner {
     drains: DashMap<(ClusterId, String), RunningDrain>,
     next_drain: AtomicU64,
     sessions: Arc<SessionRegistry>,
+    home: PathBuf,
     /// Held across a preferences write and the matching source change, so
     /// concurrent calls cannot leave the sync on sources that were not saved last.
     sync: Mutex<Option<KubeconfigSync>>,
@@ -204,6 +205,7 @@ impl AppCore {
                 drains: DashMap::new(),
                 next_drain: AtomicU64::new(1),
                 sessions: Arc::new(SessionRegistry::default()),
+                home: paths.home.clone(),
                 sync: Mutex::new(Some(sync)),
                 snapshots,
                 sync_events: Mutex::new(Some(sync_events)),
@@ -397,6 +399,10 @@ impl AppCore {
     pub(crate) fn next_drain_id(&self) -> String {
         let number = self.inner.next_drain.fetch_add(1, Ordering::Relaxed);
         format!("drain-{number}")
+    }
+
+    pub(crate) fn home_dir(&self) -> &Path {
+        &self.inner.home
     }
 
     pub(crate) fn sessions(&self) -> &Arc<SessionRegistry> {

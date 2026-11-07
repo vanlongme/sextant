@@ -6,4 +6,8 @@ export type Prefs = { theme: Theme,
 /**
  * Seeded from `default_sources` on first run. A saved empty list stays empty.
  */
-syncSources: Array<SyncSource>, };
+syncSources: Array<SyncSource>, 
+/**
+ * The local terminal's shell. `None` picks one per F11.
+ */
+terminalShell?: string | null, };

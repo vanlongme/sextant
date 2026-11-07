@@ -36,6 +36,9 @@ pub struct Prefs {
     pub theme: Theme,
     /// Seeded from `default_sources` on first run. A saved empty list stays empty.
     pub sync_sources: Vec<SyncSource>,
+    /// The local terminal's shell. `None` picks one per F11.
+    #[ts(optional = nullable)]
+    pub terminal_shell: Option<String>,
 }
 
 #[cfg(test)]
@@ -47,6 +50,7 @@ mod tests {
         let prefs = Prefs {
             theme: Theme::Dark,
             sync_sources: vec![SyncSource::Dir("/h/.kube".into())],
+            terminal_shell: None,
         };
         let v = serde_json::to_value(&prefs).unwrap();
         assert_eq!(v["theme"], "dark");

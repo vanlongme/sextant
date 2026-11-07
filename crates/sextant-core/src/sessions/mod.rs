@@ -2,11 +2,9 @@
 //! a stop needs, so that every stop rule ends a session the same way: its token is
 //! cancelled, its task cleans up, and dropping its `SessionGuard` removes the entry.
 
-// The session kinds arrive in later tasks. Task 6 removes this line.
-#![allow(dead_code)]
-
 mod flow;
 mod logs;
+mod pty;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
