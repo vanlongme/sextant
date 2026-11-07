@@ -5,6 +5,8 @@ mkdir -p e2e/.tmp
 config=e2e/.tmp/kubeconfig
 
 create_cluster() {
+  # kind merges into an existing file, and the tests expect this cluster alone in it.
+  rm -f "$config"
   kind create cluster --name skopos-e2e --config e2e/fixtures/kind-config.yaml \
     --kubeconfig "$config" --wait 120s
 }
