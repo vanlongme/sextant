@@ -106,6 +106,24 @@ pub async fn pod_attach_start(
 }
 
 #[tauri::command]
+pub async fn node_shell_start(
+    state: State<'_, AppState>,
+    cluster_id: ClusterId,
+    node: String,
+    size: TerminalSize,
+    on_data: Channel<InvokeResponseBody>,
+    on_event: Channel<SessionEvent>,
+) -> Result<String, IpcError> {
+    let (tx, rx) = mpsc::channel(OUTPUT_BACKLOG);
+    let id = state
+        .core
+        .node_shell_start(&cluster_id, &node, size, tx)
+        .await?;
+    forward_output(state.core.clone(), id.clone(), rx, on_data, on_event);
+    Ok(id)
+}
+
+#[tauri::command]
 pub fn session_write(
     state: State<'_, AppState>,
     session_id: String,

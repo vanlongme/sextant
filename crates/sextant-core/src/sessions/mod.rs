@@ -5,8 +5,10 @@
 mod exec;
 mod flow;
 mod logs;
+mod node_shell;
 mod pty;
 
+use std::hash::{BuildHasher, Hasher, RandomState};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -82,6 +84,8 @@ pub(crate) struct SessionRegistry {
     sessions: DashMap<String, RunningSession>,
     next: AtomicU64,
     ended: Notify,
+    /// Milliseconds, set by tests. Zero means the real limit.
+    node_shell_limit_ms: AtomicU64,
 }
 
 impl SessionRegistry {
@@ -99,6 +103,18 @@ impl SessionRegistry {
             registry: self.clone(),
             id,
         }
+    }
+
+    pub(crate) fn node_shell_limit(&self) -> Duration {
+        match self.node_shell_limit_ms.load(Ordering::Relaxed) {
+            0 => node_shell::START_LIMIT,
+            millis => Duration::from_millis(millis),
+        }
+    }
+
+    pub(crate) fn set_node_shell_limit(&self, limit: Duration) {
+        let millis = u64::try_from(limit.as_millis()).unwrap_or(u64::MAX);
+        self.node_shell_limit_ms.store(millis, Ordering::Relaxed);
     }
 
     fn stop(&self, id: &str) {
@@ -132,6 +148,11 @@ impl SessionRegistry {
         };
         tokio::time::timeout(limit, idle).await.is_ok()
     }
+}
+
+/// Sixteen hex digits that differ from one call to the next, for names that must not collide.
+pub(crate) fn random_hex() -> String {
+    format!("{:016x}", RandomState::new().build_hasher().finish())
 }
 
 /// One pod as plain JSON, so a pod with little in it still reads.

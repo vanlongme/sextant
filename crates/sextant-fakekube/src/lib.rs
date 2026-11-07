@@ -845,7 +845,7 @@ async fn generic(
         "create" => create(&s, &res, &t, &body),
         "update" => update(&s, &res, &t, &body),
         "patch" => patch(&s, &res, &t, &headers, &body),
-        _ => delete_one(&s, &res, &t),
+        _ => delete_one(&s, &res, &t, &body),
     }
 }
 
@@ -1226,9 +1226,30 @@ fn patch(s: &Shared, res: &FakeResource, t: &Target, headers: &HeaderMap, body: 
     json_ok(stored)
 }
 
-fn delete_one(s: &Shared, res: &FakeResource, t: &Target) -> Response {
+fn delete_one(s: &Shared, res: &FakeResource, t: &Target, body: &[u8]) -> Response {
     let key = key_of(res, t);
     let mut st = s.lock();
+    let wanted_uid = serde_json::from_slice::<Value>(body).ok().and_then(|doc| {
+        doc.pointer("/preconditions/uid")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    });
+    let found_uid = st
+        .objects
+        .get(&res.plural)
+        .and_then(|m| m.get(&key))
+        .and_then(|o| o.pointer("/metadata/uid"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    if let (Some(wanted), Some(found)) = (wanted_uid, found_uid) {
+        if wanted != found {
+            return status(
+                409,
+                "Conflict",
+                &format!("Precondition failed: UID in precondition: {wanted}, UID in object meta: {found}"),
+            );
+        }
+    }
     match s.remove(&mut st, &res.plural, &key.0, &key.1) {
         Some(o) => json_ok(o),
         None => not_found_object(res, &key.1),

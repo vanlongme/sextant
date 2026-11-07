@@ -111,6 +111,7 @@ fn run_app(core: AppCore, mut log_guard: Option<WorkerGuard>, context: Context<W
             commands::sessions::terminal_start,
             commands::sessions::pod_exec_start,
             commands::sessions::pod_attach_start,
+            commands::sessions::node_shell_start,
             commands::sessions::session_write,
             commands::sessions::session_resize,
             commands::sessions::session_ack,
