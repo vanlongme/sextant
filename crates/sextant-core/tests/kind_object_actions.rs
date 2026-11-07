@@ -36,15 +36,43 @@ async fn force_delete_does_not_wait_out_the_grace_period() {
                 "containers": [{ "name": "main", "image": TEST_IMAGE, "args": ["pause"] }],
             },
         });
-        create_pod(&client, NAMESPACE, pod).await;
+        let stale = create_pod(&client, NAMESPACE, pod)
+            .await
+            .metadata
+            .uid
+            .unwrap();
         wait_running(&client, NAMESPACE, "slow").await;
-        core.pod_force_delete(&id, NAMESPACE, "slow").await.unwrap();
+        core.pod_force_delete(&id, NAMESPACE, "slow", &stale)
+            .await
+            .unwrap();
         let pods: Api<Pod> = Api::namespaced(client.clone(), NAMESPACE);
         let started = Instant::now();
         while pods.get_opt("slow").await.unwrap().is_some() {
             assert!(started.elapsed() < WAIT, "the pod is still there");
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
+
+        // A replacement under the same name, as a StatefulSet makes, outlives a stale row.
+        let replacement = json!({
+            "metadata": { "name": "slow" },
+            "spec": {
+                "terminationGracePeriodSeconds": 0,
+                "containers": [{ "name": "main", "image": TEST_IMAGE, "args": ["pause"] }],
+            },
+        });
+        let fresh = create_pod(&client, NAMESPACE, replacement)
+            .await
+            .metadata
+            .uid
+            .unwrap();
+        let error = core
+            .pod_force_delete(&id, NAMESPACE, "slow", &stale)
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, ErrorCode::Conflict, "{}", error.message);
+        let kept = pods.get("slow").await.unwrap();
+        assert_eq!(kept.metadata.uid.as_deref(), Some(fresh.as_str()));
+        assert!(kept.metadata.deletion_timestamp.is_none());
     })
     .await;
 }

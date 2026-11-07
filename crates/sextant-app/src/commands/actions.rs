@@ -178,10 +178,11 @@ pub async fn pod_force_delete(
     cluster_id: ClusterId,
     namespace: String,
     name: String,
+    uid: String,
 ) -> Result<(), IpcError> {
     state
         .core
-        .pod_force_delete(&cluster_id, &namespace, &name)
+        .pod_force_delete(&cluster_id, &namespace, &name, &uid)
         .await
 }
 

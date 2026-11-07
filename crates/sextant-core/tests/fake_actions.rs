@@ -449,21 +449,60 @@ fn add_class(fake: &FakeKube, name: &str, is_default: bool) {
     );
 }
 
+fn pods() -> ResourceRef {
+    ResourceRef {
+        group: String::new(),
+        version: "v1".into(),
+        plural: "pods".into(),
+        kind: "Pod".into(),
+        namespaced: true,
+    }
+}
+
+async fn pod_uid(core: &AppCore, id: &ClusterId, name: &str) -> String {
+    let pod = core
+        .resource_get(id, &pods(), Some("default"), name)
+        .await
+        .unwrap();
+    pod["metadata"]["uid"].as_str().unwrap().to_string()
+}
+
 #[tokio::test]
-async fn force_delete_sends_a_grace_period_of_zero() {
+async fn force_delete_sends_a_grace_period_of_zero_and_the_uid() {
     let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
     fake.add_pod("default", "p");
-    core.pod_force_delete(&id, "default", "p").await.unwrap();
+    let uid = pod_uid(&core, &id, "p").await;
+    core.pod_force_delete(&id, "default", "p", &uid)
+        .await
+        .unwrap();
     let delete = fake
         .writes("DELETE", "/api/v1/namespaces/default/pods/p")
         .pop()
         .unwrap();
     assert_eq!(delete.body["gracePeriodSeconds"], 0);
+    assert_eq!(delete.body["preconditions"]["uid"], uid.as_str());
     let error = core
-        .pod_force_delete(&id, "default", "p")
+        .pod_force_delete(&id, "default", "p", &uid)
         .await
         .unwrap_err();
     assert_eq!(error.code, ErrorCode::NotFound);
+}
+
+/// A row read before a StatefulSet replaced its pod still holds the old uid, and the
+/// replacement has the same name.
+#[tokio::test]
+async fn force_delete_leaves_a_replacement_with_the_same_name() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    fake.add_pod("default", "p");
+    let stale = pod_uid(&core, &id, "p").await;
+    fake.delete_pod("default", "p");
+    fake.add_pod("default", "p");
+    let error = core
+        .pod_force_delete(&id, "default", "p", &stale)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::Conflict);
+    assert_ne!(pod_uid(&core, &id, "p").await, stale);
 }
 
 fn config_maps() -> ResourceRef {

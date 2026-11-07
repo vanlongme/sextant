@@ -5,7 +5,7 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use k8s_openapi::api::networking::v1::IngressClass;
 use k8s_openapi::jiff::Timestamp;
-use kube::api::{DeleteParams, ListParams, Patch, PatchParams, PostParams};
+use kube::api::{DeleteParams, ListParams, Patch, PatchParams, PostParams, Preconditions};
 use kube::Api;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -283,17 +283,25 @@ impl AppCore {
             .await
     }
 
-    /// Deletes a pod with `gracePeriodSeconds: 0`, without waiting for the kubelet.
+    /// Deletes a pod with `gracePeriodSeconds: 0`, without waiting for the kubelet. The uid
+    /// is a precondition, so a pod that replaced it under the same name, as a StatefulSet's
+    /// does, gets a `Conflict` instead of being deleted.
     pub async fn pod_force_delete(
         &self,
         id: &ClusterId,
         namespace: &str,
         name: &str,
+        uid: &str,
     ) -> CoreResult<()> {
         let pods = core_resource("Pod", "pods", "", "v1", true);
         let request = object_request(&pods, Some(namespace), name)?;
         let client = self.cluster_client(id)?;
-        let params = DeleteParams::background().grace_period(0);
+        let params = DeleteParams::background()
+            .grace_period(0)
+            .preconditions(Preconditions {
+                uid: Some(uid.to_string()),
+                resource_version: None,
+            });
         send(&client, request.delete(name, &params)).await?;
         Ok(())
     }
