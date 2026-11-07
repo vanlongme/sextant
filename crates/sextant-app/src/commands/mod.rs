@@ -4,6 +4,7 @@
 pub mod actions;
 pub mod catalog;
 pub mod cluster;
+pub mod logs;
 pub mod resources;
 pub mod sessions;
 pub mod settings;

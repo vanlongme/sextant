@@ -15,6 +15,7 @@ pub use apply::ApplyResult;
 pub(crate) use drain::RunningDrain;
 pub use drain::{DrainEvent, DrainOptions, DrainOutcome, PodRef, SkipReason, SkippedPod};
 pub(crate) use hub::WatchHub;
+pub(crate) use ops::{invalid, is_path_segment};
 pub use ops::{InvolvedRef, Propagation};
 pub use sanitize::strip_for_list;
 pub use types::{ApiResourceInfo, ObjectKey, ResourceRef, WatchEvent, WatchStatus};

@@ -13,7 +13,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dashmap::DashMap;
+use k8s_openapi::api::core::v1::Pod;
+use kube::api::GetParams;
+use kube::core::{Request, Resource};
+use kube::Client;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tokio::sync::{mpsc, watch, Notify};
 use tokio_util::sync::CancellationToken;
 use ts_rs::TS;
@@ -22,7 +27,7 @@ use crate::app_core::AppCore;
 use crate::error::{CoreResult, ErrorCode, IpcError};
 
 pub(crate) use flow::FlowControl;
-pub use logs::LogLine;
+pub use logs::{LogEndReason, LogEvent, LogLine, LogMarker, LogOptions, LogTarget};
 
 /// The size of a terminal, in character cells.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -128,6 +133,29 @@ impl SessionRegistry {
         };
         tokio::time::timeout(limit, idle).await.is_ok()
     }
+}
+
+/// One pod as plain JSON, so a pod with little in it still reads.
+pub(crate) async fn read_pod(
+    client: &Client,
+    namespace: &str,
+    name: &str,
+) -> Result<Value, kube::Error> {
+    let request = Request::new(Pod::url_path(&(), Some(namespace)))
+        .get(name, &GetParams::default())
+        .map_err(kube::Error::BuildRequest)?;
+    client.request(request).await
+}
+
+/// The containers a pod declares, init containers first, as they run.
+pub(crate) fn pod_container_names(pod: &Value) -> Vec<String> {
+    ["/spec/initContainers", "/spec/containers"]
+        .iter()
+        .filter_map(|pointer| pod.pointer(pointer).and_then(Value::as_array))
+        .flatten()
+        .filter_map(|container| container.get("name").and_then(Value::as_str))
+        .map(str::to_owned)
+        .collect()
 }
 
 /// Held by a session's task. Dropping it marks the session as gone, panic included, so

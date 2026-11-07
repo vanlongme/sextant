@@ -46,13 +46,13 @@ pub struct InvolvedRef {
     pub uid: Option<String>,
 }
 
-pub(super) fn invalid(message: impl Into<String>) -> IpcError {
+pub(crate) fn invalid(message: impl Into<String>) -> IpcError {
     IpcError::new(ErrorCode::InvalidInput, message)
 }
 
 /// Whether the API server accepts this as a name in a request path. Anything else
 /// would address a different path than the one meant.
-pub(super) fn is_path_segment(value: &str) -> bool {
+pub(crate) fn is_path_segment(value: &str) -> bool {
     !value.is_empty()
         && value != "."
         && value != ".."
