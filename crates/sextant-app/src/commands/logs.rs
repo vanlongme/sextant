@@ -1,6 +1,8 @@
+use std::path::PathBuf;
+
 use sextant_core::error::IpcError;
 use sextant_core::kubeconfig::ClusterId;
-use sextant_core::sessions::{LogEvent, LogOptions, LogTarget};
+use sextant_core::sessions::{LogDownload, LogEvent, LogOptions, LogTarget};
 use tauri::ipc::Channel;
 use tauri::State;
 use tokio::sync::mpsc;
@@ -37,4 +39,18 @@ pub async fn logs_start(
 pub async fn logs_stop(state: State<'_, AppState>, session_id: String) -> Result<(), IpcError> {
     state.core.logs_stop(&session_id);
     Ok(())
+}
+
+#[tauri::command]
+pub async fn logs_download(
+    state: State<'_, AppState>,
+    cluster_id: ClusterId,
+    target: LogTarget,
+    options: LogOptions,
+    dest_path: PathBuf,
+) -> Result<LogDownload, IpcError> {
+    state
+        .core
+        .logs_download(&cluster_id, target, options, &dest_path)
+        .await
 }

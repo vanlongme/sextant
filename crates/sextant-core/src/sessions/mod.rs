@@ -27,7 +27,7 @@ use crate::app_core::AppCore;
 use crate::error::{CoreResult, ErrorCode, IpcError};
 
 pub(crate) use flow::FlowControl;
-pub use logs::{LogEndReason, LogEvent, LogLine, LogMarker, LogOptions, LogTarget};
+pub use logs::{LogDownload, LogEndReason, LogEvent, LogLine, LogMarker, LogOptions, LogTarget};
 
 /// The size of a terminal, in character cells.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

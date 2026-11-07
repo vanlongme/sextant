@@ -1,6 +1,7 @@
 //! Log streaming (F10). `parse` turns bytes into lines, `follow` keeps one container's
 //! stream going, and this file runs a session: one task per stream, feeding one batcher.
 
+mod download;
 mod follow;
 mod parse;
 mod workload;
@@ -115,6 +116,15 @@ pub enum LogEvent {
     Failed {
         error: IpcError,
     },
+}
+
+/// What `logs_download` wrote.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct LogDownload {
+    #[ts(type = "number")]
+    pub bytes: u64,
 }
 
 /// What a stream hands to the batcher. Both kinds share one queue, so a marker stays

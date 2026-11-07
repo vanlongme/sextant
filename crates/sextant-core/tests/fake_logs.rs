@@ -709,3 +709,78 @@ async fn a_workload_without_a_usable_selector_is_a_failed_event() {
     };
     assert_eq!(error.code, ErrorCode::InvalidInput);
 }
+#[tokio::test]
+async fn a_download_writes_every_line_past_the_tail_limit() {
+    let (core, fake, id, root) = connected_fake(FakeKubeConfig::default()).await;
+    pod_with_containers(&fake, json!({}));
+    add_line(&fake, "main", ONE, "one");
+    add_line(&fake, "main", TWO, "two");
+    let dest = root.path().join("saved.log");
+    let options = LogOptions {
+        tail_lines: Some(1),
+        follow: true,
+        ..once()
+    };
+    let saved = core
+        .logs_download(&id, pod_target(Some("main")), options, &dest)
+        .await
+        .unwrap();
+    let text = std::fs::read_to_string(&dest).unwrap();
+    assert_eq!(text, format!("{ONE} one\n{TWO} two\n"));
+    assert_eq!(saved.bytes, text.len() as u64);
+    assert_eq!(fake.log_requests()[0].get("follow"), None);
+    assert_eq!(core.session_count(), 0);
+}
+
+#[tokio::test]
+async fn a_download_of_several_streams_labels_lines_and_notes_a_failure() {
+    let (core, fake, id, root) = connected_fake(FakeKubeConfig::default()).await;
+    pod_with_containers(&fake, json!({}));
+    fake.fail_logs_with("default", "p", "setup", Some(403));
+    add_line(&fake, "main", ONE, "one");
+    let dest = root.path().join("saved.log");
+    core.logs_download(&id, pod_target(None), once(), &dest)
+        .await
+        .unwrap();
+    let text = std::fs::read_to_string(&dest).unwrap();
+    assert!(text.contains(&format!("[p/main] {ONE} one\n")), "{text}");
+    assert!(text.contains("[p/setup] "), "{text}");
+}
+
+#[tokio::test]
+async fn a_failed_download_rejects_and_leaves_no_file() {
+    let (core, fake, id, root) = connected_fake(FakeKubeConfig::default()).await;
+    pod_with_containers(&fake, json!({}));
+    fake.fail_logs_with("default", "p", "main", Some(403));
+    let dest = root.path().join("saved.log");
+    let error = core
+        .logs_download(&id, pod_target(Some("main")), once(), &dest)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::Forbidden);
+    assert!(!dest.exists());
+    let leftovers = std::fs::read_dir(root.path())
+        .unwrap()
+        .filter(|entry| {
+            let name = entry.as_ref().unwrap().file_name();
+            name.to_string_lossy().starts_with(".tmp")
+        })
+        .count();
+    assert_eq!(leftovers, 0);
+}
+
+#[tokio::test]
+async fn a_download_refuses_a_relative_path() {
+    let (core, fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
+    pod_with_containers(&fake, json!({}));
+    let error = core
+        .logs_download(
+            &id,
+            pod_target(Some("main")),
+            once(),
+            std::path::Path::new("saved.log"),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::InvalidInput);
+}
