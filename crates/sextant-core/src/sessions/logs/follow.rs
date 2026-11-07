@@ -387,7 +387,7 @@ pub(super) async fn stream_container(context: StreamContext, target: StreamTarge
             }
             Decision::Retry => {}
         }
-        if progress.opened && !progress.reconnecting {
+        if (progress.opened || failure.is_some()) && !progress.reconnecting {
             progress.reconnecting = true;
             let message = failure.map(|error| error.message);
             context

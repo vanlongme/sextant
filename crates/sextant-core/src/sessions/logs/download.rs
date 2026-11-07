@@ -114,7 +114,13 @@ impl AppCore {
         let client = self.cluster_client(id)?;
         let token = self.cluster_cancel_token(id)?;
         let guard = self.sessions().register(token.clone(), None);
-        let temp = NamedTempFile::new_in(parent)?;
+        let temp = NamedTempFile::new_in(parent).map_err(|error| {
+            // The io error quotes the folder path, which must not reach the caller.
+            IpcError::new(
+                IpcError::from(error).code,
+                "the destination folder cannot be written",
+            )
+        })?;
         let (file, temp_path) = temp.into_parts();
 
         let labelled = can_have_several_streams(&target);

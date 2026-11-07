@@ -131,11 +131,15 @@ struct Followed {
 
 impl Followed {
     async fn pod_marker(&self, pod: &str, marker: LogMarker) {
+        self.watch_marker(pod, marker, None).await;
+    }
+
+    async fn watch_marker(&self, pod: &str, marker: LogMarker, message: Option<String>) {
         let item = StreamItem::Marker {
             pod: pod.to_owned(),
             container: None,
             marker,
-            message: None,
+            message,
         };
         // Only fails once the batcher has gone, and that stops the session anyway.
         let _ = self.context.items.send(item).await;
@@ -225,6 +229,7 @@ async fn follow_pods(
     context: StreamContext,
     selector: Selector,
     container: Option<String>,
+    workload: &str,
 ) -> LogEvent {
     let token = context.token.clone();
     let config = watcher::Config::default().labels_from(&selector);
@@ -238,6 +243,7 @@ async fn follow_pods(
     let mut listing = HashSet::new();
     let mut listed = false;
     let mut backoff = MIN_BACKOFF;
+    let mut reconnecting = false;
     loop {
         tokio::select! {
             () = token.cancelled() => break,
@@ -246,7 +252,11 @@ async fn follow_pods(
                     followed.report(&target, end).await;
                 }
             }
-            event = watch.next() => match event {
+            event = watch.next() => {
+                if matches!(event, Some(Ok(_))) && std::mem::take(&mut reconnecting) {
+                    followed.watch_marker(workload, LogMarker::Reconnected, None).await;
+                }
+                match event {
                 Some(Ok(Event::Init)) => listing.clear(),
                 Some(Ok(Event::InitApply(pod))) => {
                     if let Some(name) = pod.metadata.name.clone() {
@@ -268,8 +278,13 @@ async fn follow_pods(
                 }
                 Some(Err(error)) => {
                     let (code, error) = watch_failure(error);
-                    if !listed && matches!(code, Some(401 | 403)) {
+                    if matches!(code, Some(401 | 403)) {
                         return LogEvent::Failed { error };
+                    }
+                    if !std::mem::replace(&mut reconnecting, true) {
+                        followed
+                            .watch_marker(workload, LogMarker::Reconnecting, Some(error.message))
+                            .await;
                     }
                     let pause = backoff;
                     backoff = (backoff * 2).min(MAX_BACKOFF);
@@ -279,6 +294,7 @@ async fn follow_pods(
                     }
                 }
                 None => break,
+                }
             },
         }
     }
@@ -303,7 +319,7 @@ pub(super) async fn run_workload_target(
         Err(error) => return LogEvent::Failed { error },
     };
     if context.options.follow && !context.options.previous {
-        follow_pods(context, selector, container).await
+        follow_pods(context, selector, container, &name).await
     } else {
         read_once(context, selector, container.as_deref()).await
     }

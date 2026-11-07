@@ -458,19 +458,53 @@ async fn forbidden_on_the_only_container_is_final() {
 }
 
 #[tokio::test]
-async fn a_container_not_started_yet_is_retried_without_a_failure() {
+async fn a_container_not_started_yet_is_retried_and_says_why_once() {
     let (core, fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
     pod_with_containers(&fake, json!({}));
     fake.fail_logs_with("default", "p", "main", Some(400));
     let (session, mut rx) = start(&core, &id, pod_target(Some("main")), follow());
+    let events = wait_until(&mut rx, |event| has_marker(event, LogMarker::Reconnecting)).await;
+    let Some(LogEvent::Marker { message, .. }) = events.last() else {
+        panic!("{events:?}");
+    };
+    assert!(message.is_some(), "{events:?}");
     tokio::time::sleep(Duration::from_millis(300)).await;
     fake.fail_logs_with("default", "p", "main", None);
     add_line(&fake, "main", ONE, "started");
     let events = wait_until(&mut rx, |event| has_text(event, "started")).await;
-    // Nothing had ever been read, so there is no connection to report lost.
+    // The reason was given once, not on every retry.
     assert!(!events
         .iter()
         .any(|event| has_marker(event, LogMarker::Reconnecting)));
+    // The first line after the failure ends it.
+    assert!(events
+        .iter()
+        .any(|event| has_marker(event, LogMarker::Reconnected)));
+    core.logs_stop(&session);
+}
+
+#[tokio::test]
+async fn a_workload_watch_that_fails_shows_a_marker_and_recovers() {
+    let (core, fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
+    add_deployment(&fake);
+    add_web_pod(&fake, "web-1", "web");
+    fake.fail_watches_with("pods", Some(500));
+    let (session, mut rx) = start(&core, &id, deployment_target(), follow());
+    let events = wait_until(&mut rx, |event| has_marker(event, LogMarker::Reconnecting)).await;
+    let Some(LogEvent::Marker {
+        pod,
+        container,
+        message,
+        ..
+    }) = events.last()
+    else {
+        panic!("{events:?}");
+    };
+    assert_eq!(pod, "web");
+    assert!(container.is_none());
+    assert!(message.is_some());
+    fake.fail_watches_with("pods", None);
+    wait_until(&mut rx, |event| has_marker(event, LogMarker::Reconnected)).await;
     core.logs_stop(&session);
 }
 
@@ -783,4 +817,18 @@ async fn a_download_refuses_a_relative_path() {
         .await
         .unwrap_err();
     assert_eq!(error.code, ErrorCode::InvalidInput);
+}
+
+#[tokio::test]
+async fn an_unwritable_download_folder_is_refused_without_quoting_it() {
+    let (core, fake, id, root) = connected_fake(FakeKubeConfig::default()).await;
+    pod_with_containers(&fake, json!({}));
+    let dest = root.path().join("missing-folder").join("saved.log");
+    let error = core
+        .logs_download(&id, pod_target(Some("main")), once(), &dest)
+        .await
+        .unwrap_err();
+    let shown = format!("{} {:?}", error.message, error.details);
+    assert!(!shown.contains("missing-folder"), "{shown}");
+    assert!(!shown.contains(root.path().to_str().unwrap()), "{shown}");
 }

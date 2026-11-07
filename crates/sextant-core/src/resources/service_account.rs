@@ -149,7 +149,13 @@ impl AppCore {
         let document = kubeconfig_document(cluster, namespace, name, &token);
         let text = serde_yaml_ng::to_string(&document)
             .map_err(|_| IpcError::new(ErrorCode::Internal, "the kubeconfig cannot be written"))?;
-        write_private(dest, text.as_bytes())?;
+        write_private(dest, text.as_bytes()).map_err(|error| {
+            // The io error quotes the destination path, which must not reach the caller.
+            IpcError::new(
+                error.code,
+                "the kubeconfig cannot be written to the destination",
+            )
+        })?;
         Ok(SavedKubeconfig {
             expires_at: expires_at.0.to_string(),
         })

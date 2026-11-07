@@ -694,3 +694,24 @@ async fn a_missing_service_account_rejects_and_writes_nothing() {
     assert_eq!(error.code, ErrorCode::NotFound);
     assert!(!dest.exists());
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn an_unwritable_destination_folder_is_refused_without_quoting_it() {
+    use std::os::unix::fs::PermissionsExt;
+    let (core, fake, id, root) = connected(FakeKubeConfig::default()).await;
+    add_service_account(&fake);
+    let folder = root.path().join("readonly-folder");
+    std::fs::create_dir(&folder).unwrap();
+    std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let dest = folder.join("sa.kubeconfig");
+    let result = core
+        .service_account_kubeconfig_save(&id, "default", "sa", &dest, None)
+        .await;
+    std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o755)).unwrap();
+    // A superuser can write anywhere, so there is nothing to check then.
+    if let Err(error) = result {
+        let shown = format!("{} {:?}", error.message, error.details);
+        assert!(!shown.contains("readonly-folder"), "{shown}");
+    }
+}
