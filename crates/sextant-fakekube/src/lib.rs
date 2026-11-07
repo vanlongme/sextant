@@ -885,6 +885,30 @@ fn subresource(
     let key = key_of(res, t);
     match (sub, method.as_str(), res.plural.as_str()) {
         ("log", "GET", "pods") => pod_log(s, res, &key, q),
+        ("token", "POST", "serviceaccounts") => {
+            let st = s.lock();
+            let exists = st
+                .objects
+                .get(&res.plural)
+                .is_some_and(|m| m.contains_key(&key));
+            if !exists {
+                return not_found_object(res, &key.1);
+            }
+            let spec = serde_json::from_slice::<Value>(body)
+                .ok()
+                .and_then(|doc| doc.get("spec").cloned())
+                .unwrap_or(Value::Null);
+            json_ok(json!({
+                "kind": "TokenRequest",
+                "apiVersion": "authentication.k8s.io/v1",
+                "metadata": { "name": key.1, "namespace": key.0 },
+                "spec": spec,
+                "status": {
+                    "token": format!("fake-token-{}", key.1),
+                    "expirationTimestamp": "2030-01-01T00:00:00Z",
+                },
+            }))
+        }
         ("scale", "PATCH", "deployments" | "statefulsets" | "replicasets") => {
             let is_merge = headers
                 .get(header::CONTENT_TYPE)

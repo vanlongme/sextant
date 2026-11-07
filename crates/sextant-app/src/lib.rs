@@ -99,6 +99,7 @@ fn run_app(core: AppCore, mut log_guard: Option<WorkerGuard>, context: Context<W
             commands::actions::resource_force_finalize,
             commands::actions::job_set_suspend,
             commands::actions::ingress_class_set_default,
+            commands::actions::service_account_kubeconfig_save,
             commands::actions::workload_restart,
             commands::actions::pod_evict,
             commands::actions::cronjob_trigger,

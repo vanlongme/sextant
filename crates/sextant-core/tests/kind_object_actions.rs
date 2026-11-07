@@ -9,10 +9,11 @@ use std::time::{Duration, Instant};
 
 use futures::FutureExt;
 use k8s_openapi::api::batch::v1::Job;
-use k8s_openapi::api::core::v1::{ConfigMap, Pod};
+use k8s_openapi::api::core::v1::{ConfigMap, Pod, ServiceAccount};
 use k8s_openapi::api::networking::v1::IngressClass;
 use kube::api::{DeleteParams, ObjectMeta, Patch, PatchParams, PostParams};
-use kube::Api;
+use kube::config::{KubeConfigOptions, Kubeconfig};
+use kube::{Api, Client, Config};
 use serde_json::json;
 use sextant_core::error::ErrorCode;
 use sextant_core::resources::ResourceRef;
@@ -182,4 +183,56 @@ async fn the_default_ingress_class_moves() {
     if let Err(panic) = result {
         std::panic::resume_unwind(panic);
     }
+}
+
+#[tokio::test]
+#[ignore = "needs the sextant-e2e kind cluster"]
+async fn a_saved_kubeconfig_acts_as_the_service_account() {
+    const NAMESPACE: &str = "sextant-test-actions-token";
+    let (core, id, root) = connected_kind().await;
+    let client = core.cluster_client(&id).unwrap();
+    in_namespace(&client, NAMESPACE, async {
+        let accounts: Api<ServiceAccount> = Api::namespaced(client.clone(), NAMESPACE);
+        let account = ServiceAccount {
+            metadata: ObjectMeta {
+                name: Some("reader".into()),
+                ..ObjectMeta::default()
+            },
+            ..ServiceAccount::default()
+        };
+        accounts
+            .create(&PostParams::default(), &account)
+            .await
+            .unwrap();
+        let dest = root.path().join("reader.kubeconfig");
+        let saved = core
+            .service_account_kubeconfig_save(&id, NAMESPACE, "reader", &dest, Some(600))
+            .await
+            .unwrap();
+        assert!(saved
+            .expires_at
+            .parse::<k8s_openapi::jiff::Timestamp>()
+            .is_ok());
+
+        let kubeconfig = Kubeconfig::read_from(&dest).unwrap();
+        let config = Config::from_custom_kubeconfig(kubeconfig, &KubeConfigOptions::default())
+            .await
+            .unwrap();
+        let as_reader = Client::try_from(config).unwrap();
+        // It is really that account: it may connect, and may not read pods.
+        as_reader.apiserver_version().await.unwrap();
+        let pods: Api<Pod> = Api::namespaced(as_reader, NAMESPACE);
+        let error = pods.list(&Default::default()).await.unwrap_err();
+        let kube::Error::Api(status) = error else {
+            panic!("{error:?}");
+        };
+        assert_eq!(status.code, 403);
+        assert!(
+            status.message.contains("serviceaccount"),
+            "{}",
+            status.message
+        );
+        assert!(status.message.contains("reader"), "{}", status.message);
+    })
+    .await;
 }

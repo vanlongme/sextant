@@ -598,3 +598,99 @@ async fn a_partial_failure_names_the_classes_left_unchanged() {
         1
     );
 }
+
+const TOKEN_PATH: &str = "/api/v1/namespaces/default/serviceaccounts/sa/token";
+
+fn add_service_account(fake: &FakeKube) {
+    fake.serve_resource(FakeResource::new(
+        "",
+        "v1",
+        "ServiceAccount",
+        "serviceaccounts",
+        true,
+    ));
+    fake.upsert(
+        "serviceaccounts",
+        json!({ "metadata": { "name": "sa", "namespace": "default" } }),
+    );
+}
+
+#[tokio::test]
+async fn a_service_account_kubeconfig_holds_the_token_and_only_the_file_does() {
+    let (core, fake, id, root) = connected(FakeKubeConfig::default()).await;
+    add_service_account(&fake);
+    let dest = root.path().join("sa.kubeconfig");
+    let saved = core
+        .service_account_kubeconfig_save(&id, "default", "sa", &dest, None)
+        .await
+        .unwrap();
+    assert_eq!(saved.expires_at, "2030-01-01T00:00:00Z");
+    // The token stays off IPC, whichever way the result is written out.
+    let returned = serde_json::to_string(&saved).unwrap();
+    assert!(!returned.contains("fake-token"), "{returned}");
+    assert!(!format!("{saved:?}").contains("fake-token"));
+
+    let text = std::fs::read_to_string(&dest).unwrap();
+    let document: Value = serde_yaml_ng::from_str(&text).unwrap();
+    assert_eq!(document["users"][0]["user"]["token"], "fake-token-sa");
+    assert_eq!(document["current-context"], "sa@default");
+    assert_eq!(document["clusters"][0]["cluster"]["server"], fake.url());
+
+    let request = fake.writes("POST", TOKEN_PATH).pop().unwrap();
+    assert_eq!(request.body["spec"]["expirationSeconds"], 3600);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&dest).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+}
+
+#[tokio::test]
+async fn a_chosen_lifetime_is_requested() {
+    let (core, fake, id, root) = connected(FakeKubeConfig::default()).await;
+    add_service_account(&fake);
+    let dest = root.path().join("sa.kubeconfig");
+    core.service_account_kubeconfig_save(&id, "default", "sa", &dest, Some(7200))
+        .await
+        .unwrap();
+    let request = fake.writes("POST", TOKEN_PATH).pop().unwrap();
+    assert_eq!(request.body["spec"]["expirationSeconds"], 7200);
+}
+
+#[tokio::test]
+async fn a_bad_destination_spends_no_token() {
+    let (core, fake, id, root) = connected(FakeKubeConfig::default()).await;
+    add_service_account(&fake);
+    for dest in [
+        std::path::PathBuf::from("relative.kubeconfig"),
+        root.path().join("missing").join("sa.kubeconfig"),
+    ] {
+        let error = core
+            .service_account_kubeconfig_save(&id, "default", "sa", &dest, None)
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidInput, "{dest:?}");
+    }
+    assert!(fake.writes("POST", TOKEN_PATH).is_empty());
+}
+
+#[tokio::test]
+async fn a_missing_service_account_rejects_and_writes_nothing() {
+    let (core, fake, id, root) = connected(FakeKubeConfig::default()).await;
+    fake.serve_resource(FakeResource::new(
+        "",
+        "v1",
+        "ServiceAccount",
+        "serviceaccounts",
+        true,
+    ));
+    let dest = root.path().join("sa.kubeconfig");
+    let error = core
+        .service_account_kubeconfig_save(&id, "default", "sa", &dest, None)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::NotFound);
+    assert!(!dest.exists());
+}

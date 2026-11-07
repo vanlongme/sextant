@@ -1,6 +1,10 @@
+use std::path::PathBuf;
+
 use sextant_core::error::IpcError;
 use sextant_core::kubeconfig::ClusterId;
-use sextant_core::resources::{DataChange, DrainEvent, DrainOptions, ResourceRef, SecretValue};
+use sextant_core::resources::{
+    DataChange, DrainEvent, DrainOptions, ResourceRef, SavedKubeconfig, SecretValue,
+};
 use tauri::ipc::Channel;
 use tauri::State;
 use tokio::sync::mpsc;
@@ -218,5 +222,26 @@ pub async fn ingress_class_set_default(
     state
         .core
         .ingress_class_set_default(&cluster_id, &name)
+        .await
+}
+
+#[tauri::command]
+pub async fn service_account_kubeconfig_save(
+    state: State<'_, AppState>,
+    cluster_id: ClusterId,
+    namespace: String,
+    name: String,
+    dest_path: PathBuf,
+    expiration_seconds: Option<i64>,
+) -> Result<SavedKubeconfig, IpcError> {
+    state
+        .core
+        .service_account_kubeconfig_save(
+            &cluster_id,
+            &namespace,
+            &name,
+            &dest_path,
+            expiration_seconds,
+        )
         .await
 }
