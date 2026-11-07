@@ -23,6 +23,7 @@ use crate::kubeconfig::{
 use crate::paths::AppPaths;
 use crate::prefs::{ClusterSettings, Prefs};
 use crate::resources::{RunningDrain, WatchHub};
+use crate::sessions::SessionRegistry;
 use crate::store::{JsonStore, StoreWarning};
 use crate::ui_state::UiState;
 
@@ -70,6 +71,7 @@ struct Inner {
     watches: Arc<WatchHub>,
     drains: DashMap<(ClusterId, String), RunningDrain>,
     next_drain: AtomicU64,
+    sessions: Arc<SessionRegistry>,
     /// Held across a preferences write and the matching source change, so
     /// concurrent calls cannot leave the sync on sources that were not saved last.
     sync: Mutex<Option<KubeconfigSync>>,
@@ -201,6 +203,7 @@ impl AppCore {
                 watches: Arc::new(WatchHub::default()),
                 drains: DashMap::new(),
                 next_drain: AtomicU64::new(1),
+                sessions: Arc::new(SessionRegistry::default()),
                 sync: Mutex::new(Some(sync)),
                 snapshots,
                 sync_events: Mutex::new(Some(sync_events)),
@@ -396,6 +399,10 @@ impl AppCore {
         format!("drain-{number}")
     }
 
+    pub(crate) fn sessions(&self) -> &Arc<SessionRegistry> {
+        &self.inner.sessions
+    }
+
     pub fn set_connect_timeouts_for_test(&self, t: ConnectTimeouts) {
         self.inner.connections.set_timeouts(t);
     }
@@ -427,9 +434,14 @@ impl AppCore {
         Ok(())
     }
 
-    /// Disconnects every cluster and stops background work. The last snapshot
-    /// stays readable.
+    /// Stops every session and waits for their cleanup, which a node shell needs the
+    /// network for. Then disconnects every cluster and stops background work. The last
+    /// snapshot stays readable.
     pub async fn shutdown(&self) {
+        self.sessions_stop_all();
+        if !self.sessions_wait_idle(SHUTDOWN_LIMIT).await {
+            tracing::warn!("some sessions did not stop within {SHUTDOWN_LIMIT:?}");
+        }
         self.inner.connections.disconnect_all();
         let sync = lock(&self.inner.sync).take();
         let sync_events = lock(&self.inner.sync_events).take();
