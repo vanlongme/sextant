@@ -415,9 +415,17 @@ impl AppCore {
         token: CancellationToken,
     ) -> CoreResult<()> {
         let client = self.cluster_client(&spec.cluster_id)?;
-        // A stop during the checks leaves nothing to do.
+        // A stop during the checks has moved the status to another run, so the update below
+        // does nothing. A cluster disconnect leaves the run as it is, so it ends here as stopped.
         tokio::select! {
-            () = token.cancelled() => return Ok(()),
+            () = token.cancelled() => {
+                self.portforwards().update_run(id, run, |status| {
+                    status.state = PortForwardState::Stopped;
+                    status.bound_port = None;
+                    status.token = None;
+                });
+                return Ok(());
+            }
             resolved = resolve::resolve(&client, &spec) => { resolved?; }
         }
         let requested = spec.local_port.unwrap_or(0);
@@ -431,15 +439,25 @@ impl AppCore {
             run,
             client,
             spec,
-            token,
+            token: token.clone(),
         };
         let task = tokio::spawn(running.serve(listener));
         // A stop since `begin` has moved the status to another run, and has cancelled the token,
-        // so the task is already on its way out.
+        // so the task is already on its way out. A cluster disconnect cancels the token without
+        // changing the run, and the task may have finished before this update, so the token
+        // decides inside the same closure: a cancelled run ends as stopped, never as running.
         self.portforwards().update_run(id, run, |status| {
-            status.state = PortForwardState::Running;
-            status.bound_port = Some(bound);
-            status.task = Some(task);
+            if token.is_cancelled() {
+                status.state = PortForwardState::Stopped;
+                status.bound_port = None;
+                status.active_connections = 0;
+                status.token = None;
+                status.task = None;
+            } else {
+                status.state = PortForwardState::Running;
+                status.bound_port = Some(bound);
+                status.task = Some(task);
+            }
         });
         Ok(())
     }
