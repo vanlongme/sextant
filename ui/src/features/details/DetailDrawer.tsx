@@ -1,18 +1,25 @@
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
-import { EmptyState, IconButton, Spinner, Tabs } from "../../design";
+import {
+  EmptyState,
+  ErrorNotice,
+  IconButton,
+  Spinner,
+  Tabs,
+} from "../../design";
 import type { ApiResourceInfo } from "../../ipc/generated/ApiResourceInfo";
 import type { ResourceRef } from "../../ipc/generated/ResourceRef";
 import { type KubeObject, objectKey } from "../../kinds/objects";
 import { kindSpec } from "../../kinds/registry";
-import { useResourceList } from "../../stores/resources";
+import { rowsAreTrimmed, useResourceList } from "../../stores/resources";
 import { ConditionsSection } from "./ConditionsSection";
 import styles from "./DetailDrawer.module.css";
 import { EventsSection } from "./EventsSection";
 import { FieldTree } from "./FieldTree";
 import { MetadataSection } from "./MetadataSection";
 import { ownerTarget } from "./ownerLinks";
+import { useWholeObject } from "./useWholeObject";
 
 /** One line of a kind's table, shown at the top of the drawer. */
 export interface SummaryItem {
@@ -121,6 +128,9 @@ function Body(props: {
 
 /**
  * The right-hand drawer of one object, kept up to date from the resource's live list.
+ * When that list holds trimmed rows (Pods), it shows the object from `resourceGet`
+ * instead, fetched again each time the row's `resourceVersion` changes. A deleted
+ * object stays as it last looked, with a notice.
  * It renders nothing without an `objectKey` (`<namespace>/<name>`). Escape closes it
  * and hands focus back to what had it before. `resources` lets owners link to their
  * lists, and `summary` adds the kind's table values.
@@ -158,13 +168,23 @@ export function DetailDrawer(props: {
     };
   }, [open]);
 
+  const found =
+    wanted === null
+      ? undefined
+      : list.items.find((o) => objectKey(o) === wanted);
+  // A trimmed row lacks what the drawer shows, so the drawer shows the fetched object.
+  const whole = useWholeObject(clusterId, resource, wanted, found);
+
   if (wanted === null) return null;
 
-  const found = list.items.find((o) => objectKey(o) === wanted);
   if (found) lastSeen.current = { key: wanted, object: found };
   const last =
     lastSeen.current?.key === wanted ? lastSeen.current.object : null;
-  const shown = found ?? last;
+  const trimmed = rowsAreTrimmed(resource);
+  // A row deleted before its first fetch came back still shows how it last looked.
+  const shown = trimmed
+    ? (whole.object ?? (found ? null : last))
+    : (found ?? last);
   const name = wanted.slice(wanted.indexOf("/") + 1);
 
   return (
@@ -195,7 +215,7 @@ export function DetailDrawer(props: {
           data-testid="detail-close"
         />
       </header>
-      {!found && last ? (
+      {!found && shown ? (
         <p
           className={styles.removed}
           role="status"
@@ -203,6 +223,19 @@ export function DetailDrawer(props: {
         >
           This {resource.kind} was deleted. What is shown is how it last looked.
         </p>
+      ) : null}
+      {whole.error ? (
+        <div className={styles.fetchError} data-testid="detail-fetch-error">
+          <ErrorNotice
+            title={
+              shown
+                ? `Could not load the latest ${resource.kind}`
+                : `Could not load this ${resource.kind}`
+            }
+            message={whole.error}
+            onRetry={whole.retry}
+          />
+        </div>
       ) : null}
       {shown ? (
         <>
@@ -218,7 +251,7 @@ export function DetailDrawer(props: {
             />
           </div>
         </>
-      ) : list.loading ? (
+      ) : whole.error ? null : list.loading || found ? (
         <Spinner label="Loading details" />
       ) : (
         <EmptyState

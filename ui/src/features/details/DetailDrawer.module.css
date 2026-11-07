@@ -49,6 +49,10 @@
   border-bottom: 1px solid var(--border);
 }
 
+.fetchError {
+  padding: var(--space-2) var(--space-3) 0;
+}
+
 .section {
   margin-bottom: var(--space-4);
 }

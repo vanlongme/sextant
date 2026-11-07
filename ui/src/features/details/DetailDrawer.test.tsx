@@ -48,6 +48,7 @@ function pod(over: Partial<KubeObject> = {}): KubeObject {
       name: "web",
       namespace: "team-a",
       uid: "u1",
+      resourceVersion: "1",
       creationTimestamp: "2026-01-01T00:00:00Z",
       labels: { app: "web" },
       annotations: { note: "short" },
@@ -57,8 +58,22 @@ function pod(over: Partial<KubeObject> = {}): KubeObject {
   };
 }
 
-function fake(events: () => unknown = () => []) {
+type Get = (a: {
+  clusterId: string;
+  resource: ResourceRef;
+  namespace: string | null;
+  name: string;
+}) => unknown;
+
+/**
+ * A backend whose watch sends the rows given to `snapshot` and `batch`. By default
+ * `resource_get` answers with the row as it is now, or NotFound once it is deleted.
+ */
+function fake(events: () => unknown = () => [], get?: Get) {
   let send: (e: WatchEvent) => void = () => {};
+  const rows = new Map<string, KubeObject>();
+  const keep = (o: KubeObject) =>
+    rows.set(`${o.metadata.namespace}/${o.metadata.name}`, o);
   const backend = mockBackend({
     resources_subscribe: (a: {
       onEvent: { onmessage: (e: WatchEvent) => void };
@@ -68,22 +83,38 @@ function fake(events: () => unknown = () => []) {
     },
     resources_unsubscribe: () => null,
     resource_events: () => events(),
+    resource_get:
+      get ??
+      ((a) => {
+        const found = rows.get(`${a.namespace}/${a.name}`);
+        if (!found) throw { code: "NotFound", message: `${a.name} not found` };
+        return found;
+      }),
   });
   return {
     backend,
-    snapshot: (items: KubeObject[]) =>
-      act(async () => {
+    // The second act lets the drawer's fetch come back.
+    snapshot: async (items: KubeObject[]) => {
+      await act(async () => {
+        rows.clear();
+        items.forEach(keep);
         send({ type: "snapshot", items } as WatchEvent);
         await flush();
-      }),
-    batch: (
+      });
+      await act(flush);
+    },
+    batch: async (
       upserts: KubeObject[],
       deletes: { namespace: string; name: string }[] = [],
-    ) =>
-      act(async () => {
+    ) => {
+      await act(async () => {
+        upserts.forEach(keep);
+        for (const d of deletes) rows.delete(`${d.namespace}/${d.name}`);
         send({ type: "batch", upserts, deletes } as WatchEvent);
         await flush();
-      }),
+      });
+      await act(flush);
+    },
   };
 }
 
@@ -136,7 +167,13 @@ test("updates live when the object changes", async () => {
   await f.snapshot([pod()]);
   expect(screen.queryByText("app=api")).toBeNull();
   await f.batch([
-    pod({ metadata: { ...pod().metadata, labels: { app: "api" } } }),
+    pod({
+      metadata: {
+        ...pod().metadata,
+        resourceVersion: "2",
+        labels: { app: "api" },
+      },
+    }),
   ]);
   expect(screen.getByText("app=api")).toBeTruthy();
 });
@@ -429,4 +466,170 @@ test("the overview stays mounted while the Events tab is open", async () => {
     .querySelector<HTMLElement>("[hidden]");
   expect(hidden).not.toBeNull();
   expect(hidden?.textContent).toContain("Labels");
+});
+
+// A Pod row keeps only some fields (see "Watched Pod rows" in the IPC contract), so the
+// drawer shows the object from resource_get.
+function trimmedRow(rv = "1"): KubeObject {
+  return {
+    metadata: {
+      name: "web",
+      namespace: "team-a",
+      uid: "u1",
+      resourceVersion: rv,
+    },
+    spec: { containers: [{ name: "main" }] },
+    status: { conditions: [{ type: "Ready", status: "False" }] },
+  };
+}
+function wholePod(rv = "1", note = "whole"): KubeObject {
+  return {
+    ...trimmedRow(rv),
+    metadata: { ...trimmedRow(rv).metadata, annotations: { note } },
+    status: {
+      conditions: [{ type: "Ready", status: "False", message: "probe failed" }],
+    },
+  };
+}
+
+test("a pod is fetched whole when the drawer opens", async () => {
+  const f = fake(undefined, () => wholePod());
+  render(drawer());
+  await act(flush);
+  await f.snapshot([trimmedRow()]);
+  expect(f.backend.callsTo("resource_get")).toEqual([
+    { clusterId: "c1", resource: POD, namespace: "team-a", name: "web" },
+  ]);
+  expect(
+    within(screen.getByTestId("detail-annotations")).getByText("whole"),
+  ).toBeTruthy();
+  expect(
+    within(screen.getByTestId("detail-conditions")).getByText("probe failed"),
+  ).toBeTruthy();
+});
+
+test("the drawer waits for the fetch rather than showing the trimmed row", async () => {
+  let answer: (o: KubeObject) => void = () => {};
+  const f = fake(
+    undefined,
+    () => new Promise<KubeObject>((resolve) => (answer = resolve)),
+  );
+  render(drawer());
+  await act(flush);
+  await f.snapshot([trimmedRow()]);
+  expect(screen.getByLabelText("Loading details")).toBeTruthy();
+  expect(screen.queryByTestId("detail-annotations")).toBeNull();
+  await act(async () => {
+    answer(wholePod());
+    await flush();
+  });
+  expect(screen.getByText("whole")).toBeTruthy();
+});
+
+test("a pod is fetched again only when the row's resourceVersion changes", async () => {
+  let version = "1";
+  const f = fake(undefined, () => wholePod(version, `v${version}`));
+  render(drawer());
+  await act(flush);
+  await f.snapshot([trimmedRow("1")]);
+  expect(screen.getByText("v1")).toBeTruthy();
+  // The same version again, as a resync sends it, fetches nothing.
+  await f.batch([trimmedRow("1")]);
+  expect(f.backend.callsTo("resource_get")).toHaveLength(1);
+  version = "2";
+  await f.batch([trimmedRow("2")]);
+  expect(f.backend.callsTo("resource_get")).toHaveLength(2);
+  expect(screen.getByText("v2")).toBeTruthy();
+});
+
+test("an answer for an older version never replaces a newer one", async () => {
+  const answers: ((o: KubeObject) => void)[] = [];
+  const f = fake(
+    undefined,
+    () => new Promise<KubeObject>((resolve) => answers.push(resolve)),
+  );
+  render(drawer());
+  await act(flush);
+  await f.snapshot([trimmedRow("1")]);
+  await f.batch([trimmedRow("2")]);
+  expect(answers).toHaveLength(2);
+  await act(async () => {
+    answers[1](wholePod("2", "new"));
+    await flush();
+  });
+  await act(async () => {
+    answers[0](wholePod("1", "old"));
+    await flush();
+  });
+  expect(screen.getByText("new")).toBeTruthy();
+  expect(screen.queryByText("old")).toBeNull();
+});
+
+test("a deleted pod keeps the last fetched object with the deleted notice", async () => {
+  const f = fake(undefined, () => wholePod());
+  render(drawer());
+  await act(flush);
+  await f.snapshot([trimmedRow()]);
+  await f.batch([], [{ namespace: "team-a", name: "web" }]);
+  expect(screen.getByTestId("detail-removed").textContent).toMatch(/deleted/);
+  expect(screen.getByText("whole")).toBeTruthy();
+  expect(screen.getByText("probe failed")).toBeTruthy();
+  expect(f.backend.callsTo("resource_get")).toHaveLength(1);
+});
+
+test("opening the pod again fetches it again", async () => {
+  const f = fake(undefined, () => wholePod());
+  const view = render(drawer());
+  await act(flush);
+  await f.snapshot([trimmedRow()]);
+  view.rerender(drawer(() => {}, null));
+  await act(flush);
+  view.rerender(drawer());
+  await act(flush);
+  expect(f.backend.callsTo("resource_get")).toHaveLength(2);
+  expect(screen.getByText("whole")).toBeTruthy();
+});
+
+test("a failed fetch shows the error and Retry fetches again", async () => {
+  let fail = true;
+  const f = fake(undefined, () => {
+    if (fail) throw { code: "Forbidden", message: "pods is forbidden" };
+    return wholePod();
+  });
+  render(drawer());
+  await act(flush);
+  await f.snapshot([trimmedRow()]);
+  const notice = screen.getByTestId("detail-fetch-error");
+  expect(within(notice).getByText("pods is forbidden")).toBeTruthy();
+  expect(screen.queryByTestId("detail-annotations")).toBeNull();
+  fail = false;
+  fireEvent.click(within(notice).getByRole("button", { name: "Retry" }));
+  await act(flush);
+  expect(screen.queryByTestId("detail-fetch-error")).toBeNull();
+  expect(screen.getByText("whole")).toBeTruthy();
+});
+
+test("other kinds show their row and fetch nothing", async () => {
+  const CM: ResourceRef = {
+    group: "",
+    version: "v1",
+    plural: "configmaps",
+    kind: "ConfigMap",
+    namespaced: true,
+  };
+  const f = fake();
+  render(
+    <MemoryRouter>
+      <DetailDrawer
+        clusterId="c1"
+        resource={CM}
+        objectKey="team-a/web"
+        onClose={() => {}}
+      />
+    </MemoryRouter>,
+  );
+  await act(flush);
+  await f.snapshot([pod()]);
+  expect(screen.getByText("app=web")).toBeTruthy();
+  expect(f.backend.callsTo("resource_get")).toHaveLength(0);
 });

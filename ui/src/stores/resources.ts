@@ -14,6 +14,15 @@ import type { WatchEvent } from "../ipc/generated/WatchEvent";
 import type { WatchStatus } from "../ipc/generated/WatchStatus";
 import { type KubeObject, objectKey } from "../kinds/objects";
 
+/**
+ * Whether the watch sends this resource's rows with only some of their fields. Core
+ * `v1` Pods are trimmed: "Watched Pod rows" in the backend IPC contract lists what a
+ * row keeps. Read only those fields from a row, or fetch the object with `resourceGet`.
+ */
+export function rowsAreTrimmed(resource: ResourceRef): boolean {
+  return resource.group === "" && resource.plural === "pods";
+}
+
 export interface ResourceListState {
   items: KubeObject[];
   /**
