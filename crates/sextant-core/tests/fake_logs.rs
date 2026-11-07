@@ -8,8 +8,9 @@ use serde_json::{json, Value};
 use sextant_core::app_core::AppCore;
 use sextant_core::error::ErrorCode;
 use sextant_core::kubeconfig::ClusterId;
+use sextant_core::resources::ResourceRef;
 use sextant_core::sessions::{LogEndReason, LogEvent, LogLine, LogMarker, LogOptions, LogTarget};
-use sextant_fakekube::{FakeKube, FakeKubeConfig, FakeLogLine};
+use sextant_fakekube::{DenyRule, FakeKube, FakeKubeConfig, FakeLogLine};
 use support::connected_fake;
 use tokio::sync::mpsc;
 
@@ -536,4 +537,175 @@ async fn the_page_load_stop_leaves_the_connection_usable() {
     assert!(core.sessions_wait_idle(LIMIT).await);
     let (_again, mut rx) = start(&core, &id, pod_target(Some("main")), once());
     wait_until(&mut rx, is_last).await;
+}
+
+fn deployment_target() -> LogTarget {
+    LogTarget::Workload {
+        resource: ResourceRef {
+            group: "apps".into(),
+            version: "v1".into(),
+            plural: "deployments".into(),
+            kind: "Deployment".into(),
+            namespaced: true,
+        },
+        namespace: "default".into(),
+        name: "web".into(),
+        container: None,
+    }
+}
+
+fn add_deployment(fake: &FakeKube) {
+    fake.upsert(
+        "deployments",
+        json!({
+            "metadata": { "name": "web", "namespace": "default" },
+            "spec": { "selector": { "matchLabels": { "app": "web" } } },
+        }),
+    );
+}
+
+fn add_web_pod(fake: &FakeKube, name: &str, app: &str) {
+    fake.upsert(
+        "pods",
+        json!({
+            "metadata": { "name": name, "namespace": "default", "labels": { "app": app } },
+            "spec": { "containers": [{ "name": "main" }] },
+        }),
+    );
+}
+
+fn add_pod_line(fake: &FakeKube, pod: &str, stamp: &str, text: &str) {
+    fake.add_log_lines("default", pod, "main", &[FakeLogLine::new(stamp, text)]);
+}
+
+#[tokio::test]
+async fn a_workload_reads_the_pods_its_selector_picks() {
+    let (core, fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
+    add_deployment(&fake);
+    add_web_pod(&fake, "web-1", "web");
+    add_web_pod(&fake, "web-2", "web");
+    add_web_pod(&fake, "other", "other");
+    add_pod_line(&fake, "web-1", ONE, "from one");
+    add_pod_line(&fake, "web-2", TWO, "from two");
+    add_pod_line(&fake, "other", THREE, "not selected");
+    let (_session, mut rx) = start(&core, &id, deployment_target(), once());
+    let events = wait_until(&mut rx, is_last).await;
+    let mut seen = texts(&events);
+    seen.sort();
+    assert_eq!(seen, ["from one", "from two"]);
+    assert!(matches!(
+        events.last(),
+        Some(LogEvent::Ended {
+            reason: LogEndReason::Completed
+        })
+    ));
+}
+
+#[tokio::test]
+async fn following_a_workload_adds_and_removes_pods_as_they_come_and_go() {
+    let (core, fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
+    add_deployment(&fake);
+    add_web_pod(&fake, "web-1", "web");
+    add_pod_line(&fake, "web-1", ONE, "from one");
+    let (session, mut rx) = start(&core, &id, deployment_target(), follow());
+    let first = wait_until(&mut rx, |event| has_text(event, "from one")).await;
+    // A pod there from the start is not news.
+    assert!(!first
+        .iter()
+        .any(|event| has_marker(event, LogMarker::PodAdded)));
+
+    add_web_pod(&fake, "web-2", "web");
+    wait_until(&mut rx, |event| has_marker(event, LogMarker::PodAdded)).await;
+    add_pod_line(&fake, "web-2", TWO, "from two");
+    wait_until(&mut rx, |event| has_text(event, "from two")).await;
+
+    fake.delete_pod("default", "web-1");
+    let removed = wait_until(&mut rx, |event| has_marker(event, LogMarker::PodRemoved)).await;
+    let Some(LogEvent::Marker { pod, .. }) = removed.last() else {
+        panic!("{removed:?}");
+    };
+    assert_eq!(pod, "web-1");
+
+    core.logs_stop(&session);
+    let events = wait_until(&mut rx, is_last).await;
+    assert!(matches!(
+        events.last(),
+        Some(LogEvent::Ended {
+            reason: LogEndReason::Stopped
+        })
+    ));
+    assert!(core.sessions_wait_idle(LIMIT).await);
+}
+
+#[tokio::test]
+async fn one_failed_stream_of_a_workload_leaves_the_others_running() {
+    let (core, fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
+    add_deployment(&fake);
+    add_web_pod(&fake, "web-1", "web");
+    add_web_pod(&fake, "web-2", "web");
+    fake.fail_logs_with("default", "web-1", "main", Some(403));
+    let (session, mut rx) = start(&core, &id, deployment_target(), follow());
+    let failed = wait_until(&mut rx, |event| has_marker(event, LogMarker::Failed)).await;
+    let Some(LogEvent::Marker { pod, .. }) = failed.last() else {
+        panic!("{failed:?}");
+    };
+    assert_eq!(pod, "web-1");
+    add_pod_line(&fake, "web-2", ONE, "still here");
+    wait_until(&mut rx, |event| has_text(event, "still here")).await;
+    core.logs_stop(&session);
+}
+
+#[tokio::test]
+async fn a_forbidden_pod_watch_ends_the_session() {
+    let (core, fake, id, _root) = connected_fake(FakeKubeConfig {
+        deny: vec![DenyRule {
+            verb: "list".into(),
+            plural: "pods".into(),
+            namespace: Some("default".into()),
+        }],
+        ..FakeKubeConfig::default()
+    })
+    .await;
+    add_deployment(&fake);
+    let (_session, mut rx) = start(&core, &id, deployment_target(), follow());
+    let events = wait_until(&mut rx, is_last).await;
+    let Some(LogEvent::Failed { error }) = events.last() else {
+        panic!("{events:?}");
+    };
+    assert_eq!(error.code, ErrorCode::Forbidden);
+}
+
+#[tokio::test]
+async fn a_kind_without_pods_of_its_own_is_refused() {
+    let (core, _fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
+    let (tx, _rx) = mpsc::channel(4);
+    let target = LogTarget::Workload {
+        resource: ResourceRef {
+            group: "batch".into(),
+            version: "v1".into(),
+            plural: "cronjobs".into(),
+            kind: "CronJob".into(),
+            namespaced: true,
+        },
+        namespace: "default".into(),
+        name: "c".into(),
+        container: None,
+    };
+    let error = core.logs_start(&id, target, once(), tx).unwrap_err();
+    assert_eq!(error.code, ErrorCode::InvalidInput);
+}
+
+#[tokio::test]
+async fn a_workload_without_a_usable_selector_is_a_failed_event() {
+    let (core, fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
+    fake.upsert(
+        "deployments",
+        json!({ "metadata": { "name": "web", "namespace": "default" }, "spec": { "selector": {} } }),
+    );
+    let (_session, mut rx) = start(&core, &id, deployment_target(), follow());
+    let events = wait_until(&mut rx, is_last).await;
+    let Some(LogEvent::Failed { error }) = events.last() else {
+        panic!("{events:?}");
+    };
+    assert_eq!(error.code, ErrorCode::InvalidInput);
 }

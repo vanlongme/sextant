@@ -3,6 +3,7 @@
 
 mod follow;
 mod parse;
+mod workload;
 
 use std::time::Duration;
 
@@ -17,7 +18,7 @@ use super::{pod_container_names, read_pod};
 use crate::app_core::AppCore;
 use crate::error::{CoreResult, IpcError};
 use crate::kubeconfig::ClusterId;
-use crate::resources::{invalid, is_path_segment};
+use crate::resources::{invalid, is_path_segment, ResourceRef};
 use follow::{stream_container, ContainerEnd, StreamContext, StreamTarget};
 
 /// Lines wait this long at most before they are sent.
@@ -37,6 +38,13 @@ pub enum LogTarget {
     Pod {
         namespace: String,
         pod: String,
+        container: Option<String>,
+    },
+    /// Deployments, StatefulSets, DaemonSets, ReplicaSets and Jobs.
+    Workload {
+        resource: ResourceRef,
+        namespace: String,
+        name: String,
         container: Option<String>,
     },
 }
@@ -173,13 +181,30 @@ fn check_name(value: &str, what: &str) -> CoreResult<()> {
 }
 
 fn check_target(target: &LogTarget) -> CoreResult<()> {
-    let LogTarget::Pod {
-        namespace,
-        pod,
-        container,
-    } = target;
+    let (namespace, name, container) = match target {
+        LogTarget::Pod {
+            namespace,
+            pod,
+            container,
+        } => (namespace, pod, container),
+        LogTarget::Workload {
+            resource,
+            namespace,
+            name,
+            container,
+        } => {
+            if !workload::is_workload(resource) {
+                return Err(invalid(format!(
+                    "logs are not available for {}",
+                    resource.plural
+                )));
+            }
+            check_name(&resource.version, "resource version")?;
+            (namespace, name, container)
+        }
+    };
     check_name(namespace, "namespace")?;
-    check_name(pod, "pod name")?;
+    check_name(name, "name")?;
     container
         .as_deref()
         .map_or(Ok(()), |container| check_name(container, "container name"))
@@ -262,12 +287,19 @@ async fn run_pod_target(
 }
 
 async fn run_target(context: StreamContext, target: LogTarget) -> LogEvent {
-    let LogTarget::Pod {
-        namespace,
-        pod,
-        container,
-    } = target;
-    run_pod_target(context, &namespace, &pod, container).await
+    match target {
+        LogTarget::Pod {
+            namespace,
+            pod,
+            container,
+        } => run_pod_target(context, &namespace, &pod, container).await,
+        LogTarget::Workload {
+            resource,
+            name,
+            container,
+            ..
+        } => workload::run_workload_target(context, resource, name, container).await,
+    }
 }
 
 impl AppCore {
@@ -295,6 +327,7 @@ impl AppCore {
                 options,
                 items,
                 token,
+                follow_replacements: true,
             };
             // Each stream holds a clone of `items`, so the batcher ends after the last one.
             let last = run_target(context, target).await;
@@ -314,8 +347,9 @@ impl AppCore {
 }
 
 fn target_namespace(target: &LogTarget) -> &str {
-    let LogTarget::Pod { namespace, .. } = target;
-    namespace
+    match target {
+        LogTarget::Pod { namespace, .. } | LogTarget::Workload { namespace, .. } => namespace,
+    }
 }
 
 #[cfg(test)]

@@ -31,6 +31,9 @@ pub(super) struct StreamContext {
     pub(super) options: LogOptions,
     pub(super) items: mpsc::Sender<StreamItem>,
     pub(super) token: CancellationToken,
+    /// Whether a new pod under the same name carries on this stream. A workload's watch
+    /// starts its own stream for such a pod, so there it ends this one.
+    pub(super) follow_replacements: bool,
 }
 
 impl StreamContext {
@@ -157,8 +160,10 @@ fn finished_for_good(pod: &Value, container: &str) -> bool {
 pub(super) enum Decision {
     Done,
     Fail(IpcError),
-    /// Same pod with a new container, or a new pod under the same name.
+    /// A new container in the same pod.
     Restarted,
+    /// A new pod under the same name.
+    Replaced,
     Retry,
 }
 
@@ -188,7 +193,11 @@ pub(super) fn decide(
         *seen = Seen::of(pod, container);
     }
     let now = Seen::of(pod, container);
-    if now.uid != seen.uid || now.restarts > seen.restarts {
+    if now.uid != seen.uid {
+        *seen = now;
+        return Decision::Replaced;
+    }
+    if now.restarts > seen.restarts {
         *seen = now;
         return Decision::Restarted;
     }
@@ -371,7 +380,8 @@ pub(super) async fn stream_container(context: StreamContext, target: StreamTarge
         match decision {
             Decision::Done => return ContainerEnd::Completed,
             Decision::Fail(error) => return ContainerEnd::Failed(error),
-            Decision::Restarted => {
+            Decision::Replaced if !context.follow_replacements => return ContainerEnd::PodGone,
+            Decision::Restarted | Decision::Replaced => {
                 context.marker(&target, LogMarker::Restarted, None).await;
                 continue;
             }
@@ -467,7 +477,7 @@ mod tests {
         object["metadata"]["uid"] = json!("u2");
         assert_eq!(
             decide(&object, "main", &mut seen_at_start(), None),
-            Decision::Restarted
+            Decision::Replaced
         );
     }
 
