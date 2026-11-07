@@ -123,6 +123,69 @@ fn deployments() -> ResourceRef {
     }
 }
 
+/// Reads the cluster's own pods and changes nothing, so it needs no namespace of its own.
+#[tokio::test]
+#[ignore = "needs make test-kind"]
+async fn listing_once_honours_namespace_and_selectors() {
+    let (core, id, _root) = connected().await;
+    let core_resource = |kind: &str, plural: &str, namespaced: bool| ResourceRef {
+        group: String::new(),
+        version: "v1".into(),
+        plural: plural.into(),
+        kind: kind.into(),
+        namespaced,
+    };
+    let pods = core_resource("Pod", "pods", true);
+
+    let nodes = core
+        .resources_list(
+            &id,
+            &core_resource("Node", "nodes", false),
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(nodes[0]["kind"], "Node");
+    let node = nodes[0]["metadata"]["name"].as_str().unwrap();
+
+    let on_node = core
+        .resources_list(
+            &id,
+            &pods,
+            None,
+            None,
+            Some(&format!("spec.nodeName={node}")),
+        )
+        .await
+        .unwrap();
+    assert!(!on_node.is_empty());
+    assert!(on_node.iter().all(|pod| pod["spec"]["nodeName"] == node));
+    assert!(on_node.iter().all(|pod| pod["kind"] == "Pod"));
+
+    let control_plane = core
+        .resources_list(
+            &id,
+            &pods,
+            Some("kube-system"),
+            Some("tier=control-plane"),
+            None,
+        )
+        .await
+        .unwrap();
+    assert!(!control_plane.is_empty());
+    assert!(control_plane.iter().all(|pod| {
+        pod["metadata"]["namespace"] == "kube-system"
+            && pod["metadata"]["labels"]["tier"] == "control-plane"
+    }));
+
+    // Refused, and not answered with every pod.
+    core.resources_list(&id, &pods, None, Some("not a selector!"), None)
+        .await
+        .unwrap_err();
+}
+
 #[tokio::test]
 #[ignore = "needs make test-kind"]
 async fn real_edit_conflict_flow() {

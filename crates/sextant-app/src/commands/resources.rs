@@ -60,6 +60,27 @@ pub async fn resources_unsubscribe(
 }
 
 #[tauri::command]
+pub async fn resources_list(
+    state: State<'_, AppState>,
+    cluster_id: ClusterId,
+    resource: ResourceRef,
+    namespace: Option<String>,
+    label_selector: Option<String>,
+    field_selector: Option<String>,
+) -> Result<Vec<Value>, IpcError> {
+    state
+        .core
+        .resources_list(
+            &cluster_id,
+            &resource,
+            namespace.as_deref(),
+            label_selector.as_deref(),
+            field_selector.as_deref(),
+        )
+        .await
+}
+
+#[tauri::command]
 pub async fn resource_get(
     state: State<'_, AppState>,
     cluster_id: ClusterId,

@@ -533,11 +533,9 @@ mod tests {
         .expect("the batcher never stopped reading");
 
         token.cancel();
-        tokio::time::timeout(LIMIT, async {
-            while events.recv().await.is_some() {}
-        })
-        .await
-        .expect("the batcher did not end");
+        tokio::time::timeout(LIMIT, async { while events.recv().await.is_some() {} })
+            .await
+            .expect("the batcher did not end");
         batcher.await.unwrap();
     }
 

@@ -570,9 +570,15 @@ async fn a_large_log_waits_for_acknowledgements() {
     let (session, mut rx) = start(&core, &id, pod_target(Some("main")), once());
 
     let waiting = until_silent(&mut rx).await;
-    assert!(!waiting.iter().any(is_last), "ended with nothing acknowledged");
+    assert!(
+        !waiting.iter().any(is_last),
+        "ended with nothing acknowledged"
+    );
     let mut seen = texts(&waiting);
-    assert!(seen.len() < total, "every line came with nothing acknowledged");
+    assert!(
+        seen.len() < total,
+        "every line came with nothing acknowledged"
+    );
     for event in &waiting {
         if let LogEvent::Lines { bytes, .. } = event {
             core.session_ack(&session, *bytes);

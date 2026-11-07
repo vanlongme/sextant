@@ -100,6 +100,131 @@ async fn configmap_yaml(core: &AppCore, id: &ClusterId) -> String {
         .unwrap()
 }
 
+fn sorted_names(objects: &[Value]) -> Vec<&str> {
+    let mut names: Vec<&str> = objects
+        .iter()
+        .map(|object| object["metadata"]["name"].as_str().unwrap())
+        .collect();
+    names.sort_unstable();
+    names
+}
+
+#[tokio::test]
+async fn resources_list_narrows_by_namespace_and_selectors() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    for (namespace, name, app) in [
+        ("default", "a", "one"),
+        ("default", "b", "two"),
+        ("other", "c", "one"),
+    ] {
+        fake.upsert(
+            "configmaps",
+            json!({
+                "metadata": {
+                    "name": name,
+                    "namespace": namespace,
+                    "labels": { "app": app },
+                    "managedFields": [{ "manager": "m" }],
+                },
+            }),
+        );
+    }
+    let r = configmaps();
+
+    let everywhere = core
+        .resources_list(&id, &r, None, None, None)
+        .await
+        .unwrap();
+    assert_eq!(sorted_names(&everywhere), ["a", "b", "c"]);
+    for object in &everywhere {
+        assert_eq!(object["kind"], "ConfigMap");
+        assert_eq!(object["apiVersion"], "v1");
+        assert!(object["metadata"].get("managedFields").is_none());
+    }
+
+    let in_namespace = core
+        .resources_list(&id, &r, Some("default"), None, None)
+        .await
+        .unwrap();
+    assert_eq!(sorted_names(&in_namespace), ["a", "b"]);
+
+    let by_label = core
+        .resources_list(&id, &r, None, Some("app=one"), None)
+        .await
+        .unwrap();
+    assert_eq!(sorted_names(&by_label), ["a", "c"]);
+
+    let by_field = core
+        .resources_list(&id, &r, None, None, Some("metadata.name=b"))
+        .await
+        .unwrap();
+    assert_eq!(sorted_names(&by_field), ["b"]);
+}
+
+#[tokio::test]
+async fn resources_list_masks_secret_values() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    upsert_secret(&fake);
+
+    let listed = core
+        .resources_list(&id, &secrets(), Some("default"), None, None)
+        .await
+        .unwrap();
+
+    assert_eq!(sorted_names(&listed), ["creds"]);
+    assert!(!listed[0].to_string().contains("czNjcjN0"), "{}", listed[0]);
+    assert_eq!(listed[0]["data"], json!({ "password": "" }));
+}
+
+#[tokio::test]
+async fn resources_list_ignores_a_namespace_on_a_cluster_scoped_resource() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    fake.upsert("nodes", json!({ "metadata": { "name": "n" } }));
+    let nodes = ResourceRef {
+        namespaced: false,
+        ..core_resource("Node", "nodes")
+    };
+
+    let listed = core
+        .resources_list(&id, &nodes, Some("default"), None, None)
+        .await
+        .unwrap();
+
+    assert_eq!(sorted_names(&listed), ["n"]);
+}
+
+#[tokio::test]
+async fn resources_list_refuses_a_bad_namespace_before_any_request() {
+    let (core, _fake, id, _root) = connected(FakeKubeConfig::default()).await;
+
+    let error = core
+        .resources_list(&id, &configmaps(), Some("a/b"), None, None)
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.code, ErrorCode::InvalidInput);
+}
+
+#[tokio::test]
+async fn resources_list_reports_a_forbidden_list() {
+    let (core, _fake, id, _root) = connected(FakeKubeConfig {
+        deny: vec![DenyRule {
+            verb: "list".into(),
+            plural: "configmaps".into(),
+            namespace: None,
+        }],
+        ..Default::default()
+    })
+    .await;
+
+    let error = core
+        .resources_list(&id, &configmaps(), None, None, None)
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.code, ErrorCode::Forbidden);
+}
+
 #[tokio::test]
 async fn resource_get_masks_secret_values() {
     let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;

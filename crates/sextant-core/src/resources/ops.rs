@@ -86,6 +86,10 @@ pub(super) fn object_request(
     } else {
         None
     };
+    Ok(resource_request(r, namespace))
+}
+
+fn resource_request(r: &ResourceRef, namespace: Option<&str>) -> Request {
     let resource = ApiResource {
         group: r.group.clone(),
         version: r.version.clone(),
@@ -93,7 +97,7 @@ pub(super) fn object_request(
         kind: r.kind.clone(),
         plural: r.plural.clone(),
     };
-    Ok(Request::new(DynamicObject::url_path(&resource, namespace)))
+    Request::new(DynamicObject::url_path(&resource, namespace))
 }
 
 /// Sets `kind` and `apiVersion` from the resource before stripping, which depends
@@ -192,6 +196,39 @@ impl AppCore {
         let request = object_request(r, namespace, name)?;
         let client = self.cluster_client(id)?;
         send(&client, request.get(name, &GetParams::default())).await
+    }
+
+    /// Objects of one resource, read once, for a panel that needs a few of them and not a
+    /// watch of the whole cluster. Without a namespace it reads all of them, and a
+    /// cluster-scoped resource ignores the namespace. Each is prepared as `resource_get`
+    /// prepares one, so Secret values are blanked.
+    pub async fn resources_list(
+        &self,
+        id: &ClusterId,
+        r: &ResourceRef,
+        namespace: Option<&str>,
+        label_selector: Option<&str>,
+        field_selector: Option<&str>,
+    ) -> CoreResult<Vec<Value>> {
+        let namespace = namespace.filter(|_| r.namespaced);
+        if namespace.is_some_and(|namespace| !is_path_segment(namespace)) {
+            return Err(invalid("the namespace is not valid"));
+        }
+        let client = self.cluster_client(id)?;
+        let mut params = ListParams::default();
+        if let Some(labels) = label_selector {
+            params = params.labels(labels);
+        }
+        if let Some(fields) = field_selector {
+            params = params.fields(fields);
+        }
+        let request = resource_request(r, namespace);
+        let mut list = send(&client, request.list(&params)).await?;
+        let items = match list.get_mut("items").map(Value::take) {
+            Some(Value::Array(items)) => items,
+            _ => Vec::new(),
+        };
+        Ok(items.into_iter().map(|item| masked(item, r)).collect())
     }
 
     /// One object, for showing: `managedFields` removed and Secret values blanked.
