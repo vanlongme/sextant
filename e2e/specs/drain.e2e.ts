@@ -4,9 +4,9 @@ import {
   searchResources, shown,
 } from "../helpers/ui";
 
-const KIND = "kind-sextant-e2e";
-const WORKER = "sextant-e2e-worker";
-const NS = "sextant-test-drain-e2e";
+const KIND = "kind-skopos-e2e";
+const WORKER = "skopos-e2e-worker";
+const NS = "skopos-test-drain-e2e";
 const until = (check: () => Promise<boolean>, timeoutMsg: string) =>
   browser.waitUntil(check, { timeout: 120000, interval: 500, timeoutMsg });
 

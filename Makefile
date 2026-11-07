@@ -17,21 +17,21 @@ check: ui-build
 	pnpm -C ui test
 	scripts/check-provenance.sh
 build:
-	pnpm tauri build --config crates/sextant-app/tauri.conf.json
+	pnpm tauri build --config crates/skopos-app/tauri.conf.json
 dev:
-	pnpm tauri dev --config crates/sextant-app/tauri.conf.json
+	pnpm tauri dev --config crates/skopos-app/tauri.conf.json
 fmt:
 	cargo fmt --all
 	pnpm -C ui exec biome check --write .
 e2e-build:
-	VITE_E2E=1 pnpm tauri build --debug --no-bundle --features e2e --config crates/sextant-app/tauri.conf.json --config crates/sextant-app/tauri.e2e.conf.json
+	VITE_E2E=1 pnpm tauri build --debug --no-bundle --features e2e --config crates/skopos-app/tauri.conf.json --config crates/skopos-app/tauri.e2e.conf.json
 e2e: e2e-build
 	scripts/kind-up.sh
-	cargo build -p sextant-fakekube
-	SEXTANT_E2E_SPEC_SET=full $(XVFB) pnpm -C e2e exec wdio run wdio.conf.ts
+	cargo build -p skopos-fakekube
+	SKOPOS_E2E_SPEC_SET=full $(XVFB) pnpm -C e2e exec wdio run wdio.conf.ts
 test-kind:
 	scripts/kind-up.sh
-	cargo test -p sextant-core --test 'kind_*' -- --ignored --test-threads=1
+	cargo test -p skopos-core --test 'kind_*' -- --ignored --test-threads=1
 e2e-smoke: e2e-build
-	cargo build -p sextant-fakekube
-	SEXTANT_E2E_SPEC_SET=smoke $(XVFB) pnpm -C e2e exec wdio run wdio.conf.ts
+	cargo build -p skopos-fakekube
+	SKOPOS_E2E_SPEC_SET=smoke $(XVFB) pnpm -C e2e exec wdio run wdio.conf.ts

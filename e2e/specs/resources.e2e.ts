@@ -23,8 +23,8 @@ import {
   toggleInCheckMenu,
 } from "../helpers/ui";
 
-const KIND = "kind-sextant-e2e";
-const NS = "sextant-test-e2e";
+const KIND = "kind-skopos-e2e";
+const NS = "skopos-test-e2e";
 const WORKLOADS = path.resolve(__dirname, "..", "fixtures", "workloads.yaml");
 const PAUSE_IMAGE = "registry.k8s.io/pause:3.10";
 const SECRET_VALUE = "ZTJlLXNlY3JldA==";

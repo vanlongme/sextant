@@ -58,7 +58,7 @@ vi.mock("./monaco", () => ({
       },
     };
   },
-  currentTheme: () => "sextant-dark",
+  currentTheme: () => "skopos-dark",
 }));
 
 beforeEach(() => {

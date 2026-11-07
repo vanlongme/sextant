@@ -14,7 +14,7 @@ import {
   shown,
 } from "../helpers/ui";
 
-const home = process.env.SEXTANT_E2E_HOME as string;
+const home = process.env.SKOPOS_E2E_HOME as string;
 
 describe("catalog", () => {
   it("lists contexts from ~/.kube", async () => {
@@ -165,7 +165,7 @@ describe("catalog", () => {
   });
 
   it("adds and removes a source in Preferences", async () => {
-    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "sextant-e2e-src-"));
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "skopos-e2e-src-"));
     const file = path.join(outside, "epsilon.yaml");
     fs.writeFileSync(file, kubeconfig(["epsilon"]));
 

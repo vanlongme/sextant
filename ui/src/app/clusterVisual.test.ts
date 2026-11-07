@@ -3,7 +3,7 @@ import { clusterColor, clusterInitials } from "./clusterVisual";
 
 test("initials use word boundaries", () => {
   expect(clusterInitials("prod-eu-west")).toBe("PE");
-  expect(clusterInitials("kind-sextant-e2e")).toBe("KS");
+  expect(clusterInitials("kind-skopos-e2e")).toBe("KS");
   expect(clusterInitials("minikube")).toBe("MI");
   expect(clusterInitials("Ñandú prod")).toBe("ÑP");
   expect(clusterInitials("")).toBe("?");

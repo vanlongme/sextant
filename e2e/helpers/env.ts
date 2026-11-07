@@ -12,8 +12,8 @@ export interface AppEnv {
  * `<home>/.kube/`, and points the process environment at them before launch.
  */
 export function prepareAppEnv(opts: { kubeconfigs?: Record<string, string> }): AppEnv {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "sextant-e2e-home-"));
-  const configDir = fs.mkdtempSync(path.join(os.tmpdir(), "sextant-e2e-config-"));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "skopos-e2e-home-"));
+  const configDir = fs.mkdtempSync(path.join(os.tmpdir(), "skopos-e2e-config-"));
   const kubeDir = path.join(home, ".kube");
   fs.mkdirSync(kubeDir, { recursive: true });
   for (const [name, content] of Object.entries(opts.kubeconfigs ?? {})) {
@@ -21,7 +21,7 @@ export function prepareAppEnv(opts: { kubeconfigs?: Record<string, string> }): A
   }
   process.env.HOME = home;
   process.env.USERPROFILE = home;
-  process.env.SEXTANT_CONFIG_DIR = configDir;
+  process.env.SKOPOS_CONFIG_DIR = configDir;
   delete process.env.KUBECONFIG;
   return { home, configDir };
 }

@@ -42,7 +42,7 @@ const KIND_KUBECONFIG = path.resolve(__dirname, "..", ".tmp", "kubeconfig");
 
 /** One file each for the kind cluster, a fakekube context and a dead one. */
 async function startConnectionFixture() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sextant-e2e-fake-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "skopos-e2e-fake-"));
   const fakePath = path.join(dir, "fake");
   const fake = await startFakeKube({ kubeconfigPath: fakePath, context: "fake" });
   return {
@@ -60,7 +60,7 @@ async function startConnectionFixture() {
 
 /** One fakekube context and nothing else, so it needs no Docker. */
 async function startSmokeFixture() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sextant-e2e-smoke-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "skopos-e2e-smoke-"));
   const fakePath = path.join(dir, "fake");
   const fake = await startFakeKube({ kubeconfigPath: fakePath, context: "fake" });
   return {

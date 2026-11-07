@@ -1,8 +1,8 @@
 # Third-party notices
 
-Sextant is new code, written for this project. Parts of its logic are adapted from the
+SkoposIDE is new code, written for this project. Parts of its logic are adapted from the
 open-source projects below, whose license requires this notice to stay with the code.
-Libraries that Sextant depends on carry their own licenses in `Cargo.lock` and
+Libraries that SkoposIDE depends on carry their own licenses in `Cargo.lock` and
 `pnpm-lock.yaml`.
 
 ## Freelens

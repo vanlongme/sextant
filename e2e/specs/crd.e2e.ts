@@ -14,9 +14,9 @@ import {
   tableHeaders,
 } from "../helpers/ui";
 
-const KIND = "kind-sextant-e2e";
-const NS = "sextant-test-e2e";
-const GROUP = "e2e.sextant.test";
+const KIND = "kind-skopos-e2e";
+const NS = "skopos-test-e2e";
+const GROUP = "e2e.skopos.test";
 const CRD_NAME = `widgets.${GROUP}`;
 const NAV_ITEM = `nav-item-${GROUP}-widgets`;
 

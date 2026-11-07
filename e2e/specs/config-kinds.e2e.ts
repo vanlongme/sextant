@@ -3,8 +3,8 @@ import {
   byTestId, clickWhenShown, openCluster, openResource, rowId, searchResources, shown,
 } from "../helpers/ui";
 
-const KIND = "kind-sextant-e2e";
-const NS = "sextant-test-config";
+const KIND = "kind-skopos-e2e";
+const NS = "skopos-test-config";
 const LAST_APPLIED = "{.metadata.annotations.kubectl\\.kubernetes\\.io/last-applied-configuration}";
 const MANIFEST = `
 apiVersion: v1

@@ -17,8 +17,8 @@ import {
   shown,
 } from "../helpers/ui";
 
-const home = process.env.SEXTANT_E2E_HOME as string;
-const NS = "sextant-test-e2e";
+const home = process.env.SKOPOS_E2E_HOME as string;
+const NS = "skopos-test-e2e";
 const CONTEXT = "viewer";
 const POD = "victim";
 const VIEWER_USER = `system:serviceaccount:${NS}:viewer`;

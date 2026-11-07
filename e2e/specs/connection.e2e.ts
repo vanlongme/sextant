@@ -12,8 +12,8 @@ import {
   shown,
 } from "../helpers/ui";
 
-const home = process.env.SEXTANT_E2E_HOME as string;
-const KIND = "kind-sextant-e2e";
+const home = process.env.SKOPOS_E2E_HOME as string;
+const KIND = "kind-skopos-e2e";
 
 /** Opens a cluster from the catalog by its name link. */
 async function openFromCatalog(context: string): Promise<void> {

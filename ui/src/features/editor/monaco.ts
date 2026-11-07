@@ -11,8 +11,8 @@ import "monaco-editor/editor/contrib/find/browser/findController";
 // Everything here is bundled by Vite and loaded from the app itself, never a CDN.
 self.MonacoEnvironment = { getWorker: () => new EditorWorker() };
 
-const DARK = "sextant-dark";
-const LIGHT = "sextant-light";
+const DARK = "skopos-dark";
+const LIGHT = "skopos-light";
 
 /** A Monaco theme from the spec's color tokens. Monaco cannot read CSS variables. */
 function defineTheme(

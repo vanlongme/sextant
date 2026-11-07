@@ -5,8 +5,8 @@ import {
   rowId, searchResources, shown,
 } from "../helpers/ui";
 
-const KIND = "kind-sextant-e2e";
-const NS = "sextant-test-kinds";
+const KIND = "kind-skopos-e2e";
+const NS = "skopos-test-kinds";
 const FIXTURE = path.resolve(__dirname, "..", "fixtures", "kinds.yaml");
 const until = (check: () => Promise<boolean>, timeoutMsg: string) =>
   browser.waitUntil(check, { timeout: 60000, interval: 500, timeoutMsg });

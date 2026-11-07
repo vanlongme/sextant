@@ -245,7 +245,7 @@ export function CatalogScreen() {
           title="No clusters yet"
           body={
             <>
-              Sextant lists every context in the files in <code>~/.kube</code>{" "}
+              SkoposIDE lists every context in the files in <code>~/.kube</code>{" "}
               and in <code>$KUBECONFIG</code>. Add a kubeconfig file there, or
               paste one in.
             </>

@@ -43,14 +43,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: Sextant ${{ github.ref_name }}
+          releaseName: SkoposIDE ${{ github.ref_name }}
           releaseDraft: true
-          args: ${{ matrix.args }} --config crates/sextant-app/tauri.conf.json
+          args: ${{ matrix.args }} --config crates/skopos-app/tauri.conf.json
       - name: Verify the macOS signature
         if: runner.os == 'macOS'
         run: |
           mount_point="$(mktemp -d)"
           hdiutil attach target/*/release/bundle/dmg/*.dmg -nobrowse -readonly -mountpoint "$mount_point"
-          codesign --verify --deep --strict --verbose=2 "$mount_point/Sextant.app"
-          codesign --display --verbose=2 "$mount_point/Sextant.app"
+          codesign --verify --deep --strict --verbose=2 "$mount_point/SkoposIDE.app"
+          codesign --display --verbose=2 "$mount_point/SkoposIDE.app"
           hdiutil detach "$mount_point"

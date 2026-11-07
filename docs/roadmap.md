@@ -1,7 +1,7 @@
-# Sextant roadmap
+# SkoposIDE roadmap
 
 Milestone A is specified in
-[`superpowers/specs/2026-11-05-sextant-milestone-a-design.md`](superpowers/specs/2026-11-05-sextant-milestone-a-design.md).
+[`superpowers/specs/2026-11-05-skopos-milestone-a-design.md`](superpowers/specs/2026-11-05-skopos-milestone-a-design.md).
 Each milestone below gets its own spec and plans after Milestone A is complete and
 its acceptance checklist passes.
 
@@ -17,7 +17,7 @@ its acceptance checklist passes.
 | Security | Image vulnerability scanning of running workloads |
 | Cloud | Discover clusters from AWS, Azure and Google Cloud accounts; account and credential handling |
 | Windows and layout | Detachable sub-windows, split-screen |
-| CLI | `sextant` command: open clusters and resources from a shell |
+| CLI | `skopos` command: open clusters and resources from a shell |
 | MCP | Model Context Protocol server exposing cluster tools to AI agents |
 | Delivery | Code signing, notarization, auto-update |
 

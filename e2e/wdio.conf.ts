@@ -6,8 +6,8 @@ import { type AppEnv, prepareAppEnv } from "./helpers/env";
 import { fixtureFor } from "./helpers/fixtures";
 
 const root = path.resolve(__dirname, "..");
-const exe = process.platform === "win32" ? "sextant-app.exe" : "sextant-app";
-const specSet = process.env.SEXTANT_E2E_SPEC_SET ?? "full";
+const exe = process.platform === "win32" ? "skopos-app.exe" : "skopos-app";
+const specSet = process.env.SKOPOS_E2E_SPEC_SET ?? "full";
 
 const envs: AppEnv[] = [];
 const envGroups = new Map<string, AppEnv>();
@@ -23,7 +23,7 @@ function createEnv(kubeconfigs: Record<string, string>): AppEnv {
 function useEnv(env: AppEnv): void {
   process.env.HOME = env.home;
   process.env.USERPROFILE = env.home;
-  process.env.SEXTANT_CONFIG_DIR = env.configDir;
+  process.env.SKOPOS_CONFIG_DIR = env.configDir;
 }
 
 /** The temp env for a spec file: a new one, or the one its group already has. */
@@ -74,7 +74,7 @@ export const config = {
   async onWorkerStart(_cid: string, _caps: unknown, specs: string[]) {
     await stopApp();
     const env = await envForSpec(specs[0] ?? "");
-    process.env.SEXTANT_E2E_HOME = env.home;
+    process.env.SKOPOS_E2E_HOME = env.home;
   },
   async onComplete() {
     for (const stop of stops) await stop();

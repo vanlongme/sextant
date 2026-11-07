@@ -1,12 +1,12 @@
-# Sextant
+# SkoposIDE
 
-Sextant is an open-source desktop Kubernetes IDE built with Tauri 2, a Rust
+SkoposIDE is an open-source desktop Kubernetes IDE built with Tauri 2, a Rust
 core and a React UI. It reads your kubeconfig files, connects to several
 clusters at once and lets you switch between them from a hotbar.
 
 ## Status
 
-Phase 3 (kinds). Sextant is not yet feature complete: today it provides
+Phase 3 (kinds). SkoposIDE is not yet feature complete: today it provides
 the app shell, the cluster catalog, the hotbar, cluster connections, live resource
 tables with a detail drawer, and a YAML editor for editing and creating objects.
 Each kind now has its own columns, status badges, detail panels and actions,
@@ -39,8 +39,8 @@ make e2e-smoke  # smoke end-to-end tests, no Docker
 
 ## Repository layout
 
-- `crates/` Rust workspace: `sextant-core` (no Tauri dependency),
-  `sextant-app` (the Tauri shell) and `sextant-fakekube` (a fake API server
+- `crates/` Rust workspace: `skopos-core` (no Tauri dependency),
+  `skopos-app` (the Tauri shell) and `skopos-fakekube` (a fake API server
   for tests).
 - `ui/` React front end.
 - `e2e/` WebdriverIO end-to-end specs and helpers.
@@ -51,11 +51,11 @@ make e2e-smoke  # smoke end-to-end tests, no Docker
 
 Release builds are unsigned for now.
 
-- **macOS**: builds carry an ad-hoc signature, not one from Apple. Drag the app to Applications and open it. When macOS blocks it, go to System Settings > Privacy & Security and choose Open Anyway, or run `xattr -cr /Applications/Sextant.app`.
+- **macOS**: builds carry an ad-hoc signature, not one from Apple. Drag the app to Applications and open it. When macOS blocks it, go to System Settings > Privacy & Security and choose Open Anyway, or run `xattr -cr /Applications/SkoposIDE.app`.
 - **Windows**: in SmartScreen choose "More info", then "Run anyway".
 - **Linux**: mark the AppImage executable with `chmod +x` and run it.
 
 ## License
 
-Apache-2.0. Copyright The Sextant Authors. See [LICENSE](LICENSE). Third-party credits are in
+Apache-2.0. Copyright The SkoposIDE Authors. See [LICENSE](LICENSE). Third-party credits are in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -19,8 +19,8 @@ import {
   shown,
 } from "../helpers/ui";
 
-const KIND = "kind-sextant-e2e";
-const NS = "sextant-test-e2e";
+const KIND = "kind-skopos-e2e";
+const NS = "skopos-test-e2e";
 
 async function createConfigMap(name: string, value: string): Promise<void> {
   await kubectl([

@@ -4,7 +4,7 @@ import path from "node:path";
 
 /** The kubeconfig of the kind cluster, which `scripts/kind-up.sh` writes. */
 const KIND_KUBECONFIG = path.resolve(__dirname, "..", ".tmp", "kubeconfig");
-const TEST_NAMESPACE_PREFIX = "sextant-test-";
+const TEST_NAMESPACE_PREFIX = "skopos-test-";
 const OUTPUT_LIMIT_BYTES = 16 * 1024 * 1024;
 const NAMESPACE_DELETE_TIMEOUT = "120s";
 

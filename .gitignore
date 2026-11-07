@@ -6,6 +6,6 @@ e2e/.tmp/
 .worktrees/
 *.log
 .DS_Store
-crates/sextant-app/gen/schemas/
+crates/skopos-app/gen/schemas/
 .superpowers/
 tmp/

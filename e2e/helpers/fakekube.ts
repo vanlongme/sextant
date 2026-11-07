@@ -1,11 +1,11 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import path from "node:path";
 
-const BINARY = path.resolve(__dirname, "..", "..", "target", "debug", "sextant-fakekube");
+const BINARY = path.resolve(__dirname, "..", "..", "target", "debug", "skopos-fakekube");
 const START_TIMEOUT_MS = 15000;
 
 /**
- * Spawns `target/debug/sextant-fakekube`, which writes a kubeconfig with the
+ * Spawns `target/debug/skopos-fakekube`, which writes a kubeconfig with the
  * given context to `kubeconfigPath` and serves a fake API server until stopped.
  */
 export async function startFakeKube(opts: {
@@ -21,7 +21,7 @@ export async function startFakeKube(opts: {
   const url = await new Promise<string>((resolve, reject) => {
     let out = "";
     const timer = setTimeout(
-      () => reject(new Error("sextant-fakekube did not report its address")),
+      () => reject(new Error("skopos-fakekube did not report its address")),
       START_TIMEOUT_MS,
     );
     child.once("error", (error) => {
@@ -30,7 +30,7 @@ export async function startFakeKube(opts: {
     });
     child.once("exit", (code) => {
       clearTimeout(timer);
-      reject(new Error(`sextant-fakekube exited with ${code} before it was ready`));
+      reject(new Error(`skopos-fakekube exited with ${code} before it was ready`));
     });
     child.stdout?.on("data", (chunk: Buffer) => {
       out += chunk.toString();

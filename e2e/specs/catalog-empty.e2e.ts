@@ -3,7 +3,7 @@ import path from "node:path";
 import { kubeconfig } from "../helpers/fixtures";
 import { shown } from "../helpers/ui";
 
-const home = process.env.SEXTANT_E2E_HOME as string;
+const home = process.env.SKOPOS_E2E_HOME as string;
 
 describe("empty catalog", () => {
   it("explains how to add a cluster", async () => {

@@ -16,7 +16,7 @@ export function StatusBar() {
   return (
     <footer className={styles.status} data-testid="status-bar">
       <span>{connected} connected</span>
-      <span>{version ? `Sextant ${version}` : "Sextant"}</span>
+      <span>{version ? `SkoposIDE ${version}` : "SkoposIDE"}</span>
     </footer>
   );
 }

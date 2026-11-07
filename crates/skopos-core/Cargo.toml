@@ -1,0 +1,32 @@
+[package]
+name = "skopos-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+base64 = "0.22"
+dashmap.workspace = true
+futures.workspace = true
+directories = "6"
+http = "1"
+k8s-openapi.workspace = true
+kube.workspace = true
+notify = "8.2"
+notify-debouncer-full = "0.7"
+portable-pty = "0.9"
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml_ng.workspace = true
+sha2.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+ts-rs.workspace = true
+url = "2"
+
+[dev-dependencies]
+skopos-fakekube = { path = "../skopos-fakekube" }
