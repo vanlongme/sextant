@@ -6,6 +6,7 @@ mod follow;
 mod parse;
 mod workload;
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -15,7 +16,7 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use ts_rs::TS;
 
-use super::{pod_container_names, read_pod};
+use super::{pod_container_names, read_pod, FlowControl};
 use crate::app_core::AppCore;
 use crate::error::{CoreResult, IpcError};
 use crate::kubeconfig::ClusterId;
@@ -24,9 +25,12 @@ use follow::{stream_container, ContainerEnd, StreamContext, StreamTarget};
 
 /// Lines wait this long at most before they are sent.
 const FLUSH_EVERY: Duration = Duration::from_millis(100);
-/// One flush carries at most this many. Reading waits for the next flush once it is
-/// reached, so a flood slows the API server stream instead of filling memory.
+/// One flush carries at most this many lines. Reading waits for the next flush once it
+/// is reached.
 const FLUSH_LINES: usize = 5_000;
+/// One flush stops growing at this many bytes, so its last line can pass it. Lines can be
+/// long, so a limit on their number alone would not limit the memory they take.
+const FLUSH_BYTES: u64 = 1024 * 1024;
 /// Lines on their way to the batcher, across all of a session's streams.
 const ITEM_BACKLOG: usize = 256;
 
@@ -103,6 +107,9 @@ pub enum LogEndReason {
 pub enum LogEvent {
     Lines {
         lines: Vec<LogLine>,
+        /// What to pass to `session_ack` once the lines are stored.
+        #[ts(type = "number")]
+        bytes: u64,
     },
     Marker {
         pod: String,
@@ -140,38 +147,76 @@ enum StreamItem {
     },
 }
 
-async fn flush(lines: &mut Vec<LogLine>, events: &mpsc::Sender<LogEvent>) -> bool {
-    if lines.is_empty() {
+fn line_bytes(line: &LogLine) -> u64 {
+    let timestamp = line.timestamp.as_ref().map_or(0, String::len);
+    (line.pod.len() + line.container.len() + timestamp + line.text.len()) as u64
+}
+
+/// The lines waiting for the next flush.
+#[derive(Debug, Default)]
+struct Batch {
+    lines: Vec<LogLine>,
+    bytes: u64,
+}
+
+impl Batch {
+    fn has_room(&self) -> bool {
+        self.lines.len() < FLUSH_LINES && self.bytes < FLUSH_BYTES
+    }
+
+    fn push(&mut self, line: LogLine) {
+        self.bytes += line_bytes(&line);
+        self.lines.push(line);
+    }
+}
+
+async fn flush(batch: &mut Batch, events: &mpsc::Sender<LogEvent>, flow: &FlowControl) -> bool {
+    if batch.lines.is_empty() {
         return true;
     }
-    let lines = std::mem::take(lines);
-    events.send(LogEvent::Lines { lines }).await.is_ok()
+    let Batch { lines, bytes } = std::mem::take(batch);
+    // Before the send, because the acknowledgement can arrive as soon as it is made.
+    flow.sent(bytes);
+    events.send(LogEvent::Lines { lines, bytes }).await.is_ok()
 }
 
 /// Turns stream items into events until every stream has ended. A failed send means nobody
 /// is listening, which stops the session.
+///
+/// A Tauri channel does not wait for the webview, so `flow` is what paces a flood: once too
+/// much is unacknowledged nothing is read from `items`, which backs up into the API server
+/// stream. The batch is empty by then, because only a flush can start that wait.
 async fn run_batcher(
     mut items: mpsc::Receiver<StreamItem>,
     events: mpsc::Sender<LogEvent>,
+    flow: Arc<FlowControl>,
     token: CancellationToken,
 ) {
-    let mut lines = Vec::new();
+    let mut batch = Batch::default();
     let mut tick = tokio::time::interval(FLUSH_EVERY);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let delivered = loop {
+        // A stream may be waiting on `items`, so stopping has to end this wait or it could
+        // never see the token, and the batcher ends only after the last stream.
         tokio::select! {
-            item = items.recv(), if lines.len() < FLUSH_LINES => match item {
-                Some(StreamItem::Line(line)) => lines.push(line),
+            () = flow.ready() => {}
+            () = token.cancelled() => flow.release(),
+        }
+        tokio::select! {
+            item = items.recv(), if batch.has_room() => match item {
+                Some(StreamItem::Line(line)) => batch.push(line),
                 Some(StreamItem::Marker { pod, container, marker, message }) => {
                     let event = LogEvent::Marker { pod, container, marker, message };
-                    if !flush(&mut lines, &events).await || events.send(event).await.is_err() {
+                    if !flush(&mut batch, &events, &flow).await
+                        || events.send(event).await.is_err()
+                    {
                         break false;
                     }
                 }
-                None => break flush(&mut lines, &events).await,
+                None => break flush(&mut batch, &events, &flow).await,
             },
             _ = tick.tick() => {
-                if !flush(&mut lines, &events).await {
+                if !flush(&mut batch, &events, &flow).await {
                     break false;
                 }
             }
@@ -326,11 +371,12 @@ impl AppCore {
         check_target(&target)?;
         let client = self.cluster_client(id)?;
         let token = self.cluster_cancel_token(id)?;
-        let guard = self.sessions().register(token.clone(), None);
+        let flow = Arc::new(FlowControl::new());
+        let guard = self.sessions().register_log(token.clone(), flow.clone());
         let session = guard.id().to_owned();
         tokio::spawn(async move {
             let (items, items_rx) = mpsc::channel(ITEM_BACKLOG);
-            let batcher = tokio::spawn(run_batcher(items_rx, events.clone(), token.clone()));
+            let batcher = tokio::spawn(run_batcher(items_rx, events.clone(), flow, token.clone()));
             let context = StreamContext {
                 client,
                 namespace: target_namespace(&target).to_owned(),
@@ -366,9 +412,133 @@ fn target_namespace(target: &LogTarget) -> &str {
 mod tests {
     use super::*;
     use crate::error::ErrorCode;
+    use crate::sessions::flow::PAUSE_AT;
+
+    const LIMIT: Duration = Duration::from_secs(30);
+    /// Several flushes long, so a batcher that is still reading would send something.
+    const SILENCE: Duration = Duration::from_millis(500);
+    const LONG_LINE: usize = 64 * 1024;
 
     fn failure() -> IpcError {
         IpcError::new(ErrorCode::Forbidden, "no")
+    }
+
+    fn long_line() -> StreamItem {
+        StreamItem::Line(LogLine {
+            pod: "p".into(),
+            container: "c".into(),
+            timestamp: None,
+            text: "x".repeat(LONG_LINE),
+            truncated: false,
+        })
+    }
+
+    fn feed_long_lines(items: mpsc::Sender<StreamItem>, total: usize) {
+        tokio::spawn(async move {
+            for _ in 0..total {
+                if items.send(long_line()).await.is_err() {
+                    return;
+                }
+            }
+        });
+    }
+
+    fn start_batcher(
+        token: CancellationToken,
+    ) -> (
+        mpsc::Sender<StreamItem>,
+        mpsc::Receiver<LogEvent>,
+        Arc<FlowControl>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let (items, items_rx) = mpsc::channel(ITEM_BACKLOG);
+        let (events, events_rx) = mpsc::channel(4);
+        let flow = Arc::new(FlowControl::new());
+        let batcher = tokio::spawn(run_batcher(items_rx, events, flow.clone(), token));
+        (items, events_rx, flow, batcher)
+    }
+
+    #[tokio::test]
+    async fn a_batch_stops_at_the_byte_limit_and_reports_its_size() {
+        let (items, mut events, flow, batcher) = start_batcher(CancellationToken::new());
+        let total = 40;
+        feed_long_lines(items, total);
+        let mut seen = 0;
+        while seen < total {
+            let event = tokio::time::timeout(LIMIT, events.recv()).await.unwrap();
+            let Some(LogEvent::Lines { lines, bytes }) = event else {
+                panic!("the batcher ended early");
+            };
+            assert_eq!(bytes, lines.iter().map(line_bytes).sum::<u64>());
+            assert!(
+                bytes < FLUSH_BYTES + 2 * LONG_LINE as u64,
+                "a batch of {bytes} bytes"
+            );
+            seen += lines.len();
+            flow.acked(bytes);
+        }
+        batcher.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn reading_waits_for_acknowledgements() {
+        let (items, mut events, flow, batcher) = start_batcher(CancellationToken::new());
+        let total = 100;
+        feed_long_lines(items, total);
+
+        let (mut seen, mut unacked) = (0, 0);
+        while let Ok(Some(event)) = tokio::time::timeout(SILENCE, events.recv()).await {
+            let LogEvent::Lines { lines, bytes } = event else {
+                panic!("{event:?}");
+            };
+            seen += lines.len();
+            unacked += bytes;
+        }
+        assert!(seen < total, "every line came with nothing acknowledged");
+        assert!(unacked >= PAUSE_AT, "stopped early, at {unacked} bytes");
+        assert!(
+            unacked < PAUSE_AT + FLUSH_BYTES + 2 * LONG_LINE as u64,
+            "stopped late, at {unacked} bytes"
+        );
+
+        flow.acked(unacked);
+        while seen < total {
+            let event = tokio::time::timeout(LIMIT, events.recv()).await.unwrap();
+            let Some(LogEvent::Lines { lines, bytes }) = event else {
+                panic!("the batcher ended early");
+            };
+            seen += lines.len();
+            flow.acked(bytes);
+        }
+        batcher.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn stopping_ends_a_batcher_nobody_acknowledges() {
+        let token = CancellationToken::new();
+        let (items, mut events, _flow, batcher) = start_batcher(token.clone());
+        // Like a stream, it sends until it is stopped, and waits while nothing is read.
+        let stream_token = token.clone();
+        tokio::spawn(async move {
+            while !stream_token.is_cancelled() {
+                if items.send(long_line()).await.is_err() {
+                    return;
+                }
+            }
+        });
+        tokio::time::timeout(LIMIT, async {
+            while let Ok(Some(_)) = tokio::time::timeout(SILENCE, events.recv()).await {}
+        })
+        .await
+        .expect("the batcher never stopped reading");
+
+        token.cancel();
+        tokio::time::timeout(LIMIT, async {
+            while events.recv().await.is_some() {}
+        })
+        .await
+        .expect("the batcher did not end");
+        batcher.await.unwrap();
     }
 
     #[test]
@@ -416,7 +586,13 @@ mod tests {
     async fn a_flood_flushes_at_most_the_limit_each_tick_and_in_order() {
         let (items, items_rx) = mpsc::channel(ITEM_BACKLOG);
         let (events, mut events_rx) = mpsc::channel(4);
-        let batcher = tokio::spawn(run_batcher(items_rx, events, CancellationToken::new()));
+        let flow = Arc::new(FlowControl::new());
+        let batcher = tokio::spawn(run_batcher(
+            items_rx,
+            events,
+            flow,
+            CancellationToken::new(),
+        ));
         let total = FLUSH_LINES * 2 + 10;
         tokio::spawn(async move {
             for number in 0..total {
@@ -434,7 +610,7 @@ mod tests {
         });
         let mut seen = 0;
         while seen < total {
-            let Some(LogEvent::Lines { lines }) = events_rx.recv().await else {
+            let Some(LogEvent::Lines { lines, .. }) = events_rx.recv().await else {
                 panic!("the batcher ended early");
             };
             assert!(lines.len() <= FLUSH_LINES);
@@ -450,7 +626,13 @@ mod tests {
     async fn a_marker_stays_between_the_lines_it_came_between() {
         let (items, items_rx) = mpsc::channel(ITEM_BACKLOG);
         let (events, mut events_rx) = mpsc::channel(4);
-        let batcher = tokio::spawn(run_batcher(items_rx, events, CancellationToken::new()));
+        let flow = Arc::new(FlowControl::new());
+        let batcher = tokio::spawn(run_batcher(
+            items_rx,
+            events,
+            flow,
+            CancellationToken::new(),
+        ));
         let line = |text: &str| {
             StreamItem::Line(LogLine {
                 pod: "p".into(),
@@ -476,7 +658,7 @@ mod tests {
         let mut seen = Vec::new();
         while let Some(event) = events_rx.recv().await {
             seen.push(match event {
-                LogEvent::Lines { lines } => lines[0].text.clone(),
+                LogEvent::Lines { lines, .. } => lines[0].text.clone(),
                 LogEvent::Marker { marker, .. } => format!("{marker:?}"),
                 other => panic!("{other:?}"),
             });
@@ -489,7 +671,8 @@ mod tests {
         let (items, items_rx) = mpsc::channel(ITEM_BACKLOG);
         let (events, events_rx) = mpsc::channel(4);
         let token = CancellationToken::new();
-        let batcher = tokio::spawn(run_batcher(items_rx, events, token.clone()));
+        let flow = Arc::new(FlowControl::new());
+        let batcher = tokio::spawn(run_batcher(items_rx, events, flow, token.clone()));
         drop(events_rx);
         items
             .send(StreamItem::Line(LogLine {
@@ -507,6 +690,14 @@ mod tests {
 
     #[test]
     fn events_serialize_as_the_contract_says() {
+        let lines = LogEvent::Lines {
+            lines: Vec::new(),
+            bytes: 7,
+        };
+        assert_eq!(
+            serde_json::to_value(&lines).unwrap(),
+            serde_json::json!({ "type": "lines", "lines": [], "bytes": 7 })
+        );
         let marker = LogEvent::Marker {
             pod: "p".into(),
             container: None,

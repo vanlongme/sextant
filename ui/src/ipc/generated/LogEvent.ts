@@ -4,4 +4,8 @@ import type { LogEndReason } from "./LogEndReason";
 import type { LogLine } from "./LogLine";
 import type { LogMarker } from "./LogMarker";
 
-export type LogEvent = { "type": "lines", lines: Array<LogLine>, } | { "type": "marker", pod: string, container: string | null, marker: LogMarker, message: string | null, } | { "type": "ended", reason: LogEndReason, } | { "type": "failed", error: IpcError, };
+export type LogEvent = { "type": "lines", lines: Array<LogLine>, 
+/**
+ * What to pass to `session_ack` once the lines are stored.
+ */
+bytes: number, } | { "type": "marker", pod: string, container: string | null, marker: LogMarker, message: string | null, } | { "type": "ended", reason: LogEndReason, } | { "type": "failed", error: IpcError, };

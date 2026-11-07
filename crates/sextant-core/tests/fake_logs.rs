@@ -115,7 +115,7 @@ fn lines(events: &[LogEvent]) -> Vec<LogLine> {
     events
         .iter()
         .filter_map(|event| match event {
-            LogEvent::Lines { lines } => Some(lines.clone()),
+            LogEvent::Lines { lines, .. } => Some(lines.clone()),
             _ => None,
         })
         .flatten()
@@ -127,7 +127,7 @@ fn has_marker(event: &LogEvent, wanted: LogMarker) -> bool {
 }
 
 fn has_text(event: &LogEvent, wanted: &str) -> bool {
-    matches!(event, LogEvent::Lines { lines } if lines.iter().any(|line| line.text == wanted))
+    matches!(event, LogEvent::Lines { lines, .. } if lines.iter().any(|line| line.text == wanted))
 }
 
 #[tokio::test]
@@ -531,10 +531,96 @@ async fn a_flood_arrives_whole_and_in_order() {
         .enumerate()
         .all(|(index, text)| text == &index.to_string()));
     for event in &events {
-        if let LogEvent::Lines { lines } = event {
+        if let LogEvent::Lines { lines, .. } = event {
             assert!(lines.len() <= 5_000);
         }
     }
+}
+
+/// Events until none has come for a while, which means the session is waiting.
+async fn until_silent(rx: &mut mpsc::Receiver<LogEvent>) -> Vec<LogEvent> {
+    let mut events = Vec::new();
+    while let Ok(Some(event)) = tokio::time::timeout(Duration::from_secs(1), rx.recv()).await {
+        events.push(event);
+    }
+    events
+}
+
+/// About 3 MiB, well past what may go unacknowledged.
+fn add_large_log(fake: &FakeKube) -> usize {
+    let total = 3_000;
+    let padding = "x".repeat(1_000);
+    let flood: Vec<FakeLogLine> = (0..total)
+        .map(|number| {
+            FakeLogLine::new(
+                &format!("2026-01-01T00:00:01.{number:09}Z"),
+                &format!("{number} {padding}"),
+            )
+        })
+        .collect();
+    fake.add_log_lines("default", "p", "main", &flood);
+    total
+}
+
+#[tokio::test]
+async fn a_large_log_waits_for_acknowledgements() {
+    let (core, fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
+    pod_with_containers(&fake, json!({}));
+    let total = add_large_log(&fake);
+    let (session, mut rx) = start(&core, &id, pod_target(Some("main")), once());
+
+    let waiting = until_silent(&mut rx).await;
+    assert!(!waiting.iter().any(is_last), "ended with nothing acknowledged");
+    let mut seen = texts(&waiting);
+    assert!(seen.len() < total, "every line came with nothing acknowledged");
+    for event in &waiting {
+        if let LogEvent::Lines { bytes, .. } = event {
+            core.session_ack(&session, *bytes);
+        }
+    }
+
+    let rest = tokio::time::timeout(LIMIT, async {
+        let mut rest = Vec::new();
+        while let Some(event) = rx.recv().await {
+            if let LogEvent::Lines { bytes, .. } = &event {
+                core.session_ack(&session, *bytes);
+            }
+            let last = is_last(&event);
+            rest.push(event);
+            if last {
+                break;
+            }
+        }
+        rest
+    })
+    .await
+    .expect("acknowledging did not bring the rest");
+    seen.extend(texts(&rest));
+    assert_eq!(seen.len(), total);
+    assert!(seen
+        .iter()
+        .enumerate()
+        .all(|(index, text)| text.starts_with(&format!("{index} "))));
+}
+
+#[tokio::test]
+async fn stopping_ends_a_log_nobody_acknowledges() {
+    let (core, fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
+    pod_with_containers(&fake, json!({}));
+    add_large_log(&fake);
+    let (session, mut rx) = start(&core, &id, pod_target(Some("main")), once());
+    until_silent(&mut rx).await;
+
+    core.logs_stop(&session);
+
+    let events = wait_until(&mut rx, is_last).await;
+    assert!(matches!(
+        events.last(),
+        Some(LogEvent::Ended {
+            reason: LogEndReason::Stopped
+        })
+    ));
+    assert!(core.sessions_wait_idle(LIMIT).await);
 }
 
 #[tokio::test]

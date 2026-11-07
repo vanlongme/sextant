@@ -1,5 +1,5 @@
-//! Flow control for the terminal family. Output stops being read once too much of it is
-//! unacknowledged, so a flood blocks in the PTY or the socket, and neither memory nor the
+//! Flow control for terminal and log sessions. Output stops being read once too much of it
+//! is unacknowledged, so a flood blocks in the PTY or the socket, and neither memory nor the
 //! webview's queue grows without bound.
 
 use std::sync::{Mutex, MutexGuard, PoisonError};

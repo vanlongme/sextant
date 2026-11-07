@@ -321,7 +321,7 @@ async fn wait_for_log(
 }
 
 fn has_text(event: &LogEvent, wanted: &str) -> bool {
-    matches!(event, LogEvent::Lines { lines } if lines.iter().any(|line| line.text.contains(wanted)))
+    matches!(event, LogEvent::Lines { lines, .. } if lines.iter().any(|line| line.text.contains(wanted)))
 }
 
 fn has_marker(event: &LogEvent, wanted: LogMarker) -> bool {
@@ -353,7 +353,7 @@ async fn real_logs_carry_timestamps_and_a_restart_shows_a_marker() {
         let line = first
             .iter()
             .find_map(|event| match event {
-                LogEvent::Lines { lines } => lines.first().cloned(),
+                LogEvent::Lines { lines, .. } => lines.first().cloned(),
                 _ => None,
             })
             .unwrap();

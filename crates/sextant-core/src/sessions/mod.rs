@@ -77,6 +77,8 @@ struct RunningSession {
     token: CancellationToken,
     /// `None` for a log stream.
     control: Option<TerminalControl>,
+    /// Set for a log stream, which has flow control and nothing else to drive.
+    log_flow: Option<Arc<FlowControl>>,
 }
 
 #[derive(Debug, Default)]
@@ -95,10 +97,30 @@ impl SessionRegistry {
         token: CancellationToken,
         control: Option<TerminalControl>,
     ) -> SessionGuard {
+        self.insert(RunningSession {
+            token,
+            control,
+            log_flow: None,
+        })
+    }
+
+    /// Adds a log session, which `session_ack` can reach.
+    pub(crate) fn register_log(
+        self: &Arc<Self>,
+        token: CancellationToken,
+        flow: Arc<FlowControl>,
+    ) -> SessionGuard {
+        self.insert(RunningSession {
+            token,
+            control: None,
+            log_flow: Some(flow),
+        })
+    }
+
+    fn insert(self: &Arc<Self>, session: RunningSession) -> SessionGuard {
         let number = self.next.fetch_add(1, Ordering::Relaxed);
         let id = format!("session-{number}");
-        self.sessions
-            .insert(id.clone(), RunningSession { token, control });
+        self.sessions.insert(id.clone(), session);
         SessionGuard {
             registry: self.clone(),
             id,
@@ -259,8 +281,9 @@ impl AppCore {
     /// session ended, is ignored.
     pub fn session_ack(&self, id: &str, bytes: u64) {
         if let Some(session) = self.sessions().sessions.get(id) {
-            if let Some(control) = &session.control {
-                control.flow.acked(bytes);
+            let terminal = session.control.as_ref().map(|control| &control.flow);
+            if let Some(flow) = terminal.or(session.log_flow.as_ref()) {
+                flow.acked(bytes);
             }
         }
     }
@@ -404,6 +427,20 @@ mod tests {
         drop(input);
         let closed = core.session_write(terminal.id(), vec![4]).unwrap_err();
         assert_eq!(closed.code, ErrorCode::NotFound);
+    }
+
+    #[tokio::test]
+    async fn an_acknowledgement_reaches_a_log_session() {
+        let (core, _root) = started_core().await;
+        let flow = Arc::new(FlowControl::new());
+        let guard = core
+            .sessions()
+            .register_log(CancellationToken::new(), flow.clone());
+        flow.sent(100);
+        core.session_ack(guard.id(), 100);
+        assert_eq!(flow.unacked(), 0);
+        let error = core.session_write(guard.id(), vec![1]).unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidInput);
     }
 
     #[tokio::test]
