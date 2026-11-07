@@ -423,3 +423,178 @@ async fn configmap_update_patches_only_data() {
         json!({ "metadata": { "resourceVersion": version }, "data": { "a": "2" } })
     );
 }
+
+fn ingress_classes() -> FakeResource {
+    FakeResource::new(
+        "networking.k8s.io",
+        "v1",
+        "IngressClass",
+        "ingressclasses",
+        false,
+    )
+}
+
+const DEFAULT_CLASS: &str = "ingressclass.kubernetes.io/is-default-class";
+const CLASSES_PATH: &str = "/apis/networking.k8s.io/v1/ingressclasses";
+
+fn add_class(fake: &FakeKube, name: &str, is_default: bool) {
+    let annotations = if is_default {
+        json!({ DEFAULT_CLASS: "true" })
+    } else {
+        json!({ "keep": "me" })
+    };
+    fake.upsert(
+        "ingressclasses",
+        json!({ "metadata": { "name": name, "annotations": annotations } }),
+    );
+}
+
+#[tokio::test]
+async fn force_delete_sends_a_grace_period_of_zero() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    fake.add_pod("default", "p");
+    core.pod_force_delete(&id, "default", "p").await.unwrap();
+    let delete = fake
+        .writes("DELETE", "/api/v1/namespaces/default/pods/p")
+        .pop()
+        .unwrap();
+    assert_eq!(delete.body["gracePeriodSeconds"], 0);
+    let error = core
+        .pod_force_delete(&id, "default", "p")
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::NotFound);
+}
+
+fn config_maps() -> ResourceRef {
+    ResourceRef {
+        group: String::new(),
+        version: "v1".into(),
+        plural: "configmaps".into(),
+        kind: "ConfigMap".into(),
+        namespaced: true,
+    }
+}
+
+#[tokio::test]
+async fn force_finalize_is_refused_unless_the_object_is_being_deleted() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    fake.upsert(
+        "configmaps",
+        json!({ "metadata": { "name": "c", "namespace": "default", "finalizers": ["x/y"] } }),
+    );
+    let error = core
+        .resource_force_finalize(&id, &config_maps(), Some("default"), "c")
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::InvalidInput);
+    assert!(fake
+        .writes("PATCH", "/api/v1/namespaces/default/configmaps/c")
+        .is_empty());
+}
+
+#[tokio::test]
+async fn force_finalize_clears_the_finalizers_of_the_object_it_read() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    fake.upsert(
+        "configmaps",
+        json!({ "metadata": {
+            "name": "c", "namespace": "default", "finalizers": ["x/y"],
+            "deletionTimestamp": "2026-01-01T00:00:00Z",
+        } }),
+    );
+    core.resource_force_finalize(&id, &config_maps(), Some("default"), "c")
+        .await
+        .unwrap();
+    let patch = fake
+        .writes("PATCH", "/api/v1/namespaces/default/configmaps/c")
+        .pop()
+        .unwrap();
+    assert!(patch.body["metadata"]["finalizers"].is_null());
+    assert!(patch.body["metadata"]
+        .as_object()
+        .unwrap()
+        .contains_key("finalizers"));
+    let current = core
+        .resource_get(&id, &config_maps(), Some("default"), "c")
+        .await
+        .unwrap();
+    assert_eq!(current["metadata"]["uid"], patch.body["metadata"]["uid"]);
+    assert!(current["metadata"].get("finalizers").is_none());
+}
+
+#[tokio::test]
+async fn job_suspend_and_resume_patch_the_spec() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    fake.serve_resource(FakeResource::new("batch", "v1", "Job", "jobs", true));
+    fake.upsert(
+        "jobs",
+        json!({ "metadata": { "name": "j", "namespace": "default" } }),
+    );
+    core.job_set_suspend(&id, "default", "j", true)
+        .await
+        .unwrap();
+    core.job_set_suspend(&id, "default", "j", false)
+        .await
+        .unwrap();
+    let path = "/apis/batch/v1/namespaces/default/jobs/j";
+    let patches = fake.writes("PATCH", path);
+    assert_eq!(patches[0].body, json!({ "spec": { "suspend": true } }));
+    assert_eq!(patches[1].body, json!({ "spec": { "suspend": false } }));
+}
+
+#[tokio::test]
+async fn setting_a_default_class_moves_the_annotation() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    fake.serve_resource(ingress_classes());
+    add_class(&fake, "old", true);
+    add_class(&fake, "new", false);
+    add_class(&fake, "other", false);
+    core.ingress_class_set_default(&id, "new").await.unwrap();
+    let patch = |name: &str| fake.writes("PATCH", &format!("{CLASSES_PATH}/{name}"));
+    assert_eq!(patch("new").len(), 1);
+    assert_eq!(patch("old").len(), 1);
+    assert!(patch("old")[0].body["metadata"]["annotations"][DEFAULT_CLASS].is_null());
+    // A class without the annotation is not written to.
+    assert!(patch("other").is_empty());
+}
+
+#[tokio::test]
+async fn a_failure_on_the_chosen_class_changes_nothing_else() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    fake.serve_resource(ingress_classes());
+    add_class(&fake, "old", true);
+    add_class(&fake, "new", false);
+    fake.fail_writes_to("ingressclasses", "new", Some(403));
+    let error = core
+        .ingress_class_set_default(&id, "new")
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::Forbidden);
+    assert!(fake
+        .writes("PATCH", &format!("{CLASSES_PATH}/old"))
+        .is_empty());
+}
+
+#[tokio::test]
+async fn a_partial_failure_names_the_classes_left_unchanged() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    fake.serve_resource(ingress_classes());
+    add_class(&fake, "old-one", true);
+    add_class(&fake, "old-two", true);
+    add_class(&fake, "new", false);
+    fake.fail_writes_to("ingressclasses", "old-two", Some(403));
+    let error = core
+        .ingress_class_set_default(&id, "new")
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::Forbidden);
+    assert!(error.message.contains("old-two"), "{}", error.message);
+    assert!(!error.message.contains("old-one"), "{}", error.message);
+    // The rest of the work still happened.
+    assert_eq!(
+        fake.writes("PATCH", &format!("{CLASSES_PATH}/old-one"))
+            .len(),
+        1
+    );
+}

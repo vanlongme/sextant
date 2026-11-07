@@ -167,3 +167,56 @@ pub async fn configmap_update(
         .configmap_update(&cluster_id, &namespace, &name, &resource_version, changes)
         .await
 }
+
+#[tauri::command]
+pub async fn pod_force_delete(
+    state: State<'_, AppState>,
+    cluster_id: ClusterId,
+    namespace: String,
+    name: String,
+) -> Result<(), IpcError> {
+    state
+        .core
+        .pod_force_delete(&cluster_id, &namespace, &name)
+        .await
+}
+
+#[tauri::command]
+pub async fn resource_force_finalize(
+    state: State<'_, AppState>,
+    cluster_id: ClusterId,
+    resource: ResourceRef,
+    namespace: Option<String>,
+    name: String,
+) -> Result<(), IpcError> {
+    state
+        .core
+        .resource_force_finalize(&cluster_id, &resource, namespace.as_deref(), &name)
+        .await
+}
+
+#[tauri::command]
+pub async fn job_set_suspend(
+    state: State<'_, AppState>,
+    cluster_id: ClusterId,
+    namespace: String,
+    name: String,
+    suspend: bool,
+) -> Result<(), IpcError> {
+    state
+        .core
+        .job_set_suspend(&cluster_id, &namespace, &name, suspend)
+        .await
+}
+
+#[tauri::command]
+pub async fn ingress_class_set_default(
+    state: State<'_, AppState>,
+    cluster_id: ClusterId,
+    name: String,
+) -> Result<(), IpcError> {
+    state
+        .core
+        .ingress_class_set_default(&cluster_id, &name)
+        .await
+}

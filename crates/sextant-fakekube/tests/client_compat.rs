@@ -359,3 +359,29 @@ mod generic {
         assert!(api.list(&ListParams::default()).await.is_ok());
     }
 }
+
+mod uid_in_a_patch {
+    use super::*;
+    use kube::api::{Patch, PatchParams};
+    use serde_json::json;
+    use sextant_fakekube::FakeKubeConfig;
+
+    /// A real API server answers this way, and force finalize relies on it.
+    #[tokio::test]
+    async fn another_objects_uid_is_refused_as_immutable() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = FakeKube::start(FakeKubeConfig::default()).await.unwrap();
+        let client = client_for(&fake, dir.path()).await;
+        fake.add_pod("default", "p");
+        let pods: Api<Pod> = Api::namespaced(client, "default");
+        let current = pods.get("p").await.unwrap().metadata.uid.unwrap();
+        let params = PatchParams::default();
+
+        let wrong = Patch::Merge(json!({ "metadata": { "uid": "other", "labels": { "a": "b" } } }));
+        let error = pods.patch("p", &params, &wrong).await.unwrap_err();
+        assert!(matches!(error, kube::Error::Api(status) if status.code == 422));
+
+        let right = Patch::Merge(json!({ "metadata": { "uid": current, "labels": { "a": "b" } } }));
+        assert!(pods.patch("p", &params, &right).await.is_ok());
+    }
+}

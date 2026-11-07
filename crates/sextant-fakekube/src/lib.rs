@@ -90,6 +90,8 @@ struct State_ {
     hold_evicted_pods: bool,
     /// (method, path) -> the writes received, oldest first.
     writes: BTreeMap<(String, String), Vec<WriteRequest>>,
+    /// (plural, name) -> the status every write to that object gets instead.
+    write_failures: BTreeMap<(String, String), u16>,
     /// (namespace, pod, container) -> what the `log` subresource serves.
     logs: BTreeMap<LogKey, Vec<FakeLogLine>>,
     /// (namespace, pod, container) -> the status every log request gets instead.
@@ -280,6 +282,7 @@ impl FakeKube {
                 eviction_failures: BTreeMap::new(),
                 hold_evicted_pods: false,
                 writes: BTreeMap::new(),
+                write_failures: BTreeMap::new(),
                 logs: BTreeMap::new(),
                 log_failures: BTreeMap::new(),
                 log_requests: Vec::new(),
@@ -465,6 +468,16 @@ impl FakeKube {
     /// How many watch streams are open right now.
     pub fn open_watch_count(&self) -> usize {
         self.inner.open_watches.load(Ordering::SeqCst)
+    }
+
+    /// Makes every write to one object answer with this HTTP status until cleared with `None`.
+    pub fn fail_writes_to(&self, plural: &str, name: &str, http_status: Option<u16>) {
+        let key = (plural.to_string(), name.to_string());
+        let mut st = self.inner.lock();
+        match http_status {
+            Some(code) => st.write_failures.insert(key, code),
+            None => st.write_failures.remove(&key),
+        };
     }
 
     /// Appends to a container's log, and to the follow streams open on it.
@@ -828,6 +841,14 @@ async fn generic(
     };
     if legacy_forbid || s.denied(verb, &denied_plural, ns) {
         return forbidden(&res, verb, ns);
+    }
+    if !matches!(verb, "get" | "list" | "watch") {
+        if let Some(name) = t.name.as_deref() {
+            let key = (res.plural.clone(), name.to_string());
+            if let Some(code) = s.lock().write_failures.get(&key) {
+                return status_for_code(*code);
+            }
+        }
     }
     if let Some(sub) = t.subresource.as_deref() {
         return subresource(&s, &res, &t, sub, &method, &headers, &body, &q);
@@ -1193,6 +1214,18 @@ fn patch(s: &Shared, res: &FakeResource, t: &Target, headers: &HeaderMap, body: 
     if let Some(m) = patch_doc.get_mut("metadata").and_then(Value::as_object_mut) {
         m.remove("resourceVersion");
         m.remove("managedFields");
+    }
+    // A real API server refuses to change a uid, which is what makes a uid in a patch act
+    // as a precondition.
+    if let Some(found) = current
+        .as_ref()
+        .and_then(|o| o.pointer("/metadata/uid"))
+        .and_then(Value::as_str)
+    {
+        let sent = patch_doc.pointer("/metadata/uid").and_then(Value::as_str);
+        if sent.is_some_and(|sent| sent != found) {
+            return status(422, "Invalid", "metadata.uid: field is immutable");
+        }
     }
     let Some(current) = current else {
         if !apply {

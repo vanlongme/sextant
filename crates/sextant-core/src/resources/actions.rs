@@ -3,8 +3,10 @@
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
+use k8s_openapi::api::networking::v1::IngressClass;
 use k8s_openapi::jiff::Timestamp;
-use kube::api::{Patch, PatchParams, PostParams};
+use kube::api::{DeleteParams, ListParams, Patch, PatchParams, PostParams};
+use kube::Api;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use ts_rs::TS;
@@ -17,6 +19,7 @@ use crate::kubeconfig::ClusterId;
 
 const RESTARTED_AT: &str = "kubectl.kubernetes.io/restartedAt";
 const INSTANTIATE: &str = "cronjob.kubernetes.io/instantiate";
+const DEFAULT_CLASS: &str = "ingressclass.kubernetes.io/is-default-class";
 const NAME_LIMIT: usize = 63;
 const MANUAL_SUFFIX_LENGTH: usize = "-manual-xxxxx".len();
 
@@ -264,6 +267,123 @@ impl AppCore {
         let patch = Patch::Merge(json!({ "spec": { "suspend": suspend } }));
         self.patch_object(id, &cronjobs, Some(namespace), name, patch)
             .await
+    }
+
+    /// Suspends or resumes a Job.
+    pub async fn job_set_suspend(
+        &self,
+        id: &ClusterId,
+        namespace: &str,
+        name: &str,
+        suspend: bool,
+    ) -> CoreResult<()> {
+        let jobs = core_resource("Job", "jobs", "batch", "v1", true);
+        let patch = Patch::Merge(json!({ "spec": { "suspend": suspend } }));
+        self.patch_object(id, &jobs, Some(namespace), name, patch)
+            .await
+    }
+
+    /// Deletes a pod with `gracePeriodSeconds: 0`, without waiting for the kubelet.
+    pub async fn pod_force_delete(
+        &self,
+        id: &ClusterId,
+        namespace: &str,
+        name: &str,
+    ) -> CoreResult<()> {
+        let pods = core_resource("Pod", "pods", "", "v1", true);
+        let request = object_request(&pods, Some(namespace), name)?;
+        let client = self.cluster_client(id)?;
+        let params = DeleteParams::background().grace_period(0);
+        send(&client, request.delete(name, &params)).await?;
+        Ok(())
+    }
+
+    /// Clears an object's finalizers so that its deletion can finish. Refused unless it is
+    /// being deleted. The patch carries the uid it read, and the API server refuses that on any
+    /// other object, so a replacement under the same name keeps its finalizers.
+    pub async fn resource_force_finalize(
+        &self,
+        id: &ClusterId,
+        r: &ResourceRef,
+        namespace: Option<&str>,
+        name: &str,
+    ) -> CoreResult<()> {
+        let current = self.fetch_object(id, r, namespace, name).await?;
+        if current.pointer("/metadata/deletionTimestamp").is_none() {
+            return Err(invalid(format!(
+                "{name} is not being deleted, so its finalizers stay"
+            )));
+        }
+        let uid = current
+            .pointer("/metadata/uid")
+            .cloned()
+            .unwrap_or(Value::Null);
+        let patch = Patch::Merge(json!({ "metadata": { "uid": uid, "finalizers": null } }));
+        self.patch_object(id, r, namespace, name, patch).await
+    }
+
+    /// Marks an IngressClass as the default, then removes the mark from the others. In this
+    /// order a failure can leave two defaults for a moment, which the API server tolerates, but
+    /// never none.
+    pub async fn ingress_class_set_default(&self, id: &ClusterId, name: &str) -> CoreResult<()> {
+        let classes = core_resource(
+            "IngressClass",
+            "ingressclasses",
+            "networking.k8s.io",
+            "v1",
+            false,
+        );
+        let mark =
+            Patch::Merge(json!({ "metadata": { "annotations": { DEFAULT_CLASS: "true" } } }));
+        self.patch_object(id, &classes, None, name, mark).await?;
+
+        let listed = Api::<IngressClass>::all(self.cluster_client(id)?)
+            .list(&ListParams::default())
+            .await
+            .map_err(|error| {
+                let error = IpcError::from(error);
+                IpcError::new(
+                    error.code,
+                    format!("{name} is now the default, but the other classes could not be read"),
+                )
+                .with_details(error.message)
+            })?;
+        let mut unchanged = Vec::new();
+        let mut first_failure = None;
+        for other in listed.items {
+            let is_marked = other
+                .metadata
+                .annotations
+                .as_ref()
+                .is_some_and(|annotations| annotations.contains_key(DEFAULT_CLASS));
+            let Some(other_name) = other
+                .metadata
+                .name
+                .filter(|other| is_marked && other != name)
+            else {
+                continue;
+            };
+            let clear =
+                Patch::Merge(json!({ "metadata": { "annotations": { DEFAULT_CLASS: null } } }));
+            if let Err(error) = self
+                .patch_object(id, &classes, None, &other_name, clear)
+                .await
+            {
+                first_failure.get_or_insert(error);
+                unchanged.push(other_name);
+            }
+        }
+        match first_failure {
+            None => Ok(()),
+            Some(error) => Err(IpcError::new(
+                error.code,
+                format!(
+                    "{name} is now the default, but these classes were left unchanged: {}",
+                    unchanged.join(", ")
+                ),
+            )
+            .with_details(error.message)),
+        }
     }
 
     /// Cordons or uncordons a node. Uncordon removes the field, as `kubectl uncordon` does.
