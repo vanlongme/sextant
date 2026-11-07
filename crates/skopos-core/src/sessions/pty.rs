@@ -204,14 +204,36 @@ fn spawn_waiter(
     exit_rx
 }
 
+/// Closes the PTY on a thread of its own, also when a stopping runtime drops the session's
+/// task. Closing a Windows PTY blocks until its output has been read, and until the cursor
+/// position it asked the terminal for has been answered.
+struct Master(Option<Box<dyn MasterPty + Send>>);
+
+impl Master {
+    fn resize(&self, size: TerminalSize) {
+        if let Some(master) = &self.0 {
+            // A failed resize leaves the old size, which is still usable.
+            let _ = master.resize(pty_size(size));
+        }
+    }
+}
+
+impl Drop for Master {
+    fn drop(&mut self) {
+        if let Some(master) = self.0.take() {
+            std::thread::spawn(move || drop(master));
+        }
+    }
+}
+
 /// Runs until the shell exits or the session stops. Returns the exit code to report, and
 /// the master for the caller to close.
 async fn run_until_exit(
-    master: Box<dyn MasterPty + Send>,
+    master: Master,
     token: &CancellationToken,
     resize: &mut watch::Receiver<TerminalSize>,
     exit: &mut oneshot::Receiver<Option<u32>>,
-) -> (Option<u32>, Box<dyn MasterPty + Send>) {
+) -> (Option<u32>, Master) {
     loop {
         tokio::select! {
             () = token.cancelled() => {
@@ -223,8 +245,7 @@ async fn run_until_exit(
             changed = resize.changed() => {
                 if changed.is_ok() {
                     let size = *resize.borrow_and_update();
-                    // A failed resize leaves the old size, which is still usable.
-                    let _ = master.resize(pty_size(size));
+                    master.resize(size);
                 }
             }
         }
@@ -281,11 +302,12 @@ impl AppCore {
                 .send(SessionOutput::Event(SessionEvent::Started { tty: true }))
                 .await;
             let reader_done = spawn_reader(reader, flow.clone(), output.clone(), token.clone());
+            let master = Master(Some(master));
             let (code, master) = run_until_exit(master, &token, &mut resize_rx, &mut exit).await;
             // Nothing acknowledges from here on, and a paused reader would never finish.
             flow.release();
-            // Closing a Windows PTY blocks until its output has been read.
-            std::thread::spawn(move || drop(master));
+            // Closing lets the reader see the end of the output.
+            drop(master);
             let _ = tokio::time::timeout(DRAIN_LIMIT, reader_done).await;
             let _ = output
                 .send(SessionOutput::Event(SessionEvent::Exited { code }))

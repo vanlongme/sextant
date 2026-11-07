@@ -75,6 +75,19 @@ async fn wait_for_text(
     text
 }
 
+/// Answers as a terminal does. The Windows PTY asks where the cursor is (`ESC [ 6 n`) when it
+/// opens, and waits for the reply; xterm.js in the app gives it by itself. Unix PTYs ask nothing.
+async fn answer_cursor_query(
+    core: &AppCore,
+    session: &str,
+    rx: &mut mpsc::Receiver<SessionOutput>,
+) {
+    if cfg!(windows) {
+        wait_for_text(core, session, rx, "\x1b[6n").await;
+        core.session_write(session, b"\x1b[1;1R".to_vec()).unwrap();
+    }
+}
+
 /// Reads and acknowledges output until the session says it exited.
 async fn wait_for_exit(
     core: &AppCore,
@@ -103,6 +116,7 @@ async fn the_shell_starts_with_the_kubeconfig_and_says_started() {
         rx.recv().await,
         Some(SessionOutput::Event(SessionEvent::Started { tty: true }))
     ));
+    answer_cursor_query(&core, &session, &mut rx).await;
     run(
         &core,
         &session,
@@ -133,6 +147,7 @@ async fn the_shell_runs_in_the_clusters_folder() {
     )
     .unwrap();
     let (session, mut rx) = start_shell(&core, &id, WIDE).await;
+    answer_cursor_query(&core, &session, &mut rx).await;
     run(&core, &session, if cfg!(windows) { "cd" } else { "pwd" });
     // Only the last part: temp paths have other spellings once resolved on some OSes.
     wait_for_text(&core, &session, &mut rx, "terminal-folder-mark").await;
@@ -144,6 +159,7 @@ async fn the_shell_runs_in_the_clusters_folder() {
 async fn the_exit_code_is_reported() {
     let (core, _fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
     let (session, mut rx) = start_shell(&core, &id, WIDE).await;
+    answer_cursor_query(&core, &session, &mut rx).await;
     run(&core, &session, "exit 7");
     assert_eq!(wait_for_exit(&core, &session, &mut rx).await, Some(7));
     assert!(core.sessions_wait_idle(LIMIT).await);
