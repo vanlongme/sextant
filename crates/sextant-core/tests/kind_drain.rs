@@ -88,6 +88,53 @@ async fn pods_on_worker(client: &Client) -> Vec<Pod> {
     pods.list(&params).await.unwrap().items
 }
 
+/// A drain evicts every pod on the worker, whichever namespace it is in. Leftovers from
+/// other test binaries (a namespace still terminating, say) would make the eviction
+/// fail, so this waits for them to go. Finished pods and DaemonSet pods do not block a drain.
+async fn wait_for_foreign_pods_to_leave(client: &Client) {
+    let pods: Api<Pod> = Api::all(client.clone());
+    let params = ListParams::default().fields(&format!("spec.nodeName={WORKER}"));
+    let started = Instant::now();
+    loop {
+        let foreign: Vec<String> = pods
+            .list(&params)
+            .await
+            .unwrap()
+            .items
+            .into_iter()
+            .filter(|pod| pod.metadata.namespace.as_deref() != Some(NAMESPACE))
+            .filter(|pod| {
+                !pod.metadata
+                    .owner_references
+                    .iter()
+                    .flatten()
+                    .any(|owner| owner.kind == "DaemonSet")
+            })
+            .filter(|pod| {
+                !matches!(
+                    pod.status.as_ref().and_then(|s| s.phase.as_deref()),
+                    Some("Succeeded" | "Failed")
+                )
+            })
+            .map(|pod| {
+                format!(
+                    "{}/{}",
+                    pod.metadata.namespace.unwrap_or_default(),
+                    pod.metadata.name.unwrap_or_default()
+                )
+            })
+            .collect();
+        if foreign.is_empty() {
+            return;
+        }
+        assert!(
+            started.elapsed() < WAIT,
+            "pods from other namespaces still on {WORKER}: {foreign:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+}
+
 async fn create_deployment(client: &Client) {
     let deployments: Api<Deployment> = Api::namespaced(client.clone(), NAMESPACE);
     let deployment = serde_json::from_value(json!({
@@ -160,6 +207,7 @@ async fn drain_empties_the_worker_and_skips_daemonsets() {
     let client = core.cluster_client(&id).unwrap();
     create_namespace(&client).await;
     let body = async {
+        wait_for_foreign_pods_to_leave(&client).await;
         create_deployment(&client).await;
         wait_for_running_pod(&client).await;
 
@@ -220,6 +268,7 @@ async fn a_retry_does_not_evict_a_pod_recreated_under_the_same_name() {
     let client = core.cluster_client(&id).unwrap();
     create_namespace(&client).await;
     let body = async {
+        wait_for_foreign_pods_to_leave(&client).await;
         let pods: Api<Pod> = Api::namespaced(client.clone(), NAMESPACE);
         let budgets: Api<PodDisruptionBudget> = Api::namespaced(client.clone(), NAMESPACE);
         pods.create(&PostParams::default(), &held_pod())
