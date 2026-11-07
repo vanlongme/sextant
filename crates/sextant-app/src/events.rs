@@ -13,6 +13,7 @@ const CATALOG_CHANGED: &str = "catalog://changed";
 const CLUSTER_STATE: &str = "cluster://state";
 const KUBECONFIG_WARNINGS: &str = "kubeconfig://warnings";
 const STORE_WARNING: &str = "store://warning";
+const PORTFORWARD_CHANGED: &str = "portforward://changed";
 
 /// The page has loaded by the time this starts, but its listeners register
 /// asynchronously afterwards, and an event sent before that is lost.
@@ -32,6 +33,7 @@ fn emit(app: &AppHandle, event: CoreEvent) {
         }
         CoreEvent::KubeconfigWarnings { warnings } => app.emit(KUBECONFIG_WARNINGS, warnings),
         CoreEvent::StoreWarning { warning } => app.emit(STORE_WARNING, warning),
+        CoreEvent::PortForwardsChanged { forwards } => app.emit(PORTFORWARD_CHANGED, forwards),
     };
     if let Err(e) = sent {
         tracing::warn!("cannot send an event to the window: {e}");
@@ -50,6 +52,8 @@ pub fn spawn_forwarder(app: AppHandle, core: AppCore) {
                     emit(&app, CoreEvent::CatalogChanged);
                     let warnings = core.catalog_warnings();
                     emit(&app, CoreEvent::KubeconfigWarnings { warnings });
+                    let forwards = core.portforward_list();
+                    emit(&app, CoreEvent::PortForwardsChanged { forwards });
                 }
                 Err(RecvError::Closed) => return,
             }

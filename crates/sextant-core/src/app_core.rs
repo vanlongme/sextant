@@ -21,6 +21,7 @@ use crate::kubeconfig::{
     default_sources, ClusterId, KubeconfigSync, SyncSnapshot, SyncSource, SyncWarning,
 };
 use crate::paths::AppPaths;
+use crate::portforward::{PortForward, PortForwards};
 use crate::prefs::{ClusterSettings, Prefs};
 use crate::resources::{RunningDrain, WatchHub};
 use crate::sessions::SessionRegistry;
@@ -31,6 +32,7 @@ const STORE_VERSION: u32 = 1;
 const PREFS_FILE: &str = "prefs.json";
 const CLUSTERS_FILE: &str = "clusters.json";
 const HOTBAR_FILE: &str = "hotbar.json";
+const PORTFORWARDS_FILE: &str = "portforwards.json";
 const UI_STATE_FILE: &str = "ui-state.json";
 /// The safety net under file events, which some filesystems never deliver.
 const SYNC_POLL: Duration = Duration::from_secs(10);
@@ -53,6 +55,9 @@ pub enum CoreEvent {
     StoreWarning {
         warning: StoreWarning,
     },
+    PortForwardsChanged {
+        forwards: Vec<PortForward>,
+    },
 }
 
 /// A cheap handle to the running core; clones share everything.
@@ -73,6 +78,7 @@ struct Inner {
     next_drain: AtomicU64,
     sessions: Arc<SessionRegistry>,
     home: PathBuf,
+    portforwards: Arc<PortForwards>,
     /// Held across a preferences write and the matching source change, so
     /// concurrent calls cannot leave the sync on sources that were not saved last.
     sync: Mutex<Option<KubeconfigSync>>,
@@ -182,6 +188,7 @@ impl AppCore {
         let (prefs, sources) = open_prefs(&paths, kubeconfig_env.as_deref(), &mut warnings);
         let clusters = open_store(&paths, CLUSTERS_FILE, &mut warnings);
         let hotbar = open_store(&paths, HOTBAR_FILE, &mut warnings);
+        let portforward_definitions = open_store(&paths, PORTFORWARDS_FILE, &mut warnings);
         let (ui_state, ui_warning) = UiState::open(paths.config.join(UI_STATE_FILE), STORE_VERSION);
         warnings.extend(ui_warning);
         let pasted = PastedConfigs::open(&paths.data)?;
@@ -206,6 +213,7 @@ impl AppCore {
                 next_drain: AtomicU64::new(1),
                 sessions: Arc::new(SessionRegistry::default()),
                 home: paths.home.clone(),
+                portforwards: Arc::new(PortForwards::new(portforward_definitions, events.clone())),
                 sync: Mutex::new(Some(sync)),
                 snapshots,
                 sync_events: Mutex::new(Some(sync_events)),
@@ -399,6 +407,10 @@ impl AppCore {
     pub(crate) fn next_drain_id(&self) -> String {
         let number = self.inner.next_drain.fetch_add(1, Ordering::Relaxed);
         format!("drain-{number}")
+    }
+
+    pub(crate) fn portforwards(&self) -> &Arc<PortForwards> {
+        &self.inner.portforwards
     }
 
     pub(crate) fn home_dir(&self) -> &Path {

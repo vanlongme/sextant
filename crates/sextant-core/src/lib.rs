@@ -4,6 +4,7 @@ pub mod cluster;
 pub mod error;
 pub mod kubeconfig;
 pub mod paths;
+pub mod portforward;
 pub mod prefs;
 pub mod resources;
 pub mod sessions;
