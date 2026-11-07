@@ -236,6 +236,8 @@ async fn run_until_exit(
 ) -> (Option<u32>, Master) {
     loop {
         tokio::select! {
+            // A stop wins over an exit that is ready too, since stopping caused that exit.
+            biased;
             () = token.cancelled() => {
                 // The code of a process we killed means nothing, so none is reported.
                 let _ = tokio::time::timeout(KILL_LIMIT, exit).await;
@@ -321,6 +323,22 @@ impl AppCore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The waiter kills the shell as soon as it sees the token, so its exit is often ready
+    /// by the time the session looks. `select!` picks at random among ready branches.
+    #[tokio::test]
+    async fn a_stopped_session_reports_no_code_even_when_the_exit_is_ready_too() {
+        for _ in 0..50 {
+            let token = CancellationToken::new();
+            token.cancel();
+            let (killed, mut exit) = oneshot::channel();
+            killed.send(Some(1)).unwrap();
+            let (_resize, mut resize_rx) = watch::channel(TerminalSize { cols: 80, rows: 24 });
+            let (code, _master) =
+                run_until_exit(Master(None), &token, &mut resize_rx, &mut exit).await;
+            assert_eq!(code, None);
+        }
+    }
 
     #[test]
     fn unix_prefers_prefs_then_the_environment_then_sh() {
