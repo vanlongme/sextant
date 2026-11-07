@@ -69,8 +69,13 @@ pub(super) enum ContainerEnd {
 /// What a stream remembers across reconnects.
 #[derive(Debug, Default)]
 struct Progress {
-    /// The newest line sent. Lines up to it are dropped after a resume.
+    /// The newest line sent.
     last: Option<Timestamp>,
+    /// How many lines sent carry exactly the `last` timestamp.
+    at_last: usize,
+    /// Set when a stream resumes: the boundary timestamp and how many lines at it were
+    /// already sent. The replay drops those, then ends at the first newer line.
+    replay: Option<(Timestamp, usize)>,
     opened: bool,
     reconnecting: bool,
     /// A line arrived since the last backoff, so the next failure starts it over.
@@ -223,7 +228,7 @@ fn log_params(
     params
 }
 
-/// Sends one line unless a resume has sent it already. Returns false once nobody takes lines.
+/// Sends one line unless the replay after a resume has sent it already. Returns false once nobody takes lines.
 async fn deliver(
     context: &StreamContext,
     target: &StreamTarget,
@@ -236,10 +241,22 @@ async fn deliver(
         .as_deref()
         .and_then(|text| text.parse::<Timestamp>().ok());
     if let Some(stamp) = stamp {
-        if progress.last.is_some_and(|last| stamp <= last) {
-            return true;
+        if let Some((boundary, skip)) = progress.replay.as_mut() {
+            if stamp < *boundary {
+                return true;
+            }
+            if stamp == *boundary && *skip > 0 {
+                *skip -= 1;
+                return true;
+            }
+            progress.replay = None;
         }
-        progress.last = Some(stamp);
+        if progress.last == Some(stamp) {
+            progress.at_last += 1;
+        } else {
+            progress.last = Some(stamp);
+            progress.at_last = 1;
+        }
     }
     progress.fresh = true;
     if std::mem::take(&mut progress.reconnecting) {
@@ -334,6 +351,7 @@ pub(super) async fn stream_container(context: StreamContext, target: StreamTarge
     };
     let mut backoff = MIN_BACKOFF;
     loop {
+        progress.replay = progress.last.map(|last| (last, progress.at_last));
         let params = log_params(&target.container, &context.options, follow, progress.last);
         let failure = match pump(&context, &target, &params, &mut progress).await {
             PumpEnd::Stopped => return ContainerEnd::Stopped,

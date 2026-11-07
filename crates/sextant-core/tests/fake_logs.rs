@@ -286,6 +286,29 @@ async fn a_dropped_stream_resumes_and_sends_no_line_twice() {
 }
 
 #[tokio::test]
+async fn lines_with_the_same_timestamp_are_all_sent_and_not_repeated_after_a_resume() {
+    let (core, fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
+    pod_with_containers(
+        &fake,
+        json!({ "containerStatuses": [
+        { "name": "main", "restartCount": 0, "state": { "running": {} } },
+    ] }),
+    );
+    add_line(&fake, "main", ONE, "a");
+    add_line(&fake, "main", ONE, "b");
+    let (_session, mut rx) = start(&core, &id, pod_target(Some("main")), follow());
+    let mut events = wait_until(&mut rx, |event| has_text(event, "b")).await;
+
+    fake.end_log_streams("default", "p", "main");
+    events.extend(wait_until(&mut rx, |event| has_marker(event, LogMarker::Reconnecting)).await);
+    add_line(&fake, "main", TWO, "c");
+    add_line(&fake, "main", TWO, "d");
+    events.extend(wait_until(&mut rx, |event| has_text(event, "d")).await);
+
+    assert_eq!(texts(&events), ["a", "b", "c", "d"]);
+}
+
+#[tokio::test]
 async fn a_quiet_stream_that_reopens_counts_as_reconnected() {
     let (core, fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
     pod_with_containers(
