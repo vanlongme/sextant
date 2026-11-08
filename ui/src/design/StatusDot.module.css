@@ -7,21 +7,21 @@
 }
 
 .ok {
-  color: var(--ok);
+  color: var(--status-nominal-text);
 }
 
 .warn {
-  color: var(--warn);
+  color: var(--status-warning-text);
 }
 
 .danger {
-  color: var(--danger);
+  color: var(--text-danger);
 }
 
 .info {
-  color: var(--info);
+  color: var(--text-accent);
 }
 
 .neutral {
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }

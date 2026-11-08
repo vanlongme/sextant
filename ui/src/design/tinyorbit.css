@@ -1,0 +1,456 @@
+/* TinyOrbit design system values, vendored for SkoposIDE. Do not edit by hand:
+   rebuild from the design system instead.
+   Source: design system version 1794043473-6202.
+   tokens.css sha256 51005bb4abef2d3dc37a7fd9237330b5f57baacd19ada3e1ebe82587efcfc570, unchanged below.
+   components/bundle.css sha256 cda50b89d5d11963fdfd5cc60184f099ff4711f66b80e988174b1e71256c2040, the part
+   from "from tokens/fonts.css" up to "from tokens/base.css". Its Google Fonts import
+   and base layer are left out: the fonts are bundled by main.tsx and the base layer
+   lives in global.css. */
+
+/* TinyOrbit Design System — generated from tokens.json */
+:root,
+[data-theme="light"] {
+  --gray-0: #ffffff;
+  --gray-25: #fafbfc;
+  --gray-50: #f4f6f8;
+  --gray-100: #eaedf1;
+  --gray-200: #dde2e8;
+  --gray-300: #c6cdd6;
+  --gray-400: #9ba5b1;
+  --gray-500: #6f7a87;
+  --gray-600: #515b67;
+  --gray-700: #39424d;
+  --gray-800: #232a33;
+  --gray-900: #151a20;
+  --gray-950: #0b0e12;
+  --orbit-50: #edf3ff;
+  --orbit-100: #dbe6ff;
+  --orbit-200: #b7ccff;
+  --orbit-300: #8aaaff;
+  --orbit-400: #4f80fb;
+  --orbit-500: #0b57e3;
+  --orbit-600: #0846bc;
+  --orbit-700: #063795;
+  --orbit-800: #052a70;
+  --signal-50: #fff6ea;
+  --signal-100: #ffe9cd;
+  --signal-300: #ffc178;
+  --signal-500: #f5820b;
+  --signal-700: #b85c00;
+  --green-50: #e7f7ef;
+  --green-300: #3fcf8e;
+  --green-500: #00a15c;
+  --green-700: #007344;
+  --red-50: #fdecec;
+  --red-300: #ff8088;
+  --red-500: #e11d2e;
+  --red-700: #a80f1d;
+  --ink-a04: rgba(11, 14, 18, 0.04);
+  --ink-a08: rgba(11, 14, 18, 0.08);
+  --ink-a12: rgba(11, 14, 18, 0.12);
+  --ink-a24: rgba(11, 14, 18, 0.24);
+  --ink-a56: rgba(11, 14, 18, 0.56);
+  --light-a08: rgba(255, 255, 255, 0.08);
+  --light-a16: rgba(255, 255, 255, 0.16);
+  --light-a72: rgba(255, 255, 255, 0.72);
+  --scrim: rgba(11, 14, 18, 0.32);
+  --scrim-strong: rgba(11, 14, 18, 0.56);
+  --surface-page: var(--gray-25);
+  --surface-card: var(--gray-0);
+  --surface-raised: var(--gray-0);
+  --surface-sunken: var(--gray-50);
+  --surface-inset: var(--gray-100);
+  --surface-inverse: var(--gray-950);
+  --surface-glass: rgba(255, 255, 255, 0.72);
+  --surface-glass-dark: rgba(15, 19, 24, 0.64);
+  --surface-accent-soft: var(--orbit-50);
+  --surface-accent: var(--orbit-500);
+  --surface-hover: var(--ink-a04);
+  --surface-pressed: var(--ink-a08);
+  --surface-selected: var(--orbit-50);
+  --text-primary: var(--gray-950);
+  --text-secondary: var(--gray-600);
+  --text-tertiary: var(--gray-500);
+  --text-disabled: var(--gray-400);
+  --text-inverse: var(--gray-0);
+  --text-on-accent: #ffffff;
+  --text-accent: var(--orbit-500);
+  --text-danger: var(--red-500);
+  --text-success: var(--green-700);
+  --text-link: var(--orbit-500);
+  --text-link-hover: var(--orbit-600);
+  --border-subtle: var(--ink-a08);
+  --border-default: var(--gray-200);
+  --border-strong-color: var(--gray-300);
+  --border-accent: var(--orbit-500);
+  --divider: var(--gray-100);
+  --status-nominal: var(--green-500);
+  --status-warning: var(--signal-500);
+  --status-critical: var(--red-500);
+  --status-offline: var(--gray-400);
+  --status-nominal-soft: var(--green-50);
+  --status-warning-soft: var(--signal-50);
+  --status-critical-soft: var(--red-50);
+  --status-neutral-soft: var(--gray-100);
+  --status-nominal-text: var(--green-700);
+  --status-warning-text: var(--signal-700);
+  --status-critical-text: var(--red-700);
+  --status-neutral-text: var(--gray-700);
+  --text-on-accent-soft: var(--orbit-600);
+  --focus-ring-color: var(--orbit-500);
+  --shadow-none: none;
+  --shadow-hairline: 0 0 0 1px rgba(11, 14, 18, 0.08);
+  --shadow-1:
+    0 1px 2px rgba(11, 14, 18, 0.06), 0 0 0 1px rgba(11, 14, 18, 0.05);
+  --shadow-2:
+    0 2px 6px rgba(11, 14, 18, 0.07), 0 0 0 1px rgba(11, 14, 18, 0.05);
+  --shadow-3:
+    0 8px 20px -6px rgba(11, 14, 18, 0.14), 0 0 0 1px rgba(11, 14, 18, 0.05);
+  --shadow-4:
+    0 24px 48px -16px rgba(11, 14, 18, 0.24), 0 0 0 1px rgba(11, 14, 18, 0.06);
+  --shadow-inset-top: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  --shadow-inset-press: inset 0 1px 2px rgba(11, 14, 18, 0.14);
+  --glow-orbit: 0 0 0 3px rgba(11, 87, 227, 0.18);
+  --glow-danger: 0 0 0 3px rgba(225, 29, 46, 0.18);
+}
+[data-theme="dark"] {
+  --surface-page: var(--gray-950);
+  --surface-card: #12171d;
+  --surface-raised: #1a2027;
+  --surface-sunken: #0e1217;
+  --surface-inset: #1a2027;
+  --surface-inverse: var(--gray-0);
+  --surface-glass: rgba(26, 32, 39, 0.64);
+  --surface-accent-soft: rgba(11, 87, 227, 0.16);
+  --surface-accent: var(--orbit-500);
+  --surface-hover: var(--light-a08);
+  --surface-pressed: var(--light-a16);
+  --surface-selected: rgba(11, 87, 227, 0.2);
+  --text-primary: #f2f5f8;
+  --text-secondary: #9ba5b1;
+  --text-tertiary: #6f7a87;
+  --text-disabled: #515b67;
+  --text-inverse: var(--gray-950);
+  --text-accent: var(--orbit-300);
+  --text-danger: var(--red-300);
+  --text-success: var(--green-300);
+  --text-link: var(--orbit-300);
+  --text-link-hover: var(--orbit-200);
+  --border-subtle: var(--light-a08);
+  --border-default: rgba(255, 255, 255, 0.12);
+  --border-strong-color: rgba(255, 255, 255, 0.2);
+  --border-accent: var(--orbit-500);
+  --divider: rgba(255, 255, 255, 0.08);
+  --status-nominal: var(--green-500);
+  --status-warning: var(--signal-500);
+  --status-critical: var(--red-500);
+  --status-offline: var(--gray-400);
+  --status-nominal-soft: rgba(0, 161, 92, 0.16);
+  --status-warning-soft: rgba(245, 130, 11, 0.16);
+  --status-critical-soft: rgba(225, 29, 46, 0.16);
+  --status-neutral-soft: var(--light-a08);
+  --status-nominal-text: var(--green-300);
+  --status-warning-text: var(--signal-300);
+  --status-critical-text: var(--red-300);
+  --status-neutral-text: var(--gray-300);
+  --text-on-accent-soft: var(--orbit-200);
+  --focus-ring-color: var(--orbit-500);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --shadow-2:
+    0 2px 8px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --shadow-3:
+    0 10px 24px -8px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.07);
+  --shadow-4:
+    0 28px 56px -16px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+:root {
+  --space-0: 0px;
+  --space-1: 1px;
+  --space-2: 2px;
+  --space-3: 4px;
+  --space-4: 6px;
+  --space-5: 8px;
+  --space-6: 10px;
+  --space-7: 12px;
+  --space-8: 16px;
+  --space-9: 20px;
+  --space-10: 24px;
+  --space-11: 32px;
+  --space-12: 40px;
+  --space-13: 56px;
+  --space-14: 72px;
+  --space-15: 96px;
+  --space-16: 128px;
+  --radius-none: 0px;
+  --radius-xs: 5px;
+  --radius-sm: 8px;
+  --radius-md: 11px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-2xl: 28px;
+  --radius-3xl: 40px;
+  --radius-full: 999px;
+  --gutter: 24px;
+  --page-pad-x: 32px;
+  --section-y: 96px;
+  --section-y-lg: 128px;
+  --measure: 62ch;
+  --container-sm: 720px;
+  --container-md: 960px;
+  --container-lg: 1200px;
+  --container-xl: 1440px;
+  --control-xs: 24px;
+  --control-sm: 30px;
+  --control-md: 36px;
+  --control-lg: 44px;
+  --control-xl: 52px;
+  --touch-min: 44px;
+  --border-hairline: 1px;
+  --border-strong: 1.5px;
+  --focus-ring-width: 3px;
+  --font-sans:
+    "Manrope", ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif;
+  --font-mono:
+    "JetBrains Mono", ui-monospace, "SFMono-Regular", "Menlo", monospace;
+}
+.type-display-1 {
+  font-family: var(--font-sans);
+  font-size: 80px;
+  line-height: 82px;
+  font-weight: 600;
+  letter-spacing: -0.028em;
+}
+.type-display-2 {
+  font-family: var(--font-sans);
+  font-size: 64px;
+  line-height: 68px;
+  font-weight: 600;
+  letter-spacing: -0.028em;
+}
+.type-title-1 {
+  font-family: var(--font-sans);
+  font-size: 48px;
+  line-height: 54px;
+  font-weight: 600;
+  letter-spacing: -0.028em;
+}
+.type-title-2 {
+  font-family: var(--font-sans);
+  font-size: 38px;
+  line-height: 44px;
+  font-weight: 600;
+  letter-spacing: -0.019em;
+}
+.type-title-3 {
+  font-family: var(--font-sans);
+  font-size: 30px;
+  line-height: 38px;
+  font-weight: 600;
+  letter-spacing: -0.019em;
+}
+.type-heading {
+  font-family: var(--font-sans);
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
+  letter-spacing: -0.011em;
+}
+.type-subheading {
+  font-family: var(--font-sans);
+  font-size: 17px;
+  line-height: 25px;
+  font-weight: 600;
+  letter-spacing: -0.011em;
+}
+.type-body-lg {
+  font-family: var(--font-sans);
+  font-size: 17px;
+  line-height: 25px;
+  font-weight: 400;
+  letter-spacing: -0.011em;
+}
+.type-body {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 400;
+  letter-spacing: -0.011em;
+}
+.type-body-sm {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 400;
+  letter-spacing: -0.011em;
+}
+.type-label {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  letter-spacing: -0.011em;
+}
+.type-caption {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: -0.011em;
+}
+.type-overline {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.type-mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 400;
+}
+.type-mono-lg {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 500;
+}
+
+/* from tokens/fonts.css */
+/* TinyOrbit ships two families. Manrope is a SUBSTITUTION stand-in for a licensed
+   grotesque; JetBrains Mono covers telemetry, IDs and specs. If real brand binaries
+   arrive, drop them in fonts/ and replace the @import above with @font-face. */
+:root {
+  --font-display: var(--font-sans);
+}
+
+/* from tokens/typography.css */
+/* Type ladder. Sizes are exact — never snap them to a 4px grid.
+   Tracking tightens as size grows (optical sizing), the way a good UI face is set. */
+:root {
+  --text-11: 11px;
+  --text-12: 12px;
+  --text-13: 13px;
+  --text-15: 15px;
+  --text-17: 17px;
+  --text-20: 20px;
+  --text-24: 24px;
+  --text-30: 30px;
+  --text-38: 38px;
+  --text-48: 48px;
+  --text-64: 64px;
+  --text-80: 80px;
+
+  --leading-11: 14px;
+  --leading-12: 16px;
+  --leading-13: 18px;
+  --leading-15: 22px;
+  --leading-17: 25px;
+  --leading-20: 28px;
+  --leading-24: 32px;
+  --leading-30: 38px;
+  --leading-38: 44px;
+  --leading-48: 54px;
+  --leading-64: 68px;
+  --leading-80: 82px;
+
+  --track-caps: 0.06em;
+  --track-wide: 0.01em;
+  --track-normal: 0em;
+  --track-tight: -0.011em;
+  --track-tighter: -0.019em;
+  --track-display: -0.028em;
+
+  --weight-extralight: 200;
+  --weight-light: 300;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* Named roles */
+  --type-display-1:
+    var(--weight-semibold) var(--text-80) / var(--leading-80)
+    var(--font-display);
+  --type-display-2:
+    var(--weight-semibold) var(--text-64) / var(--leading-64)
+    var(--font-display);
+  --type-title-1:
+    var(--weight-semibold) var(--text-48) / var(--leading-48)
+    var(--font-display);
+  --type-title-2:
+    var(--weight-semibold) var(--text-38) / var(--leading-38)
+    var(--font-display);
+  --type-title-3:
+    var(--weight-semibold) var(--text-30) / var(--leading-30) var(--font-sans);
+  --type-heading:
+    var(--weight-semibold) var(--text-20) / var(--leading-20) var(--font-sans);
+  --type-subheading:
+    var(--weight-semibold) var(--text-17) / var(--leading-17) var(--font-sans);
+  --type-body-lg:
+    var(--weight-regular) var(--text-17) / var(--leading-17) var(--font-sans);
+  --type-body:
+    var(--weight-regular) var(--text-15) / var(--leading-15) var(--font-sans);
+  --type-body-sm:
+    var(--weight-regular) var(--text-13) / var(--leading-13) var(--font-sans);
+  --type-label:
+    var(--weight-medium) var(--text-13) / var(--leading-13) var(--font-sans);
+  --type-caption:
+    var(--weight-medium) var(--text-12) / var(--leading-12) var(--font-sans);
+  --type-overline:
+    var(--weight-semibold) var(--text-11) / var(--leading-11) var(--font-sans);
+  --type-mono:
+    var(--weight-regular) var(--text-12) / var(--leading-12) var(--font-mono);
+  --type-mono-lg:
+    var(--weight-medium) var(--text-15) / var(--leading-15) var(--font-mono);
+}
+
+/* from tokens/radii.css */
+:root {
+  --radius-control: var(--radius-sm);
+  --radius-card: var(--radius-lg);
+  --radius-sheet: var(--radius-2xl);
+  --radius-field: var(--radius-xs);
+}
+
+/* from tokens/elevation.css */
+:root {
+  /* Glass — used only on layers that sit over moving or scrolling content */
+  --blur-thin: saturate(180%) blur(12px); /* @kind other */
+  --blur-regular: saturate(180%) blur(24px); /* @kind other */
+  --blur-thick: saturate(180%) blur(40px); /* @kind other */
+}
+
+/* from tokens/semantic.css */
+:root {
+  --focus-ring: var(--glow-orbit);
+}
+
+/* from tokens/motion.css */
+/* Motion. Nothing bounces. Everything decelerates. Distance is short, timing is fast,
+   and anything the finger is holding tracks it 1:1. */
+:root {
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1); /* @kind other */
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1); /* @kind other */
+  --ease-in: cubic-bezier(0.5, 0, 0.75, 0); /* @kind other */
+  --ease-standard: cubic-bezier(0.32, 0.72, 0, 1); /* @kind other */
+
+  --dur-instant: 80ms; /* @kind other */
+  --dur-fast: 140ms; /* @kind other */
+  --dur-base: 220ms; /* @kind other */
+  --dur-slow: 360ms; /* @kind other */
+  --dur-sheet: 480ms; /* @kind other */
+
+  --transition-control:
+    color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    transform var(--dur-instant) var(--ease-out);
+  --transition-surface:
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-standard);
+
+  --press-scale: 0.97; /* @kind other */
+  --press-scale-lg: 0.985; /* @kind other */
+}

@@ -1,6 +1,6 @@
 .badge {
   display: inline-block;
-  padding: 0 var(--space-2);
+  padding: 0 var(--space-5);
   border: 1px solid currentColor;
   border-radius: 999px;
   font-size: 11px;
@@ -8,21 +8,21 @@
 }
 
 .ok {
-  color: var(--ok);
+  color: var(--status-nominal-text);
 }
 
 .warn {
-  color: var(--warn);
+  color: var(--status-warning-text);
 }
 
 .danger {
-  color: var(--danger);
+  color: var(--text-danger);
 }
 
 .info {
-  color: var(--info);
+  color: var(--text-accent);
 }
 
 .neutral {
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }

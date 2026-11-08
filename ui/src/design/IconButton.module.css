@@ -6,15 +6,15 @@
   height: 28px;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: var(--radius);
+  border-radius: var(--radius-control);
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   cursor: pointer;
 }
 
 .button:hover:not(:disabled) {
-  background: var(--surface-2);
-  color: var(--text);
+  background: var(--surface-sunken);
+  color: var(--text-primary);
 }
 
 .button:disabled {

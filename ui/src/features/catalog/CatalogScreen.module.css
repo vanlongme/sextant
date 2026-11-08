@@ -1,14 +1,14 @@
 .screen {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-3);
+  gap: var(--space-7);
+  padding: var(--space-7);
 }
 
 .toolbar {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-7);
 }
 
 .heading {
@@ -23,10 +23,10 @@
 
 .warnings {
   margin: 0;
-  padding: var(--space-2) var(--space-3);
-  background: var(--surface-2);
-  border: 1px solid var(--warn);
-  border-radius: var(--radius);
+  padding: var(--space-5) var(--space-7);
+  background: var(--surface-sunken);
+  border: 1px solid var(--status-warning);
+  border-radius: var(--radius-control);
   list-style: none;
   overflow-wrap: anywhere;
   user-select: text;
@@ -59,7 +59,7 @@
 .status {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-5);
   min-width: 0;
 }
 
@@ -75,30 +75,30 @@
 }
 
 .detail {
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 .actions {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-5);
 }
 
 .yaml {
   display: block;
   width: 100%;
-  margin-top: var(--space-1);
-  padding: var(--space-2);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  margin-top: var(--space-3);
+  padding: var(--space-5);
+  background: var(--surface-page);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
   font-family: var(--font-mono);
   resize: vertical;
 }
 
 .yamlError {
-  margin: var(--space-2) 0 0;
-  color: var(--danger);
+  margin: var(--space-5) 0 0;
+  color: var(--text-danger);
   overflow-wrap: anywhere;
   user-select: text;
 }

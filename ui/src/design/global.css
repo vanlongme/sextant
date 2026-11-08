@@ -1,5 +1,6 @@
-@import "./tokens.css";
+@import "./tinyorbit.css";
 
+/* Base layer, adapted from the design system's (spec §4.1). */
 *,
 *::before,
 *::after {
@@ -14,11 +15,13 @@ body,
 }
 
 body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font-ui);
-  font-size: var(--font-size);
-  line-height: 1.4;
+  background: var(--surface-page);
+  color: var(--text-primary);
+  font: var(--type-body-sm);
+  letter-spacing: var(--track-tight);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   user-select: none;
 }
 
@@ -27,12 +30,18 @@ input,
 select,
 textarea {
   font: inherit;
+  letter-spacing: inherit;
   color: inherit;
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+::selection {
+  background: var(--orbit-100);
+  color: var(--orbit-800);
 }
 
 /* Content is selectable; chrome is not. */
@@ -46,13 +55,19 @@ td {
 }
 
 code,
+kbd,
+samp,
 pre {
   font-family: var(--font-mono);
 }
 
+svg.lucide {
+  stroke-width: 1.75;
+}
+
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
+  scrollbar-color: var(--border-strong-color) transparent;
 }
 
 *::-webkit-scrollbar {
@@ -61,6 +76,43 @@ pre {
 }
 
 *::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 4px;
+  background: var(--border-strong-color);
+  border-radius: var(--radius-full);
+}
+
+@keyframes to-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes to-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes to-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    /* biome-ignore lint/complexity/noImportantStyles: the reduced-motion rule must beat every component rule */
+    animation-duration: 0.001ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: same */
+    transition-duration: 0.001ms !important;
+  }
 }

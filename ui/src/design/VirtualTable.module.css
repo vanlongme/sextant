@@ -2,8 +2,8 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
 }
 
 .table {
@@ -15,7 +15,7 @@
 .cell {
   display: block;
   min-width: 0;
-  padding: 0 var(--space-2);
+  padding: 0 var(--space-5);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -26,12 +26,12 @@
   position: sticky;
   top: 0;
   z-index: 1;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  background: var(--surface-card);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .head .cell {
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-weight: 500;
   text-align: left;
 }
@@ -52,11 +52,11 @@
   top: 0;
   left: 0;
   width: 100%;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .bodyRow:hover {
-  background: var(--surface-2);
+  background: var(--surface-sunken);
 }
 
 .clickable {
@@ -64,16 +64,16 @@
 }
 
 .clickable:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring-color);
   outline-offset: -2px;
 }
 
 .selected {
-  background: var(--surface-2);
+  background: var(--surface-sunken);
 }
 
 .active {
-  box-shadow: inset 2px 0 0 var(--accent);
+  box-shadow: inset 2px 0 0 var(--focus-ring-color);
 }
 
 .sort {
@@ -86,6 +86,6 @@
 }
 
 .sort:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring-color);
   outline-offset: 2px;
 }
