@@ -13,6 +13,7 @@ import type { InvolvedRef } from "./generated/InvolvedRef";
 import type { Prefs } from "./generated/Prefs";
 import type { Propagation } from "./generated/Propagation";
 import type { ResourceRef } from "./generated/ResourceRef";
+import type { SavedKubeconfig } from "./generated/SavedKubeconfig";
 import type { SecretValue } from "./generated/SecretValue";
 import type { SyncWarning } from "./generated/SyncWarning";
 import type { JsonValue } from "./generated/serde_json/JsonValue";
@@ -167,6 +168,20 @@ export const api = {
   ) => call<void>("job_set_suspend", { clusterId, namespace, name, suspend }),
   ingressClassSetDefault: (clusterId: string, name: string) =>
     call<void>("ingress_class_set_default", { clusterId, name }),
+  serviceAccountKubeconfigSave: (
+    clusterId: string,
+    namespace: string,
+    name: string,
+    destPath: string,
+    expirationSeconds: number,
+  ) =>
+    call<SavedKubeconfig>("service_account_kubeconfig_save", {
+      clusterId,
+      namespace,
+      name,
+      destPath,
+      expirationSeconds,
+    }),
   nodeSetUnschedulable: (
     clusterId: string,
     name: string,

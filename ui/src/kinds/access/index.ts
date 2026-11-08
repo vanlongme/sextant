@@ -6,6 +6,7 @@ import {
   ServiceAccountDetail,
 } from "./AccessDetails";
 import { subjectsText } from "./access";
+import { saveKubeconfigAction } from "./actions";
 
 const RBAC = "rbac.authorization.k8s.io";
 
@@ -17,6 +18,7 @@ registerKind("", "serviceaccounts", {
         Array.isArray(o.secrets) ? o.secrets.length : 0,
       ),
     ),
+  actions: [saveKubeconfigAction],
   detail: ServiceAccountDetail,
 });
 
