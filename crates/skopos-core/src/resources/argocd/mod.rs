@@ -9,9 +9,9 @@ mod windows;
 
 use std::time::Duration;
 
-use kube::api::PostParams;
+use kube::api::{DeleteParams, Patch, PatchParams, PostParams, Preconditions};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use ts_rs::TS;
 
 use super::ops::{object_request, send};
@@ -20,8 +20,8 @@ use crate::app_core::AppCore;
 use crate::error::{CoreResult, ErrorCode, IpcError};
 use crate::kubeconfig::ClusterId;
 use operation::{
-    check_resources, refuse_if_deleting, refuse_if_running, rollback_operation, sync_operation,
-    terminating, with_operation,
+    check_resources, delete_finalizers, is_deleting, metadata_text, refuse_if_deleting,
+    refuse_if_running, rollback_operation, sync_operation, terminating, with_operation,
 };
 use windows::{has_sync_windows, project_location};
 
@@ -30,6 +30,8 @@ pub const SYNC_WINDOWS_UNVERIFIED: &str = "syncWindowsUnverified";
 /// How many times a write is tried in all while the Application keeps changing under it.
 const ATTEMPTS: usize = 5;
 const RETRY_DELAY: Duration = Duration::from_millis(100);
+/// Asks the controller to compare the Application again. It removes the annotation once done.
+const REFRESH: &str = "argocd.argoproj.io/refresh";
 
 /// How the controller applies the manifests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -244,5 +246,83 @@ impl AppCore {
                 result => return result,
             }
         }
+    }
+
+    async fn patch_application(
+        &self,
+        id: &ClusterId,
+        namespace: &str,
+        name: &str,
+        patch: Value,
+    ) -> CoreResult<()> {
+        let request = object_request(&applications(), Some(namespace), name)?;
+        let client = self.cluster_client(id)?;
+        let patch = Patch::Merge(patch);
+        send(
+            &client,
+            request.patch(name, &PatchParams::default(), &patch),
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// Asks the controller to compare the Application with its source again. A hard refresh
+    /// also drops the controller's cached manifests.
+    pub async fn argocd_refresh(
+        &self,
+        id: &ClusterId,
+        namespace: &str,
+        name: &str,
+        hard: bool,
+    ) -> CoreResult<()> {
+        let kind = if hard { "hard" } else { "normal" };
+        let patch = json!({ "metadata": { "annotations": { REFRESH: kind } } });
+        self.patch_application(id, namespace, name, patch).await
+    }
+
+    /// Deletes an Application. With `cascade`, the resources finalizer makes the controller
+    /// delete the deployed resources first. Without it, that finalizer is removed and the
+    /// resources stay. The finalizer patch carries the uid and `resourceVersion` it read, and
+    /// the delete carries the uid, so a replacement under the same name is left alone.
+    pub async fn argocd_delete(
+        &self,
+        id: &ClusterId,
+        namespace: &str,
+        name: &str,
+        cascade: bool,
+    ) -> CoreResult<()> {
+        let mut attempt = 1;
+        let (uid, deleting) = loop {
+            let app = self
+                .fetch_object(id, &applications(), Some(namespace), name)
+                .await?;
+            let uid = metadata_text(&app, "uid")?;
+            let deleting = is_deleting(&app);
+            let Some(finalizers) = delete_finalizers(&app, cascade, name)? else {
+                break (uid, deleting);
+            };
+            let version = metadata_text(&app, "resourceVersion")?;
+            let patch = json!({
+                "metadata": { "uid": uid, "resourceVersion": version, "finalizers": finalizers },
+            });
+            match self.patch_application(id, namespace, name, patch).await {
+                Ok(()) => break (uid, deleting),
+                Err(error) if again(&error, &mut attempt) => tokio::time::sleep(RETRY_DELAY).await,
+                Err(error) => return Err(error),
+            }
+        };
+        // Deleted already: the patch let the deletion finish, or the controller is on it. A
+        // second delete would find nothing once the last finalizer is gone.
+        if deleting {
+            return Ok(());
+        }
+        let request = object_request(&applications(), Some(namespace), name)?;
+        let client = self.cluster_client(id)?;
+        let params = DeleteParams::default().preconditions(Preconditions {
+            uid: Some(uid),
+            resource_version: None,
+        });
+        send(&client, request.delete(name, &params)).await?;
+        Ok(())
     }
 }

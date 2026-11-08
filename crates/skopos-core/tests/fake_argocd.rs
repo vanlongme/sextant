@@ -404,3 +404,137 @@ async fn terminate_with_nothing_in_progress_is_refused_without_a_write() {
     assert_eq!(error.code, ErrorCode::InvalidInput);
     assert!(puts(&fake).is_empty());
 }
+
+const RESOURCES_FINALIZER: &str = "resources-finalizer.argocd.argoproj.io";
+
+fn writes(fake: &FakeKube, method: &str) -> Vec<Value> {
+    fake.writes(method, APP)
+        .into_iter()
+        .map(|write| write.body)
+        .collect()
+}
+
+#[tokio::test]
+async fn refresh_patches_the_annotation() {
+    let (core, fake, id, _root) = ready().await;
+    core.argocd_refresh(&id, NAMESPACE, "guestbook", true)
+        .await
+        .unwrap();
+    core.argocd_refresh(&id, NAMESPACE, "guestbook", false)
+        .await
+        .unwrap();
+    assert_eq!(
+        writes(&fake, "PATCH"),
+        vec![
+            json!({ "metadata": { "annotations": { "argocd.argoproj.io/refresh": "hard" } } }),
+            json!({ "metadata": { "annotations": { "argocd.argoproj.io/refresh": "normal" } } }),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn a_cascading_delete_adds_the_finalizer_then_deletes_that_application() {
+    let (core, fake, id, _root) = argocd(FakeKubeConfig::default()).await;
+    let mut app = application();
+    app["metadata"]["finalizers"] = json!(["example.com/keep"]);
+    fake.upsert("applications", app);
+
+    core.argocd_delete(&id, NAMESPACE, "guestbook", true)
+        .await
+        .unwrap();
+
+    let patches = writes(&fake, "PATCH");
+    assert_eq!(patches.len(), 1);
+    let metadata = &patches[0]["metadata"];
+    assert_eq!(
+        metadata["finalizers"],
+        json!(["example.com/keep", RESOURCES_FINALIZER])
+    );
+    assert!(metadata["uid"].as_str().is_some_and(|uid| !uid.is_empty()));
+    assert!(metadata["resourceVersion"]
+        .as_str()
+        .is_some_and(|version| !version.is_empty()));
+    let deletes = writes(&fake, "DELETE");
+    assert_eq!(deletes.len(), 1);
+    assert_eq!(deletes[0]["preconditions"]["uid"], metadata["uid"]);
+}
+
+#[tokio::test]
+async fn a_plain_delete_removes_only_the_argo_cd_finalizers() {
+    let (core, fake, id, _root) = argocd(FakeKubeConfig::default()).await;
+    let mut app = application();
+    app["metadata"]["finalizers"] = json!([
+        "resources-finalizer.argocd.argoproj.io/foreground",
+        "example.com/keep",
+        RESOURCES_FINALIZER,
+    ]);
+    fake.upsert("applications", app);
+
+    core.argocd_delete(&id, NAMESPACE, "guestbook", false)
+        .await
+        .unwrap();
+
+    let patches = writes(&fake, "PATCH");
+    assert_eq!(patches.len(), 1);
+    assert_eq!(
+        patches[0]["metadata"]["finalizers"],
+        json!(["example.com/keep"])
+    );
+    assert_eq!(writes(&fake, "DELETE").len(), 1);
+
+    // Nothing to remove: no patch, only the delete.
+    let (core, fake, id, _root) = ready().await;
+    core.argocd_delete(&id, NAMESPACE, "guestbook", false)
+        .await
+        .unwrap();
+    assert!(writes(&fake, "PATCH").is_empty());
+    assert_eq!(writes(&fake, "DELETE").len(), 1);
+}
+
+#[tokio::test]
+async fn a_stuck_application_is_let_go_without_a_second_delete() {
+    let (core, fake, id, _root) = argocd(FakeKubeConfig::default()).await;
+    let mut app = application();
+    // Deleted already, and waiting on a controller that is gone.
+    app["metadata"]["deletionTimestamp"] = json!("2026-11-08T08:00:00Z");
+    app["metadata"]["finalizers"] = json!([RESOURCES_FINALIZER]);
+    fake.upsert("applications", app);
+
+    core.argocd_delete(&id, NAMESPACE, "guestbook", false)
+        .await
+        .unwrap();
+    let patches = writes(&fake, "PATCH");
+    assert_eq!(patches.len(), 1);
+    assert_eq!(patches[0]["metadata"]["finalizers"], json!([]));
+    assert!(writes(&fake, "DELETE").is_empty());
+
+    // The finalizer is gone, and none can be added to an object being deleted.
+    let error = core
+        .argocd_delete(&id, NAMESPACE, "guestbook", true)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::InvalidInput);
+    assert_eq!(writes(&fake, "PATCH").len(), 1);
+}
+
+#[tokio::test]
+async fn a_conflict_on_the_finalizers_reads_again() {
+    let (core, fake, id, _root) = ready().await;
+    fake.fail_next_writes_to("applications", "guestbook", 409, 1);
+
+    core.argocd_delete(&id, NAMESPACE, "guestbook", true)
+        .await
+        .unwrap();
+    assert_eq!(writes(&fake, "PATCH").len(), 2);
+    assert_eq!(writes(&fake, "DELETE").len(), 1);
+}
+
+#[tokio::test]
+async fn deleting_a_missing_application_is_not_found() {
+    let (core, _fake, id, _root) = ready().await;
+    let error = core
+        .argocd_delete(&id, NAMESPACE, "missing", true)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::NotFound);
+}

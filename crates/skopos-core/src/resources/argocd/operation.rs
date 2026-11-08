@@ -10,6 +10,15 @@ use crate::resources::invalid;
 /// The name the history and the controller's logs give for who started an operation.
 pub(super) const USERNAME: &str = "skopos";
 
+/// The finalizer that makes the controller delete the deployed resources before the
+/// Application, and its forms that choose a propagation policy. Any of them cascades.
+pub(super) const RESOURCES_FINALIZER: &str = "resources-finalizer.argocd.argoproj.io";
+const RESOURCES_FINALIZERS: [&str; 3] = [
+    RESOURCES_FINALIZER,
+    "resources-finalizer.argocd.argoproj.io/background",
+    "resources-finalizer.argocd.argoproj.io/foreground",
+];
+
 pub(super) fn is_deleting(app: &Value) -> bool {
     app.pointer("/metadata/deletionTimestamp")
         .is_some_and(|stamp| !stamp.is_null())
@@ -235,6 +244,65 @@ pub(super) fn terminating(mut app: Value, name: &str) -> CoreResult<Value> {
         }
     }
     Ok(app)
+}
+
+/// The finalizers an Application needs before it is deleted, or `None` when it has them.
+/// Cascade adds the resources finalizer. Non-cascade removes it in each of its forms and keeps
+/// any other, as the Argo CD API server does. The API server forbids adding a finalizer to an
+/// object being deleted, so cascade is refused then.
+pub(super) fn delete_finalizers(
+    app: &Value,
+    cascade: bool,
+    name: &str,
+) -> CoreResult<Option<Vec<Value>>> {
+    let current = app
+        .pointer("/metadata/finalizers")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let cascading = |finalizer: &Value| {
+        finalizer
+            .as_str()
+            .is_some_and(|finalizer| RESOURCES_FINALIZERS.contains(&finalizer))
+    };
+    let has = current.iter().any(cascading);
+    if cascade {
+        if has {
+            return Ok(None);
+        }
+        if is_deleting(app) {
+            return Err(invalid(format!(
+                "{name} is already being deleted without its resources, and that cannot change now"
+            )));
+        }
+        let mut next = current;
+        next.push(RESOURCES_FINALIZER.into());
+        return Ok(Some(next));
+    }
+    if !has {
+        return Ok(None);
+    }
+    Ok(Some(
+        current
+            .into_iter()
+            .filter(|finalizer| !cascading(finalizer))
+            .collect(),
+    ))
+}
+
+/// A metadata field the API server always sets.
+pub(super) fn metadata_text(app: &Value, field: &str) -> CoreResult<String> {
+    app.get("metadata")
+        .and_then(|metadata| metadata.get(field))
+        .and_then(Value::as_str)
+        .filter(|text| !text.is_empty())
+        .map(str::to_owned)
+        .ok_or_else(|| {
+            IpcError::new(
+                ErrorCode::Internal,
+                format!("the Application has no metadata.{field}"),
+            )
+        })
 }
 
 pub(super) fn not_an_object() -> IpcError {
@@ -606,5 +674,79 @@ mod tests {
         app["operation"] = json!({ "sync": {} });
         app["status"] = json!({});
         assert_eq!(refused(app), ErrorCode::InvalidInput);
+    }
+
+    fn with_finalizers(finalizers: Value) -> Value {
+        let mut app = application();
+        app["metadata"]["finalizers"] = finalizers;
+        app
+    }
+
+    #[test]
+    fn cascading_adds_the_finalizer_once_and_keeps_the_others() {
+        assert_eq!(
+            delete_finalizers(&application(), true, "guestbook").unwrap(),
+            Some(vec![json!(RESOURCES_FINALIZER)])
+        );
+        assert_eq!(
+            delete_finalizers(
+                &with_finalizers(json!(["example.com/keep"])),
+                true,
+                "guestbook"
+            )
+            .unwrap(),
+            Some(vec![json!("example.com/keep"), json!(RESOURCES_FINALIZER)])
+        );
+        for present in RESOURCES_FINALIZERS {
+            let app = with_finalizers(json!([present]));
+            assert_eq!(delete_finalizers(&app, true, "guestbook").unwrap(), None);
+        }
+    }
+
+    #[test]
+    fn a_plain_delete_removes_every_form_of_the_finalizer_and_only_those() {
+        let app = with_finalizers(json!([
+            RESOURCES_FINALIZERS[2],
+            "example.com/keep",
+            RESOURCES_FINALIZERS[0],
+            RESOURCES_FINALIZERS[1],
+        ]));
+        assert_eq!(
+            delete_finalizers(&app, false, "guestbook").unwrap(),
+            Some(vec![json!("example.com/keep")])
+        );
+        let other = with_finalizers(json!(["example.com/keep"]));
+        assert_eq!(delete_finalizers(&other, false, "guestbook").unwrap(), None);
+        assert_eq!(
+            delete_finalizers(&application(), false, "guestbook").unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn an_application_being_deleted_can_lose_the_finalizer_but_not_gain_it() {
+        let mut app = application();
+        app["metadata"]["deletionTimestamp"] = json!("2026-11-08T08:00:00Z");
+        assert_eq!(
+            delete_finalizers(&app, true, "guestbook").unwrap_err().code,
+            ErrorCode::InvalidInput
+        );
+        app["metadata"]["finalizers"] = json!([RESOURCES_FINALIZER]);
+        assert_eq!(delete_finalizers(&app, true, "guestbook").unwrap(), None);
+        assert_eq!(
+            delete_finalizers(&app, false, "guestbook").unwrap(),
+            Some(vec![])
+        );
+    }
+
+    #[test]
+    fn a_missing_uid_is_an_error_not_an_empty_precondition() {
+        let mut app = application();
+        assert_eq!(
+            metadata_text(&app, "uid").unwrap_err().code,
+            ErrorCode::Internal
+        );
+        app["metadata"]["uid"] = json!("u-1");
+        assert_eq!(metadata_text(&app, "uid").unwrap(), "u-1");
     }
 }
