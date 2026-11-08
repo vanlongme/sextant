@@ -1,12 +1,12 @@
 .field {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-4);
 }
 
 .label {
   color: var(--text-secondary);
-  font-size: 12px;
+  font: var(--type-caption);
 }
 
 .trigger {
@@ -14,13 +14,29 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-5);
-  height: 28px;
-  padding: 0 var(--space-5);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-control);
-  background: var(--surface-page);
+  height: var(--control-sm);
+  padding: 0 var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-field);
+  background: var(--surface-card);
   color: var(--text-primary);
   cursor: pointer;
+  transition: var(--transition-control);
+}
+
+/* One step taller in dialogs and forms than in toolbars (spec §5). */
+:where([role="dialog"], [role="alertdialog"], form) .trigger {
+  height: var(--control-md);
+}
+
+.trigger:hover {
+  border-color: var(--border-strong-color);
+}
+
+.trigger:focus-visible {
+  outline: none;
+  border-color: var(--border-accent);
+  box-shadow: var(--focus-ring);
 }
 
 .content {
@@ -35,7 +51,7 @@
 
 .item {
   padding: var(--space-3) var(--space-5);
-  border-radius: calc(var(--radius-control) - 2px);
+  border-radius: var(--radius-xs);
   cursor: pointer;
   outline: none;
 }
