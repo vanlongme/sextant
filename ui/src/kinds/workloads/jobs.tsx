@@ -97,36 +97,36 @@ export const triggerAction: KindAction = {
   },
 };
 
-// Each undoes the other, so neither asks first.
-export const suspendAction: KindAction = {
-  id: "suspend",
-  label: "Suspend",
-  icon: CirclePause,
-  requires: "patch",
-  visible: (o) => !o.spec?.suspend,
-  run: (ctx, o) =>
-    api.cronjobSetSuspend(
-      ctx.clusterId,
-      o.metadata.namespace ?? "",
-      o.metadata.name,
-      true,
-    ),
-};
+type SetSuspend = (
+  clusterId: string,
+  namespace: string,
+  name: string,
+  suspend: boolean,
+) => Promise<void>;
 
-export const resumeAction: KindAction = {
-  id: "resume",
-  label: "Resume",
-  icon: CirclePlay,
-  requires: "patch",
-  visible: (o) => Boolean(o.spec?.suspend),
-  run: (ctx, o) =>
-    api.cronjobSetSuspend(
-      ctx.clusterId,
-      o.metadata.namespace ?? "",
-      o.metadata.name,
-      false,
-    ),
-};
+// Each undoes the other, so neither asks first.
+function suspendToggle(suspend: boolean, set: SetSuspend): KindAction {
+  return {
+    id: suspend ? "suspend" : "resume",
+    label: suspend ? "Suspend" : "Resume",
+    icon: suspend ? CirclePause : CirclePlay,
+    requires: "patch",
+    visible: (o) => Boolean(o.spec?.suspend) !== suspend,
+    run: async (ctx, o) => {
+      const { name, namespace = "" } = o.metadata;
+      await set(ctx.clusterId, namespace, name, suspend);
+      toast.success(`${suspend ? "Suspended" : "Resumed"} ${name}`);
+    },
+  };
+}
+
+const setCronJob: SetSuspend = (...args) => api.cronjobSetSuspend(...args);
+const setJob: SetSuspend = (...args) => api.jobSetSuspend(...args);
+
+export const suspendAction = suspendToggle(true, setCronJob);
+export const resumeAction = suspendToggle(false, setCronJob);
+export const jobSuspendAction = suspendToggle(true, setJob);
+export const jobResumeAction = suspendToggle(false, setJob);
 
 export function JobDetail({ clusterId, object }: DetailProps) {
   const spec = object.spec ?? {};
@@ -218,6 +218,7 @@ registerKind("batch", "jobs", {
         render: (o) => <Duration object={o} />,
       },
     ),
+  actions: [jobSuspendAction, jobResumeAction],
   detail: JobDetail,
 });
 

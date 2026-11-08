@@ -1,6 +1,7 @@
 import { baseColumns, statusColumn, textColumn } from "../columns";
 import { registerKind } from "../registry";
 import { selectorText } from "../selectors";
+import { setDefaultAction } from "./actions";
 import { EndpointSliceDetail } from "./EndpointSliceDetail";
 import { IngressClassDetail } from "./IngressClassDetail";
 import { IngressDetail } from "./IngressDetail";
@@ -66,6 +67,7 @@ registerKind("networking.k8s.io", "ingressclasses", {
         isDefaultIngressClass(o) ? "Yes" : "-",
       ),
     ),
+  actions: [setDefaultAction],
   detail: IngressClassDetail,
 });
 

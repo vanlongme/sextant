@@ -153,6 +153,20 @@ export const api = {
     suspend: boolean,
   ) =>
     call<void>("cronjob_set_suspend", { clusterId, namespace, name, suspend }),
+  podForceDelete: (
+    clusterId: string,
+    namespace: string,
+    name: string,
+    uid: string,
+  ) => call<void>("pod_force_delete", { clusterId, namespace, name, uid }),
+  jobSetSuspend: (
+    clusterId: string,
+    namespace: string,
+    name: string,
+    suspend: boolean,
+  ) => call<void>("job_set_suspend", { clusterId, namespace, name, suspend }),
+  ingressClassSetDefault: (clusterId: string, name: string) =>
+    call<void>("ingress_class_set_default", { clusterId, name }),
   nodeSetUnschedulable: (
     clusterId: string,
     name: string,

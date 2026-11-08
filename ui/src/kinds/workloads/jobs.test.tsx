@@ -1,4 +1,5 @@
 import { act, render, screen, within } from "@testing-library/react";
+import { CirclePause, CirclePlay, Play } from "lucide-react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { toast } from "../../design";
@@ -6,14 +7,16 @@ import type { WatchEvent } from "../../ipc/generated/WatchEvent";
 import { resetResourcesForTest } from "../../stores/resources";
 import { flush, mockBackend } from "../../test/ipc";
 import { CRONJOBS, JOBS } from "../refs";
-import type { ActionContext } from "../registry";
+import { type ActionContext, kindSpec } from "../registry";
 import {
   CronJobDetail,
   cronStatus,
   JobDetail,
   jobCompletions,
   jobDurationText,
+  jobResumeAction,
   jobStatus,
+  jobSuspendAction,
   resumeAction,
   suspendAction,
   triggerAction,
@@ -157,14 +160,62 @@ test("trigger does nothing when the answer is no", async () => {
   expect(backend.callsTo("cronjob_trigger")).toHaveLength(0);
 });
 
-test("suspend and resume patch the flag", async () => {
+test("suspend and resume patch the CronJob flag and say so", async () => {
   const backend = mockBackend({ cronjob_set_suspend: () => null });
+  const success = vi.spyOn(toast, "success");
   const object = { metadata: { name: "tick", namespace: "n" } };
   await suspendAction.run(context(true), object);
   await resumeAction.run(context(true), object);
   const calls = backend.callsTo("cronjob_set_suspend");
   expect(calls[0]).toMatchObject({ name: "tick", suspend: true });
   expect(calls[1]).toMatchObject({ name: "tick", suspend: false });
+  expect(success.mock.calls).toEqual([["Suspended tick"], ["Resumed tick"]]);
+});
+
+test("a Job is suspended and resumed through its own command", async () => {
+  const backend = mockBackend({ job_set_suspend: () => null });
+  const success = vi.spyOn(toast, "success");
+  const object = { metadata: { name: "batch", namespace: "n" } };
+  await jobSuspendAction.run(context(true), object);
+  await jobResumeAction.run(context(true), object);
+  const calls = backend.callsTo("job_set_suspend");
+  expect(calls[0]).toMatchObject({
+    clusterId: "c",
+    namespace: "n",
+    name: "batch",
+    suspend: true,
+  });
+  expect(calls[1]).toMatchObject({ name: "batch", suspend: false });
+  expect(success.mock.calls).toEqual([["Suspended batch"], ["Resumed batch"]]);
+});
+
+test("a Job offers only the one that applies, and both need patch", () => {
+  const suspended = { metadata: m, spec: { suspend: true } };
+  const running = { metadata: m, spec: {} };
+  expect(jobSuspendAction.visible?.(running)).toBe(true);
+  expect(jobResumeAction.visible?.(running)).toBe(false);
+  expect(jobSuspendAction.visible?.(suspended)).toBe(false);
+  expect(jobResumeAction.visible?.(suspended)).toBe(true);
+  expect([jobSuspendAction.requires, jobResumeAction.requires]).toEqual([
+    "patch",
+    "patch",
+  ]);
+  expect(kindSpec("batch", "jobs")?.actions?.map((a) => a.id)).toEqual([
+    "suspend",
+    "resume",
+  ]);
+});
+
+test("the Job and CronJob actions carry the board's icons", () => {
+  expect([triggerAction.icon, suspendAction.icon, resumeAction.icon]).toEqual([
+    Play,
+    CirclePause,
+    CirclePlay,
+  ]);
+  expect([jobSuspendAction.icon, jobResumeAction.icon]).toEqual([
+    CirclePause,
+    CirclePlay,
+  ]);
 });
 
 test("a job panel shows completions, parallelism, duration and its pods", async () => {

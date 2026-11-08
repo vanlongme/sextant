@@ -12,6 +12,7 @@ import { registerKind } from "../registry";
 import "./jobs";
 import { PodDetail } from "./PodDetail";
 import { podStatus, podSummary } from "./pod";
+import { forceDeleteAction } from "./podActions";
 import { RolloutDetail } from "./RolloutDetail";
 import {
   deploymentStatus,
@@ -52,6 +53,7 @@ registerKind("", "pods", {
         toast.success(`Evicting ${name}`);
       },
     },
+    forceDeleteAction,
   ],
   detail: PodDetail,
 });
