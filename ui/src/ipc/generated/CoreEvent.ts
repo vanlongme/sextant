@@ -3,5 +3,6 @@ import type { ConnectionState } from "./ConnectionState";
 import type { PortForward } from "./PortForward";
 import type { StoreWarning } from "./StoreWarning";
 import type { SyncWarning } from "./SyncWarning";
+import type { ToolProgress } from "./ToolProgress";
 
-export type CoreEvent = { "type": "catalogChanged" } | { "type": "clusterState", id: string, state: ConnectionState, } | { "type": "kubeconfigWarnings", warnings: Array<SyncWarning>, } | { "type": "storeWarning", warning: StoreWarning, } | { "type": "portForwardsChanged", forwards: Array<PortForward>, };
+export type CoreEvent = { "type": "catalogChanged" } | { "type": "clusterState", id: string, state: ConnectionState, } | { "type": "kubeconfigWarnings", warnings: Array<SyncWarning>, } | { "type": "storeWarning", warning: StoreWarning, } | { "type": "portForwardsChanged", forwards: Array<PortForward>, } | { "type": "toolProgress", progress: ToolProgress, };

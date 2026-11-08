@@ -14,6 +14,7 @@ const CLUSTER_STATE: &str = "cluster://state";
 const KUBECONFIG_WARNINGS: &str = "kubeconfig://warnings";
 const STORE_WARNING: &str = "store://warning";
 const PORTFORWARD_CHANGED: &str = "portforward://changed";
+const TOOLS_PROGRESS: &str = "tools://progress";
 
 /// The page has loaded by the time this starts, but its listeners register
 /// asynchronously afterwards, and an event sent before that is lost.
@@ -34,6 +35,7 @@ fn emit(app: &AppHandle, event: CoreEvent) {
         CoreEvent::KubeconfigWarnings { warnings } => app.emit(KUBECONFIG_WARNINGS, warnings),
         CoreEvent::StoreWarning { warning } => app.emit(STORE_WARNING, warning),
         CoreEvent::PortForwardsChanged { forwards } => app.emit(PORTFORWARD_CHANGED, forwards),
+        CoreEvent::ToolProgress { progress } => app.emit(TOOLS_PROGRESS, progress),
     };
     if let Err(e) = sent {
         tracing::warn!("cannot send an event to the window: {e}");

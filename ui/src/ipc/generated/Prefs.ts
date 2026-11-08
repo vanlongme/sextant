@@ -10,4 +10,12 @@ syncSources: Array<SyncSource>,
 /**
  * The local terminal's shell. `None` picks one per F11.
  */
-terminalShell?: string | null, };
+terminalShell?: string | null, 
+/**
+ * Used instead of looking helm up (F14). `None`: `PATH`, then the managed copy.
+ */
+helmPath?: string | null, kubectlPath?: string | null, 
+/**
+ * For downloads and helm, such as `http://proxy.example:3128`. `None`: the system proxy.
+ */
+httpProxy?: string | null, };
