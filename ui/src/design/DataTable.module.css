@@ -6,17 +6,19 @@
 .table th {
   position: sticky;
   top: 0;
-  padding: var(--space-3) var(--space-7);
+  height: 34px;
+  padding: 0 var(--space-7);
   background: var(--surface-card);
   border-bottom: 1px solid var(--border-subtle);
   color: var(--text-secondary);
-  font-weight: 500;
+  font: var(--type-caption);
   text-align: left;
 }
 
 .table td {
-  padding: var(--space-3) var(--space-7);
-  border-bottom: 1px solid var(--border-subtle);
+  height: 34px;
+  padding: 0 var(--space-7);
+  border-bottom: 1px solid var(--divider);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -27,14 +29,20 @@
 }
 
 .clickable:hover {
-  background: var(--surface-sunken);
+  background: var(--surface-hover);
 }
 
 .sort {
   padding: 0;
   border: 0;
+  border-radius: var(--radius-xs);
   background: transparent;
   color: inherit;
-  font-weight: inherit;
+  font: inherit;
   cursor: pointer;
+}
+
+.sort:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }

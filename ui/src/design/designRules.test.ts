@@ -18,6 +18,8 @@ const RESTYLED = [
   "/src/design/Dialog.module.css",
   "/src/design/ConfirmDialog.module.css",
   "/src/design/Menu.module.css",
+  "/src/design/VirtualTable.module.css",
+  "/src/design/DataTable.module.css",
 ];
 
 const RING = /var\(--focus-ring\)|var\(--focus-ring-color\)|var\(--glow-/;
@@ -142,4 +144,16 @@ test("dialogs sit on a blurred scrim with the deepest shadow and no exit animati
   );
   expect(content["box-shadow"]).toBe("var(--shadow-3)");
   expect(content["border-radius"]).toBe("var(--radius-md)");
+});
+
+test("tables have hairline rows, no outer border and an inset focus ring", () => {
+  const vt = cssRules(CSS_FILES["/src/design/VirtualTable.module.css"]);
+  const decls = (s: string) =>
+    Object.fromEntries(vt.find((r) => r.selector === s)?.decls ?? []);
+  expect(decls(".scroller").border).toBeUndefined();
+  expect(decls(".bodyRow")["border-bottom"]).toBe("1px solid var(--divider)");
+  expect(decls(".selected").background).toBe("var(--surface-selected)");
+  expect(decls(".clickable:focus-visible")["box-shadow"]).toBe(
+    "inset 0 0 0 2px var(--focus-ring-color)",
+  );
 });
