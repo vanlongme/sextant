@@ -14,6 +14,7 @@ import { type KubeObject, objectKey } from "../../kinds/objects";
 import { kindSpec } from "../../kinds/registry";
 import { rowsAreTrimmed, useResourceList } from "../../stores/resources";
 import { ConditionsSection } from "./ConditionsSection";
+import { CopyRow } from "./CopyRow";
 import styles from "./DetailDrawer.module.css";
 import { EventsSection } from "./EventsSection";
 import { FieldTree } from "./FieldTree";
@@ -97,10 +98,9 @@ function Body(props: {
           <section className={styles.section} data-testid="detail-summary">
             <dl className={styles.facts}>
               {summary.map((s) => (
-                <div key={s.id} className={styles.fact}>
-                  <dt className={styles.key}>{s.label}</dt>
-                  <dd className={styles.value}>{s.value}</dd>
-                </div>
+                <CopyRow key={s.id} label={s.label}>
+                  {s.value}
+                </CopyRow>
               ))}
             </dl>
           </section>

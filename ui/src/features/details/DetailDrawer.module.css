@@ -83,13 +83,6 @@
   margin: 0;
 }
 
-.fact {
-  display: grid;
-  grid-template-columns: 120px 1fr;
-  gap: var(--space-5);
-  padding: 2px 0;
-}
-
 .key {
   color: var(--text-secondary);
   overflow-wrap: anywhere;
@@ -138,27 +131,12 @@
   box-shadow: var(--focus-ring);
 }
 
-.chips,
+.labelRows,
 .rows,
 .fieldList {
   margin: 0;
   padding: 0;
   list-style: none;
-}
-
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-}
-
-.chip {
-  padding: 2px var(--space-5);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-control);
-  background: var(--surface-sunken);
-  font-family: var(--font-mono);
-  overflow-wrap: anywhere;
 }
 
 .rows > li {
@@ -206,4 +184,46 @@
   font-family: var(--font-mono);
   overflow-wrap: anywhere;
   user-select: text;
+}
+
+.copyRow {
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr);
+  gap: var(--space-5);
+  padding: 2px 0;
+}
+
+.copyValue,
+.labelRow,
+.annotationKey {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 22px;
+  align-items: start;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.labelRow {
+  padding: 2px 0;
+}
+
+.labelText {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+/* The button keeps its place and its focus at rest; only its colour comes and goes. */
+.copyHost .copy {
+  color: transparent;
+}
+
+.copyHost:hover .copy {
+  color: var(--text-tertiary);
+}
+
+.copyHost .copy:focus-visible {
+  color: var(--text-tertiary);
+  outline: none;
+  box-shadow: var(--focus-ring);
 }

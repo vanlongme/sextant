@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { CopyButton } from "../../design";
 import type { KubeObject } from "../../kinds/objects";
+import { CopyRow } from "./CopyRow";
 import styles from "./DetailDrawer.module.css";
 
 /** Values longer than this, or with several lines, start collapsed. */
@@ -10,8 +12,16 @@ function Annotation(props: { name: string; value: string }) {
   const long = value.length > LONG || value.includes("\n");
   const [open, setOpen] = useState(false);
   return (
-    <div className={styles.annotation}>
-      <dt className={styles.key}>{name}</dt>
+    <div className={`${styles.copyHost} ${styles.annotation}`}>
+      <dt className={styles.annotationKey}>
+        <span className={styles.key}>{name}</span>
+        {/* The whole value, even while it is shown collapsed. */}
+        <CopyButton
+          className={styles.copy}
+          what={`annotation ${name}`}
+          value={() => value}
+        />
+      </dt>
       <dd
         className={open || !long ? styles.valueFull : styles.valueClamped}
         data-testid="annotation-value"
@@ -33,25 +43,40 @@ function Annotation(props: { name: string; value: string }) {
   );
 }
 
-function Pairs(props: {
-  title: string;
-  testId: string;
-  pairs?: Record<string, string>;
-}) {
-  const entries = Object.entries(props.pairs ?? {});
+function Labels(props: { labels?: Record<string, string> }) {
+  const entries = Object.entries(props.labels ?? {});
   return (
-    <section className={styles.section} data-testid={props.testId}>
-      <h4 className={styles.heading}>{props.title}</h4>
+    <section className={styles.section} data-testid="detail-labels">
+      <h4 className={styles.heading}>Labels</h4>
       {entries.length === 0 ? (
         <p className={styles.muted}>None</p>
-      ) : props.testId === "detail-labels" ? (
-        <ul className={styles.chips}>
+      ) : (
+        <ul className={styles.labelRows}>
           {entries.map(([k, v]) => (
-            <li key={k} className={styles.chip}>
-              {k}={v}
+            <li key={k} className={`${styles.copyHost} ${styles.labelRow}`}>
+              <span className={styles.labelText}>
+                {k}={v}
+              </span>
+              <CopyButton
+                className={styles.copy}
+                what={`label ${k}`}
+                value={() => `${k}=${v}`}
+              />
             </li>
           ))}
         </ul>
+      )}
+    </section>
+  );
+}
+
+function Annotations(props: { annotations?: Record<string, string> }) {
+  const entries = Object.entries(props.annotations ?? {});
+  return (
+    <section className={styles.section} data-testid="detail-annotations">
+      <h4 className={styles.heading}>Annotations</h4>
+      {entries.length === 0 ? (
+        <p className={styles.muted}>None</p>
       ) : (
         <dl className={styles.pairs}>
           {entries.map(([k, v]) => (
@@ -63,7 +88,7 @@ function Pairs(props: {
   );
 }
 
-/** Identity, labels and annotations of an object. */
+/** Identity, labels and annotations of an object, each row with a copy button. */
 export function MetadataSection(props: { object: KubeObject }) {
   const { metadata } = props.object;
   const facts: [string, string | undefined][] = [
@@ -82,19 +107,14 @@ export function MetadataSection(props: { object: KubeObject }) {
           {facts
             .filter(([, v]) => v !== undefined && v !== "")
             .map(([k, v]) => (
-              <div key={k} className={styles.fact}>
-                <dt className={styles.key}>{k}</dt>
-                <dd className={styles.value}>{v}</dd>
-              </div>
+              <CopyRow key={k} label={k}>
+                {v}
+              </CopyRow>
             ))}
         </dl>
       </section>
-      <Pairs title="Labels" testId="detail-labels" pairs={metadata.labels} />
-      <Pairs
-        title="Annotations"
-        testId="detail-annotations"
-        pairs={metadata.annotations}
-      />
+      <Labels labels={metadata.labels} />
+      <Annotations annotations={metadata.annotations} />
     </>
   );
 }

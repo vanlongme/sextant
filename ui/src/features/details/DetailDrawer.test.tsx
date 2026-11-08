@@ -9,14 +9,19 @@ import {
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { Menu } from "../../design";
+import { copyText } from "../../design/clipboard";
 import type { ApiResourceInfo } from "../../ipc/generated/ApiResourceInfo";
 import type { ResourceRef } from "../../ipc/generated/ResourceRef";
 import type { WatchEvent } from "../../ipc/generated/WatchEvent";
 import type { KubeObject } from "../../kinds/objects";
 import { registerKind } from "../../kinds/registry";
 import { resetResourcesForTest } from "../../stores/resources";
+import { CSS_FILES, cssRules } from "../../test/css";
 import { flush, mockBackend } from "../../test/ipc";
 import { DetailDrawer } from "./DetailDrawer";
+
+vi.mock("../../design/clipboard", () => ({ copyText: vi.fn(async () => {}) }));
+const copied = vi.mocked(copyText);
 
 const POD: ResourceRef = {
   group: "",
@@ -412,7 +417,9 @@ test("long annotation values stay collapsed with an expand control", async () =>
   });
   expect(expand.getAttribute("aria-expanded")).toBe("false");
   // Only the long one has a control.
-  expect(within(section).getAllByRole("button")).toHaveLength(1);
+  expect(
+    within(section).getAllByRole("button", { name: /^Expand annotation/ }),
+  ).toHaveLength(1);
   fireEvent.click(expand);
   const collapse = within(section).getByRole("button", {
     name: "Collapse annotation big",
@@ -706,4 +713,94 @@ test("Escape in a menu the drawer opened closes the menu, not the drawer", async
   expect(onClose).not.toHaveBeenCalled();
   fireEvent.keyDown(screen.getByTestId("detail-drawer"), { key: "Escape" });
   expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+async function copyFrom(testId: string): Promise<string | undefined> {
+  copied.mockClear();
+  await act(async () => {
+    fireEvent.click(screen.getByTestId(testId));
+  });
+  return copied.mock.calls[0]?.[0];
+}
+
+test("each metadata row copies the value it shows", async () => {
+  const f = fake();
+  render(drawer());
+  await act(flush);
+  await f.snapshot([pod()]);
+  expect(await copyFrom("copy-name")).toBe("web");
+  expect(await copyFrom("copy-namespace")).toBe("team-a");
+  expect(await copyFrom("copy-uid")).toBe("u1");
+  expect(await copyFrom("copy-resource-version")).toBe("1");
+  expect(await copyFrom("copy-created")).toBe("2026-01-01T00:00:00Z");
+  expect(screen.queryByTestId("copy-deleting-since")).toBeNull();
+});
+
+test("labels are rows that show and copy key=value", async () => {
+  const f = fake();
+  render(drawer());
+  await act(flush);
+  await f.snapshot([pod()]);
+  const labels = screen.getByTestId("detail-labels");
+  expect(within(labels).getByText("app=web")).toBeTruthy();
+  expect(await copyFrom("copy-label-app")).toBe("app=web");
+});
+
+test("a collapsed annotation copies its whole value", async () => {
+  const f = fake();
+  const long = `${"x".repeat(200)}\nend`;
+  render(drawer());
+  await act(flush);
+  await f.snapshot([
+    pod({ metadata: { ...pod().metadata, annotations: { big: long } } }),
+  ]);
+  expect(
+    screen
+      .getByRole("button", { name: "Expand annotation big" })
+      .getAttribute("aria-expanded"),
+  ).toBe("false");
+  expect(await copyFrom("copy-annotation-big")).toBe(long);
+});
+
+test("a summary row copies what its cell shows", async () => {
+  const f = fake();
+  render(
+    <MemoryRouter>
+      <DetailDrawer
+        clusterId="c1"
+        resource={POD}
+        objectKey="team-a/web"
+        onClose={() => {}}
+        summary={[
+          { id: "status", label: "Status", value: <strong>Running</strong> },
+        ]}
+      />
+    </MemoryRouter>,
+  );
+  await act(flush);
+  await f.snapshot([pod()]);
+  expect(
+    within(screen.getByTestId("detail-summary")).getByText("Running"),
+  ).toBeTruthy();
+  expect(await copyFrom("copy-status")).toBe("Running");
+});
+
+test("a row's copy button is transparent at rest and shows on hover and focus, without opacity", () => {
+  const rules = cssRules(
+    CSS_FILES["/src/features/details/DetailDrawer.module.css"],
+  );
+  const decls = (selector: string) =>
+    Object.fromEntries(rules.find((r) => r.selector === selector)?.decls ?? []);
+  expect(decls(".copyHost .copy").color).toBe("transparent");
+  expect(decls(".copyHost:hover .copy").color).toBe("var(--text-tertiary)");
+  expect(decls(".copyHost .copy:focus-visible")).toMatchObject({
+    color: "var(--text-tertiary)",
+    "box-shadow": "var(--focus-ring)",
+  });
+  for (const rule of rules.filter((r) => r.selector.includes("copy"))) {
+    for (const [property] of rule.decls) {
+      expect(property).not.toBe("opacity");
+      expect(property).not.toBe("visibility");
+    }
+  }
 });
