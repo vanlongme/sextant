@@ -35,7 +35,8 @@ test-kind:
 test-argocd:
 	scripts/kind-up.sh
 	scripts/argocd-up.sh
-	cargo test -p skopos-core --test 'argocd_*' -- --ignored --test-threads=1
+	cargo test -p skopos-core --test 'argocd_*' -- --ignored --test-threads=1; \
+	  status=$$?; scripts/argocd-down.sh; exit $$status
 e2e-smoke: e2e-build
 	cargo build -p skopos-fakekube
 	SKOPOS_E2E_SPEC_SET=smoke $(XVFB) pnpm -C e2e exec wdio run wdio.conf.ts
