@@ -3,6 +3,7 @@
 //! PTY reads, writes and waits all block, so each has a plain thread. `spawn_blocking` is
 //! not used for them, because a read that never returns would hang runtime shutdown.
 
+use std::ffi::OsString;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -17,6 +18,7 @@ use super::{FlowControl, SessionEvent, SessionOutput, TerminalControl, TerminalS
 use crate::app_core::AppCore;
 use crate::error::{CoreResult, ErrorCode, IpcError};
 use crate::kubeconfig::ClusterId;
+use crate::tools::append_to_path;
 
 const READ_CHUNK: usize = 16 * 1024;
 const INPUT_BACKLOG: usize = 64;
@@ -99,6 +101,8 @@ struct TerminalSpec {
     kubeconfig: PathBuf,
     cwd: PathBuf,
     size: TerminalSize,
+    /// Replaces the inherited `PATH` when set.
+    path: Option<OsString>,
 }
 
 struct OpenTerminal {
@@ -115,6 +119,9 @@ fn open_terminal(spec: &TerminalSpec) -> CoreResult<OpenTerminal> {
     let mut command = CommandBuilder::new(&spec.shell);
     command.env("KUBECONFIG", &spec.kubeconfig);
     command.env("TERM", "xterm-256color");
+    if let Some(path) = &spec.path {
+        command.env("PATH", path);
+    }
     command.cwd(&spec.cwd);
     let child = pair.slave.spawn_command(command).map_err(pty_error)?;
     // While this end stays open here, reading the master never sees the shell's exit.
@@ -272,6 +279,10 @@ impl AppCore {
             kubeconfig,
             cwd: working_directory(settings.terminal_cwd.as_deref(), self.home_dir()),
             size,
+            path: append_to_path(
+                std::env::var_os("PATH").as_deref(),
+                &self.tools().managed_dirs(),
+            ),
         };
         let opened = tokio::task::spawn_blocking(move || open_terminal(&spec))
             .await

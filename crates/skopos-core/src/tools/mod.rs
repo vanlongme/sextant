@@ -192,6 +192,28 @@ pub fn is_executable(path: &Path) -> bool {
     std::fs::metadata(path).is_ok_and(|metadata| is_executable_file(&metadata))
 }
 
+/// `current` with `extra` added at the end, leaving out folders it already has, so the
+/// user's own programs win. `None` when nothing is added, or the result is not a valid `PATH`.
+pub fn append_to_path(current: Option<&OsStr>, extra: &[PathBuf]) -> Option<OsString> {
+    let mut folders: Vec<PathBuf> = current
+        .map(|path| {
+            std::env::split_paths(path)
+                .filter(|folder| !folder.as_os_str().is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+    let before = folders.len();
+    for folder in extra {
+        if !folders.contains(folder) {
+            folders.push(folder.clone());
+        }
+    }
+    if folders.len() == before {
+        return None;
+    }
+    std::env::join_paths(folders).ok()
+}
+
 /// The version in `tool version`'s output, such as `v4.3.1`.
 pub fn parse_version(tool: ToolName, stdout: &[u8]) -> Option<String> {
     let text = String::from_utf8_lossy(stdout);
@@ -358,6 +380,17 @@ impl Tools {
             .join(entry.tool.as_str())
             .join(&entry.version)
             .join(entry.tool.binary())
+    }
+
+    /// The folders of the managed copies in place, for the end of a terminal's `PATH`.
+    pub(crate) fn managed_dirs(&self) -> Vec<PathBuf> {
+        ToolName::ALL
+            .into_iter()
+            .filter_map(|tool| self.pinned(tool))
+            .map(|entry| self.managed_path(&entry))
+            .filter(|binary| is_executable(binary))
+            .filter_map(|binary| binary.parent().map(Path::to_path_buf))
+            .collect()
     }
 
     pub(crate) async fn version(
@@ -869,5 +902,27 @@ mod tests {
             (OsString::from("HTTP_PROXY"), proxy),
         ];
         assert_eq!(proxy_env(Some("http://proxy.example:3128")), expected);
+    }
+
+    #[test]
+    fn managed_folders_go_at_the_end_of_path_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let [a, b, managed] = ["a", "b", "managed"].map(|name| dir.path().join(name));
+        let current = std::env::join_paths([&a, &b]).unwrap();
+        let split = |path: OsString| std::env::split_paths(&path).collect::<Vec<_>>();
+
+        let current = Some(current.as_os_str());
+        let joined = append_to_path(current, &[managed.clone(), a.clone()]).unwrap();
+        assert_eq!(split(joined), [a.clone(), b.clone(), managed.clone()]);
+        assert_eq!(append_to_path(current, std::slice::from_ref(&a)), None);
+        assert_eq!(append_to_path(current, &[]), None);
+        assert_eq!(
+            split(append_to_path(None, std::slice::from_ref(&managed)).unwrap()),
+            vec![managed.clone()]
+        );
+        // An empty entry would mean the working directory.
+        let from_empty =
+            append_to_path(Some(OsStr::new("")), std::slice::from_ref(&managed)).unwrap();
+        assert_eq!(split(from_empty), [managed]);
     }
 }

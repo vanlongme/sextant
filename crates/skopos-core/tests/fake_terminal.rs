@@ -11,6 +11,8 @@ use skopos_core::error::ErrorCode;
 use skopos_core::kubeconfig::ClusterId;
 use skopos_core::prefs::{ClusterSettings, Prefs};
 use skopos_core::sessions::{SessionEvent, SessionOutput, TerminalSize};
+use skopos_core::tools::pinned::KUBECTL_VERSION;
+use skopos_core::tools::ToolName;
 use skopos_fakekube::FakeKubeConfig;
 use support::connected_fake;
 use tokio::sync::mpsc;
@@ -333,4 +335,45 @@ mod unix_only {
         wait_until_gone(&pid).await;
         assert_eq!(core.session_count(), 0);
     }
+}
+
+#[cfg(unix)]
+fn make_executable(path: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+#[cfg(not(unix))]
+fn make_executable(_path: &std::path::Path) {}
+
+#[tokio::test]
+async fn the_managed_tools_come_last_on_the_shells_path() {
+    let (core, _fake, id, root) = connected_fake(FakeKubeConfig::default()).await;
+    let folder = root
+        .path()
+        .join("app/data/tools/kubectl")
+        .join(KUBECTL_VERSION);
+    std::fs::create_dir_all(&folder).unwrap();
+    let binary = folder.join(ToolName::Kubectl.binary());
+    std::fs::write(&binary, "").unwrap();
+    make_executable(&binary);
+    let (session, mut rx) = start_shell(&core, &id, WIDE).await;
+    answer_cursor_query(&core, &session, &mut rx).await;
+    // Only the end of PATH, which on Windows runners is longer than a line.
+    run(
+        &core,
+        &session,
+        if cfg!(windows) {
+            "echo %PATH:~-300%;END"
+        } else {
+            "echo \"${PATH##*:}END\""
+        },
+    );
+    // Only the last parts: temp paths have other spellings once resolved on some OSes.
+    let separator = if cfg!(windows) { ";" } else { "" };
+    let sep = std::path::MAIN_SEPARATOR;
+    let wanted = format!("tools{sep}kubectl{sep}{KUBECTL_VERSION}{separator}END");
+    wait_for_text(&core, &session, &mut rx, &wanted).await;
+    core.session_stop(&session);
+    wait_for_exit(&core, &session, &mut rx).await;
 }
