@@ -7,6 +7,7 @@ pub mod kubeconfig;
 pub mod paths;
 pub mod portforward;
 pub mod prefs;
+pub mod process;
 pub mod resources;
 pub mod sessions;
 pub mod shell_env;

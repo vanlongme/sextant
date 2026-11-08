@@ -28,5 +28,8 @@ tracing.workspace = true
 ts-rs.workspace = true
 url = "2"
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 skopos-fakekube = { path = "../skopos-fakekube" }

@@ -4481,6 +4481,7 @@ dependencies = [
  "http",
  "k8s-openapi",
  "kube",
+ "libc",
  "notify",
  "notify-debouncer-full",
  "portable-pty",
