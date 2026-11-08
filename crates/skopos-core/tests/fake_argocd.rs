@@ -538,3 +538,43 @@ async fn deleting_a_missing_application_is_not_found() {
         .unwrap_err();
     assert_eq!(error.code, ErrorCode::NotFound);
 }
+
+#[tokio::test]
+async fn a_finalizer_put_back_after_the_patch_stops_the_delete() {
+    let (core, fake, id, _root) = argocd(FakeKubeConfig::default()).await;
+    let mut app = application();
+    app["metadata"]["finalizers"] = json!([RESOURCES_FINALIZER]);
+    fake.upsert("applications", app);
+    // As a mutating admission policy, or another controller, would.
+    fake.keep_finalizer("applications", "guestbook", RESOURCES_FINALIZER);
+
+    let error = core
+        .argocd_delete(&id, NAMESPACE, "guestbook", false)
+        .await
+        .unwrap_err();
+    // Deleting now would take the deployed resources with it, which the user declined.
+    assert_eq!(error.code, ErrorCode::Conflict);
+    assert!(writes(&fake, "DELETE").is_empty());
+}
+
+#[tokio::test]
+async fn the_delete_names_the_version_the_finalizers_were_settled_on() {
+    let (core, fake, id, _root) = argocd(FakeKubeConfig::default()).await;
+    let mut app = application();
+    app["metadata"]["finalizers"] = json!(["example.com/keep"]);
+    fake.upsert("applications", app);
+
+    core.argocd_delete(&id, NAMESPACE, "guestbook", true)
+        .await
+        .unwrap();
+
+    let read = &writes(&fake, "PATCH")[0]["metadata"]["resourceVersion"];
+    let deletes = writes(&fake, "DELETE");
+    let bound = &deletes[0]["preconditions"]["resourceVersion"];
+    assert!(
+        bound.as_str().is_some_and(|version| !version.is_empty()),
+        "{bound}"
+    );
+    // The patch made a new version, and only that one is deleted.
+    assert_ne!(bound, read);
+}

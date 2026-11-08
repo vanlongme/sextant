@@ -12,6 +12,6 @@ revision: string | null, prune: boolean, dryRun: boolean, force: boolean, strate
  */
 syncOptions: Array<string>, 
 /**
- * `None`: every resource.
+ * `None`: every resource. An empty list is refused.
  */
 resources: Array<ArgoSyncResource> | null, acknowledgeSyncWindows: boolean, };

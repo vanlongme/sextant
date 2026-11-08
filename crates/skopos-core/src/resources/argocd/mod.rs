@@ -67,7 +67,7 @@ pub struct ArgoSyncOptions {
     pub strategy: ArgoSyncStrategy,
     /// Empty: the Application's own `spec.syncPolicy.syncOptions`.
     pub sync_options: Vec<String>,
-    /// `None`: every resource.
+    /// `None`: every resource. An empty list is refused.
     pub resources: Option<Vec<ArgoSyncResource>>,
     pub acknowledge_sync_windows: bool,
 }
@@ -254,7 +254,7 @@ impl AppCore {
         namespace: &str,
         name: &str,
         patch: Value,
-    ) -> CoreResult<()> {
+    ) -> CoreResult<Value> {
         let request = object_request(&applications(), Some(namespace), name)?;
         let client = self.cluster_client(id)?;
         let patch = Patch::Merge(patch);
@@ -262,8 +262,7 @@ impl AppCore {
             &client,
             request.patch(name, &PatchParams::default(), &patch),
         )
-        .await?;
-        Ok(())
+        .await
     }
 
     /// Asks the controller to compare the Application with its source again. A hard refresh
@@ -277,13 +276,15 @@ impl AppCore {
     ) -> CoreResult<()> {
         let kind = if hard { "hard" } else { "normal" };
         let patch = json!({ "metadata": { "annotations": { REFRESH: kind } } });
-        self.patch_application(id, namespace, name, patch).await
+        self.patch_application(id, namespace, name, patch).await?;
+        Ok(())
     }
 
     /// Deletes an Application. With `cascade`, the resources finalizer makes the controller
     /// delete the deployed resources first. Without it, that finalizer is removed and the
-    /// resources stay. The finalizer patch carries the uid and `resourceVersion` it read, and
-    /// the delete carries the uid, so a replacement under the same name is left alone.
+    /// resources stay. The finalizer patch carries the uid and `resourceVersion` it read. The
+    /// delete carries the uid and the `resourceVersion` of the Application whose finalizers were
+    /// checked, so neither a replacement nor a finalizer put back in between is deleted.
     pub async fn argocd_delete(
         &self,
         id: &ClusterId,
@@ -292,35 +293,61 @@ impl AppCore {
         cascade: bool,
     ) -> CoreResult<()> {
         let mut attempt = 1;
-        let (uid, deleting) = loop {
+        loop {
             let app = self
                 .fetch_object(id, &applications(), Some(namespace), name)
                 .await?;
-            let uid = metadata_text(&app, "uid")?;
-            let deleting = is_deleting(&app);
-            let Some(finalizers) = delete_finalizers(&app, cascade, name)? else {
-                break (uid, deleting);
-            };
-            let version = metadata_text(&app, "resourceVersion")?;
-            let patch = json!({
-                "metadata": { "uid": uid, "resourceVersion": version, "finalizers": finalizers },
-            });
-            match self.patch_application(id, namespace, name, patch).await {
-                Ok(()) => break (uid, deleting),
+            match self
+                .delete_as_read(id, namespace, name, cascade, &app)
+                .await
+            {
                 Err(error) if again(&error, &mut attempt) => tokio::time::sleep(RETRY_DELAY).await,
-                Err(error) => return Err(error),
+                result => return result,
+            }
+        }
+    }
+
+    /// One attempt of `argocd_delete`, from the Application as read.
+    async fn delete_as_read(
+        &self,
+        id: &ClusterId,
+        namespace: &str,
+        name: &str,
+        cascade: bool,
+        app: &Value,
+    ) -> CoreResult<()> {
+        let uid = metadata_text(app, "uid")?;
+        let patched;
+        let settled = match delete_finalizers(app, cascade, name)? {
+            None => app,
+            Some(finalizers) => {
+                let version = metadata_text(app, "resourceVersion")?;
+                let patch = json!({
+                    "metadata": { "uid": uid, "resourceVersion": version, "finalizers": finalizers },
+                });
+                patched = self.patch_application(id, namespace, name, patch).await?;
+                &patched
             }
         };
+        // Something put the finalizers back, such as an admission policy or another controller.
+        // Deleting now would do what the user did not choose.
+        if delete_finalizers(settled, cascade, name)?.is_some() {
+            return Err(IpcError::new(
+                ErrorCode::Conflict,
+                format!("the finalizers of {name} changed back, so it was not deleted"),
+            ));
+        }
         // Deleted already: the patch let the deletion finish, or the controller is on it. A
         // second delete would find nothing once the last finalizer is gone.
-        if deleting {
+        if is_deleting(settled) {
             return Ok(());
         }
+        let version = metadata_text(settled, "resourceVersion")?;
         let request = object_request(&applications(), Some(namespace), name)?;
         let client = self.cluster_client(id)?;
         let params = DeleteParams::default().preconditions(Preconditions {
             uid: Some(uid),
-            resource_version: None,
+            resource_version: Some(version),
         });
         send(&client, request.delete(name, &params)).await?;
         Ok(())

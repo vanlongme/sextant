@@ -71,8 +71,14 @@ pub(super) fn sync_options(app: &Value, asked: &[String]) -> Option<Value> {
         .cloned()
 }
 
-/// Refuses a resource without a kind or a name, before anything is read.
+/// Refuses a resource without a kind or a name, and an empty list, before anything is read.
+/// An empty list would otherwise sync every resource, prune included.
 pub(super) fn check_resources(options: &ArgoSyncOptions) -> CoreResult<()> {
+    if options.resources.as_ref().is_some_and(Vec::is_empty) {
+        return Err(invalid(
+            "no resource is chosen to sync; send none to sync them all",
+        ));
+    }
     for resource in options.resources.iter().flatten() {
         if resource.kind.trim().is_empty() || resource.name.trim().is_empty() {
             return Err(invalid("each resource to sync needs a kind and a name"));
@@ -748,5 +754,17 @@ mod tests {
         );
         app["metadata"]["uid"] = json!("u-1");
         assert_eq!(metadata_text(&app, "uid").unwrap(), "u-1");
+    }
+
+    #[test]
+    fn an_empty_list_of_resources_is_refused_rather_than_syncing_them_all() {
+        let none = ArgoSyncOptions {
+            resources: Some(Vec::new()),
+            ..options()
+        };
+        assert_eq!(
+            check_resources(&none).unwrap_err().code,
+            ErrorCode::InvalidInput
+        );
     }
 }
