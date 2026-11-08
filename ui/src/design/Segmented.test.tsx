@@ -63,3 +63,41 @@ test("choosing an option reports its value, and each option has its test id", ()
   fireEvent.click(screen.getByTestId("t-light"));
   expect(onChange).toHaveBeenCalledWith("light");
 });
+
+test("an arrow-key choice (a native change with no click) reports its value", () => {
+  const onChange = vi.fn();
+  render(
+    <Segmented
+      label="Theme"
+      value="dark"
+      options={OPTIONS}
+      onChange={onChange}
+      testId="t"
+    />,
+  );
+  const light = screen
+    .getByTestId("t-light")
+    .querySelector("input") as HTMLInputElement;
+  light.checked = true;
+  fireEvent.change(light);
+  expect(onChange).toHaveBeenCalledTimes(1);
+  expect(onChange).toHaveBeenCalledWith("light");
+});
+
+test("a native change to the already-selected value does not report", () => {
+  const onChange = vi.fn();
+  render(
+    <Segmented
+      label="Theme"
+      value="dark"
+      options={OPTIONS}
+      onChange={onChange}
+      testId="t"
+    />,
+  );
+  const dark = screen
+    .getByTestId("t-dark")
+    .querySelector("input") as HTMLInputElement;
+  fireEvent.change(dark);
+  expect(onChange).not.toHaveBeenCalled();
+});
