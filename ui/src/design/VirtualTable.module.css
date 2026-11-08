@@ -2,8 +2,7 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  background: var(--surface-card);
 }
 
 .table {
@@ -15,7 +14,7 @@
 .cell {
   display: block;
   min-width: 0;
-  padding: 0 var(--space-2);
+  padding: 0 var(--space-7);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -26,13 +25,13 @@
   position: sticky;
   top: 0;
   z-index: 1;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  background: var(--surface-card);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .head .cell {
-  color: var(--text-muted);
-  font-weight: 500;
+  color: var(--text-secondary);
+  font: var(--type-caption);
   text-align: left;
 }
 
@@ -52,11 +51,16 @@
   top: 0;
   left: 0;
   width: 100%;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--divider);
 }
 
 .bodyRow:hover {
-  background: var(--surface-2);
+  background: var(--surface-hover);
+}
+
+.bodyRow.selected:hover,
+.bodyRow.active:hover {
+  background: var(--surface-selected);
 }
 
 .clickable {
@@ -64,21 +68,23 @@
 }
 
 .clickable:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--focus-ring-color);
 }
 
 .selected {
-  background: var(--surface-2);
+  background: var(--surface-selected);
 }
 
 .active {
-  box-shadow: inset 2px 0 0 var(--accent);
+  background: var(--surface-selected);
+  box-shadow: inset 2px 0 0 var(--focus-ring-color);
 }
 
 .sort {
   padding: 0;
   border: 0;
+  border-radius: var(--radius-xs);
   background: transparent;
   color: inherit;
   font: inherit;
@@ -86,6 +92,6 @@
 }
 
 .sort:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline: none;
+  box-shadow: var(--focus-ring);
 }

@@ -5,8 +5,8 @@
   flex-direction: column;
   max-height: 80vh;
   min-height: 0;
-  background: var(--surface);
-  border-top: 1px solid var(--border);
+  background: var(--surface-card);
+  border-top: 1px solid var(--border-default);
 }
 
 .resize {
@@ -20,25 +20,31 @@
   touch-action: none;
 }
 
-.resize:hover,
+.resize:hover {
+  background: var(--border-strong-color);
+}
+
 .resize:focus-visible {
-  background: var(--accent);
   outline: none;
+  background: var(--surface-accent);
+  box-shadow: var(--focus-ring);
 }
 
 .bar {
   flex: none;
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-5);
   min-height: 32px;
-  padding: 0 var(--space-2);
+  padding: 0 var(--space-5);
+  background: var(--surface-sunken);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .tabs {
   flex: 1;
   display: flex;
-  gap: var(--space-1);
+  gap: var(--space-3);
   min-width: 0;
   overflow-x: auto;
 }
@@ -48,55 +54,61 @@
   display: flex;
   align-items: center;
   max-width: 240px;
-  border-radius: var(--radius);
+  height: 26px;
+  border-radius: var(--radius-control);
 }
 
 .tab[data-active="true"] {
-  background: var(--surface-2);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-1);
 }
 
 .tabLabel {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--space-4);
   min-width: 0;
-  padding: var(--space-1) var(--space-2);
+  height: 100%;
+  padding: 0 var(--space-5);
   overflow: hidden;
   background: none;
   border: none;
-  color: var(--text-muted);
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  font: var(--type-label);
   cursor: pointer;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .tab[data-active="true"] .tabLabel {
-  color: var(--text);
+  color: var(--text-primary);
 }
 
 .dirty {
-  color: var(--accent);
+  color: var(--text-accent);
   font-size: 10px;
 }
 
 .tabClose {
   display: inline-flex;
-  padding: var(--space-1);
+  padding: var(--space-3);
   background: none;
   border: none;
-  border-radius: var(--radius);
-  color: var(--text-muted);
+  border-radius: var(--radius-xs);
+  color: var(--text-secondary);
   cursor: pointer;
 }
 
 .tabClose:hover {
-  color: var(--text);
+  background: var(--surface-hover);
+  color: var(--text-primary);
 }
 
 .tabLabel:focus-visible,
 .tabClose:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--focus-ring-color);
 }
 
 .panel {

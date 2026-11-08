@@ -2,22 +2,33 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: var(--control-sm);
+  height: var(--control-sm);
   padding: 0;
-  border: 1px solid transparent;
-  border-radius: var(--radius);
+  border: 0;
+  border-radius: var(--radius-control);
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   cursor: pointer;
+  transition: var(--transition-control);
 }
 
 .button:hover:not(:disabled) {
-  background: var(--surface-2);
-  color: var(--text);
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.button:active:not(:disabled) {
+  background: var(--surface-pressed);
+  transform: scale(var(--press-scale));
+}
+
+.button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .button:disabled {
-  opacity: 0.55;
+  opacity: 0.4;
   cursor: not-allowed;
 }

@@ -7,6 +7,7 @@ import "monaco-editor/editor/contrib/wordOperations/browser/wordOperations";
 import "monaco-editor/editor/contrib/linesOperations/browser/linesOperations";
 import "monaco-editor/editor/contrib/comment/browser/comment";
 import "monaco-editor/editor/contrib/find/browser/findController";
+import { PALETTE, type Palette } from "../../design/palette";
 
 // Everything here is bundled by Vite and loaded from the app itself, never a CDN.
 self.MonacoEnvironment = { getWorker: () => new EditorWorker() };
@@ -14,77 +15,40 @@ self.MonacoEnvironment = { getWorker: () => new EditorWorker() };
 const DARK = "skopos-dark";
 const LIGHT = "skopos-light";
 
-/** A Monaco theme from the spec's color tokens. Monaco cannot read CSS variables. */
-function defineTheme(
-  name: string,
-  base: "vs-dark" | "vs",
-  t: {
-    bg: string;
-    surface: string;
-    surface2: string;
-    border: string;
-    text: string;
-    muted: string;
-    accent: string;
-    accent2: string;
-    ok: string;
-    info: string;
-  },
-): void {
+/** A Monaco theme from the design tokens. Monaco cannot read CSS variables. */
+function defineTheme(name: string, base: "vs-dark" | "vs", p: Palette): void {
   const plain = (color: string) => color.slice(1);
   monaco.editor.defineTheme(name, {
     base,
     inherit: true,
     rules: [
-      { token: "", foreground: plain(t.text) },
-      { token: "comment", foreground: plain(t.muted) },
-      { token: "type", foreground: plain(t.accent2) },
-      { token: "string", foreground: plain(t.ok) },
-      { token: "number", foreground: plain(t.info) },
-      { token: "keyword", foreground: plain(t.accent) },
-      { token: "operators", foreground: plain(t.muted) },
-      { token: "delimiter", foreground: plain(t.muted) },
+      { token: "", foreground: plain(p.textPrimary) },
+      { token: "comment", foreground: plain(p.textTertiary) },
+      { token: "type", foreground: plain(p.key) },
+      { token: "string", foreground: plain(p.string) },
+      { token: "number", foreground: plain(p.number) },
+      { token: "keyword", foreground: plain(p.number) },
+      { token: "operators", foreground: plain(p.textSecondary) },
+      { token: "delimiter", foreground: plain(p.textSecondary) },
     ],
     colors: {
-      "editor.background": t.bg,
-      "editor.foreground": t.text,
-      "editor.lineHighlightBackground": t.surface2,
-      "editor.lineHighlightBorder": t.surface2,
-      "editor.selectionBackground": `${t.accent}55`,
-      "editorCursor.foreground": t.accent,
-      "editorLineNumber.foreground": t.muted,
-      "editorLineNumber.activeForeground": t.text,
-      "editorWidget.background": t.surface,
-      "editorWidget.border": t.border,
-      focusBorder: t.accent,
+      "editor.background": p.surfaceCard,
+      "editor.foreground": p.textPrimary,
+      "editor.lineHighlightBackground": p.surfaceSunken,
+      "editor.lineHighlightBorder": p.surfaceSunken,
+      "editor.selectionBackground": `${p.accent}33`,
+      "editorCursor.foreground": p.accent,
+      "editorLineNumber.foreground": p.textTertiary,
+      "editorLineNumber.activeForeground": p.textPrimary,
+      "editorWidget.background": p.surfaceCard,
+      "editorWidget.border": p.border,
+      focusBorder: p.accent,
     },
   });
 }
 
-defineTheme(DARK, "vs-dark", {
-  bg: "#0f1416",
-  surface: "#161d20",
-  surface2: "#1d262a",
-  border: "#2a3539",
-  text: "#e4ebee",
-  muted: "#93a3a9",
-  accent: "#d4a24c",
-  accent2: "#3fb6a8",
-  ok: "#4cbb7d",
-  info: "#5aa7e0",
-});
-defineTheme(LIGHT, "vs", {
-  bg: "#f6f7f5",
-  surface: "#ffffff",
-  surface2: "#eef1ee",
-  border: "#d7dcd8",
-  text: "#1b2326",
-  muted: "#5b6a70",
-  accent: "#a8741a",
-  accent2: "#0f857a",
-  ok: "#1f8a50",
-  info: "#2a70ad",
-});
+defineTheme(DARK, "vs-dark", PALETTE.dark);
+defineTheme(LIGHT, "vs", PALETTE.light);
 
 /** The Monaco theme that goes with the app's `data-theme`. */
 export function currentTheme(): string {

@@ -12,7 +12,7 @@ export function ClusterHome(props: {
 }) {
   const { info } = props;
   return (
-    <section className={styles.panel} aria-label="Cluster">
+    <section className={`${styles.panel} ${styles.home}`} aria-label="Cluster">
       <dl className={styles.facts}>
         <dt>Version</dt>
         <dd data-testid="cluster-info-version">{info.version}</dd>

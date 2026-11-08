@@ -2,28 +2,31 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--space-2);
-  padding: var(--space-3);
-  border: 1px solid var(--danger);
-  border-radius: var(--radius);
-  background: var(--surface);
+  gap: var(--space-5);
+  padding: var(--space-9);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--status-critical-soft);
+  box-shadow: var(--shadow-1);
 }
 
 .title {
-  color: var(--danger);
+  color: var(--status-critical-text);
+  font: var(--type-label);
 }
 
 .message {
   margin: 0;
+  color: var(--text-primary);
   user-select: text;
 }
 
 .details {
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 .details pre {
-  margin: var(--space-1) 0 0;
+  margin: var(--space-3) 0 0;
   white-space: pre-wrap;
-  font-size: 12px;
+  font: var(--type-mono);
 }

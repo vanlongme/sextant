@@ -10,7 +10,7 @@ export function clusterInitials(name: string): string {
 }
 
 // Mid-tone hues that carry white initials in both the dark and light themes.
-const PALETTE = [
+export const CLUSTER_PALETTE: readonly string[] = [
   "#b5651d",
   "#2f7d6d",
   "#3d6fa8",
@@ -27,5 +27,5 @@ export function clusterColor(id: string): string {
   for (let i = 0; i < id.length; i++) {
     hash = Math.imul(hash ^ id.charCodeAt(i), 0x01000193);
   }
-  return PALETTE[(hash >>> 0) % PALETTE.length] as string;
+  return CLUSTER_PALETTE[(hash >>> 0) % CLUSTER_PALETTE.length] as string;
 }

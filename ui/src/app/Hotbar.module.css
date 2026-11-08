@@ -2,18 +2,18 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-5);
   min-height: 0;
-  padding: var(--space-2) 0;
-  background: var(--surface);
-  border-right: 1px solid var(--border);
+  padding: var(--space-5) 0;
+  background: var(--surface-sunken);
+  border-right: 1px solid var(--border-subtle);
   overflow-y: auto;
 }
 
 .list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-5);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -31,21 +31,30 @@
   width: 40px;
   height: 40px;
   padding: 0;
-  border: 2px solid transparent;
-  border-radius: var(--radius);
+  border: 0;
+  border-radius: var(--radius-md);
   color: #ffffff;
-  font-weight: 600;
+  font: var(--type-label);
+  font-weight: var(--weight-semibold);
   cursor: pointer;
+  transition: var(--transition-control);
 }
 
 .item[aria-current="page"] {
-  border-color: var(--accent);
+  box-shadow:
+    0 0 0 3px var(--surface-selected),
+    0 0 0 5px var(--focus-ring-color);
+}
+
+.item:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .icon {
   width: 100%;
   height: 100%;
-  border-radius: calc(var(--radius) - 2px);
+  border-radius: var(--radius-md);
   object-fit: cover;
 }
 
@@ -56,7 +65,7 @@
   display: flex;
   padding: 2px;
   border-radius: 50%;
-  background: var(--surface);
+  background: var(--surface-sunken);
 }
 
 .tipName {
@@ -73,16 +82,25 @@
   align-items: center;
   justify-content: center;
   width: 40px;
-  height: 32px;
+  height: var(--control-md);
   flex-shrink: 0;
-  border-radius: var(--radius);
-  color: var(--text-muted);
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
 }
 
-.link:hover,
+.link:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
 .link[aria-current="page"] {
-  background: var(--surface-2);
-  color: var(--text);
+  background: var(--surface-selected);
+  color: var(--text-accent);
+}
+
+.link:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .spacer {

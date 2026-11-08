@@ -26,9 +26,10 @@ export interface TableColumn<T> {
 
 export type TableSort = { id: string; dir: "asc" | "desc" };
 
-const DEFAULT_ROW_HEIGHT = 28;
+const DEFAULT_ROW_HEIGHT = 34;
 const OVERSCAN = 10;
-const SELECT_TRACK_PX = 32;
+/** 12 px cell padding on each side of the 18 px checkbox, plus 2 px to spare. */
+const SELECT_TRACK_PX = 44;
 const CLOCK_TICK_MS = 30_000;
 
 let clockNow = Date.now();

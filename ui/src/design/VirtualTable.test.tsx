@@ -352,3 +352,16 @@ test("the checkbox of a row reads its label", () => {
   );
   expect(checkbox("Select row a")).toBeTruthy();
 });
+
+test("rows are 34 px tall unless rowHeight says otherwise", () => {
+  render(
+    <VirtualTable
+      rows={[row("a")]}
+      columns={columns}
+      rowKey={rowKey}
+      rowTestId={rowTestId}
+      testId="table"
+    />,
+  );
+  expect(screen.getByTestId("row-a").style.height).toBe("34px");
+});

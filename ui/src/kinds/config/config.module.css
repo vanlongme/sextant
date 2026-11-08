@@ -1,8 +1,8 @@
 .rows {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  margin: 0 0 var(--space-3);
+  gap: var(--space-5);
+  margin: 0 0 var(--space-7);
   padding: 0;
   list-style: none;
 }
@@ -10,7 +10,7 @@
 .row {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: var(--space-3);
 }
 
 .head {
@@ -18,7 +18,7 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-2);
+  gap: var(--space-5);
 }
 
 .key {
@@ -27,21 +27,21 @@
 
 .removedKey {
   overflow-wrap: anywhere;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   text-decoration: line-through;
 }
 
 .actions {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-1);
+  gap: var(--space-3);
 }
 
 .value {
-  padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface-2);
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--surface-sunken);
   font-family: var(--font-mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -50,10 +50,10 @@
 
 .input {
   width: 100%;
-  padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--surface-card);
   font-family: var(--font-mono);
   resize: vertical;
 }
@@ -61,14 +61,14 @@
 .controls {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-5);
 }
 
 .addRow {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: var(--space-1);
+  gap: var(--space-3);
 }
 
 .addRow > button {
@@ -80,13 +80,13 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-2);
-  padding: var(--space-2);
-  border: 1px solid var(--warn);
-  border-radius: var(--radius);
+  gap: var(--space-5);
+  padding: var(--space-5);
+  border: 1px solid var(--status-warning);
+  border-radius: var(--radius-control);
 }
 
 .muted {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
