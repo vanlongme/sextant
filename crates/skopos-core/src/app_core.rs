@@ -26,7 +26,7 @@ use crate::prefs::{ClusterSettings, Prefs};
 use crate::resources::{RunningDrain, WatchHub};
 use crate::sessions::SessionRegistry;
 use crate::store::{JsonStore, StoreWarning};
-use crate::tools::Tools;
+use crate::tools::{ToolProgress, Tools};
 use crate::ui_state::UiState;
 
 const STORE_VERSION: u32 = 1;
@@ -58,6 +58,9 @@ pub enum CoreEvent {
     },
     PortForwardsChanged {
         forwards: Vec<PortForward>,
+    },
+    ToolProgress {
+        progress: ToolProgress,
     },
 }
 
@@ -224,6 +227,11 @@ impl AppCore {
                 startup_warnings: Mutex::new(warnings),
             }),
         })
+    }
+
+    /// Nobody may be subscribed yet; subscribers read the current state when they start.
+    pub(crate) fn emit(&self, event: CoreEvent) {
+        let _ = self.inner.events.send(event);
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<CoreEvent> {

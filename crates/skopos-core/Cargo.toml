@@ -9,6 +9,7 @@ base64 = "0.22"
 dashmap.workspace = true
 futures.workspace = true
 directories = "6"
+flate2 = "1.1"
 http = "1"
 k8s-openapi.workspace = true
 kube.workspace = true
@@ -16,10 +17,13 @@ notify = "8.2"
 notify-debouncer-full = "0.7"
 portable-pty = "0.9"
 regex.workspace = true
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "http2", "system-proxy", "stream"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 serde.workspace = true
 serde_json.workspace = true
 serde_yaml_ng.workspace = true
 sha2.workspace = true
+tar = { version = "0.4", default-features = false }
 tempfile.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
@@ -27,9 +31,11 @@ tokio-util.workspace = true
 tracing.workspace = true
 ts-rs.workspace = true
 url = "2"
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
 [dev-dependencies]
+axum.workspace = true
 skopos-fakekube = { path = "../skopos-fakekube" }

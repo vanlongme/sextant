@@ -1,25 +1,30 @@
 //! helm and kubectl (F14): where each one is, its version, and the managed downloads.
 //! Lookup touches no network.
 
+pub mod download;
 pub mod pinned;
 
 use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, PoisonError};
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
+use futures::future::{BoxFuture, FutureExt, Shared};
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 use ts_rs::TS;
 
-use crate::app_core::AppCore;
+use crate::app_core::{AppCore, CoreEvent};
 use crate::error::{sanitize_text, CoreResult, ErrorCode, IpcError};
 use crate::process::{self, Output, ProcessSpec};
+use download::{DownloadLimits, ProgressGate};
 use pinned::{current_platform, pinned_downloads, PinnedDownload};
 
 const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
 const VERSION_OUTPUT_LIMIT: usize = 64 * 1024;
+/// While downloading, progress goes out at most this often.
+const PROGRESS_EVERY: Duration = Duration::from_millis(200);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -74,6 +79,32 @@ pub struct ToolStatus {
     pub managed_version: Option<String>,
     pub managed_installed: bool,
     pub downloading: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum ToolPhase {
+    Downloading,
+    Verifying,
+    Extracting,
+    Done,
+    Failed,
+}
+
+/// The payload of `tools://progress`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ToolProgress {
+    pub tool: ToolName,
+    pub phase: ToolPhase,
+    #[ts(type = "number")]
+    pub received_bytes: u64,
+    #[ts(type = "number | null")]
+    pub total_bytes: Option<u64>,
+    /// Set when `phase` is `failed`.
+    pub error: Option<IpcError>,
 }
 
 /// A tool ready to run.
@@ -234,6 +265,9 @@ pub struct ToolsConfig {
     pub downloads: Vec<PinnedDownload>,
     /// `None` reads `PATH` from the environment each time.
     pub search_path: Option<OsString>,
+    pub limits: DownloadLimits,
+    /// Tests serve downloads over plain HTTP from a local server.
+    pub https_only: bool,
 }
 
 impl Default for ToolsConfig {
@@ -241,6 +275,8 @@ impl Default for ToolsConfig {
         ToolsConfig {
             downloads: pinned_downloads(),
             search_path: None,
+            limits: DownloadLimits::default(),
+            https_only: true,
         }
     }
 }
@@ -263,6 +299,13 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+type DownloadResult = Shared<BoxFuture<'static, CoreResult<ToolStatus>>>;
+
+struct RunningDownload {
+    cancel: CancellationToken,
+    result: DownloadResult,
+}
+
 /// What `AppCore` keeps for tools.
 pub(crate) struct Tools {
     /// `<data>/tools`
@@ -270,6 +313,7 @@ pub(crate) struct Tools {
     config: Mutex<ToolsConfig>,
     /// Versions read, by path, valid while the file keeps its size and modification time.
     versions: Mutex<HashMap<PathBuf, (FileStamp, String)>>,
+    downloads: Mutex<HashMap<ToolName, RunningDownload>>,
 }
 
 impl Tools {
@@ -278,7 +322,17 @@ impl Tools {
             root: data.join("tools"),
             config: Mutex::new(ToolsConfig::default()),
             versions: Mutex::new(HashMap::new()),
+            downloads: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// A copy, so a download keeps one config from start to end.
+    pub(crate) fn config(&self) -> ToolsConfig {
+        lock(&self.config).clone()
+    }
+
+    pub(crate) fn is_downloading(&self, tool: ToolName) -> bool {
+        lock(&self.downloads).contains_key(&tool)
     }
 
     pub(crate) fn search_path(&self) -> Option<OsString> {
@@ -329,6 +383,58 @@ impl Tools {
     }
 }
 
+/// Sends `tools://progress` for one download.
+struct Progress {
+    core: AppCore,
+    tool: ToolName,
+    received: u64,
+    total: Option<u64>,
+    gate: ProgressGate,
+}
+
+impl Progress {
+    fn send(&self, phase: ToolPhase, error: Option<IpcError>) {
+        self.core.emit(CoreEvent::ToolProgress {
+            progress: ToolProgress {
+                tool: self.tool,
+                phase,
+                received_bytes: self.received,
+                total_bytes: self.total,
+                error,
+            },
+        });
+    }
+
+    fn downloading(&mut self, received: u64, total: Option<u64>) {
+        self.received = received;
+        self.total = total;
+        if self.gate.ready(Instant::now()) {
+            self.send(ToolPhase::Downloading, None);
+        }
+    }
+}
+
+/// Removes everything in the tool's folder but `keep`: older versions, and the temp files
+/// and staging folders a crash left.
+fn remove_other_entries(dir: &Path, keep: &str) {
+    let Ok(read) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for item in read.flatten() {
+        if item.file_name() == keep {
+            continue;
+        }
+        let path = item.path();
+        let removed = match item.file_type() {
+            Ok(kind) if kind.is_dir() => std::fs::remove_dir_all(&path),
+            _ => std::fs::remove_file(&path),
+        };
+        if let Err(error) = removed {
+            tracing::warn!("cannot remove {}: {error}", path.display());
+        }
+    }
+}
+
 struct Inspection {
     source: ToolSource,
     path: Option<PathBuf>,
@@ -359,7 +465,7 @@ impl AppCore {
             problem: found.problem,
             managed_version: pinned.map(|entry| entry.version),
             managed_installed: managed.as_deref().is_some_and(is_executable),
-            downloading: false,
+            downloading: tools.is_downloading(tool),
         }
     }
 
@@ -430,6 +536,179 @@ impl AppCore {
             version,
             problem,
         }
+    }
+
+    /// Installs the pinned managed copy, then resolves with the tool's status. A call while a
+    /// download of the same tool runs waits for it and gets its result.
+    pub async fn tools_download(&self, tool: ToolName) -> CoreResult<ToolStatus> {
+        let result = {
+            let mut downloads = lock(&self.tools().downloads);
+            match downloads.get(&tool) {
+                Some(running) => running.result.clone(),
+                None => {
+                    let cancel = CancellationToken::new();
+                    let core = self.clone();
+                    let token = cancel.clone();
+                    let task = tokio::spawn(async move { core.run_download(tool, token).await });
+                    let result = async move {
+                        task.await.unwrap_or_else(|error| {
+                            Err(IpcError::new(
+                                ErrorCode::Internal,
+                                format!("the download stopped: {error}"),
+                            ))
+                        })
+                    }
+                    .boxed()
+                    .shared();
+                    let running = RunningDownload {
+                        cancel,
+                        result: result.clone(),
+                    };
+                    downloads.insert(tool, running);
+                    result
+                }
+            }
+        };
+        result.await
+    }
+
+    /// Stops the tool's download, if one runs; it then rejects with `Cancelled`.
+    pub fn tools_download_cancel(&self, tool: ToolName) {
+        if let Some(running) = lock(&self.tools().downloads).get(&tool) {
+            running.cancel.cancel();
+        }
+    }
+
+    async fn run_download(
+        &self,
+        tool: ToolName,
+        cancel: CancellationToken,
+    ) -> CoreResult<ToolStatus> {
+        let mut progress = Progress {
+            core: self.clone(),
+            tool,
+            received: 0,
+            total: None,
+            gate: ProgressGate::new(PROGRESS_EVERY),
+        };
+        let installed = self.install_tool(tool, &cancel, &mut progress).await;
+        // Off the list before anyone hears the end, so a status read then is current.
+        lock(&self.tools().downloads).remove(&tool);
+        match installed {
+            Ok(()) => {
+                progress.send(ToolPhase::Done, None);
+                Ok(self.tool_status(tool).await)
+            }
+            Err(error) => {
+                progress.send(ToolPhase::Failed, Some(error.clone()));
+                Err(error)
+            }
+        }
+    }
+
+    async fn install_tool(
+        &self,
+        tool: ToolName,
+        cancel: &CancellationToken,
+        progress: &mut Progress,
+    ) -> CoreResult<()> {
+        let tools = self.tools();
+        let config = tools.config();
+        let name = tool.as_str();
+        let entry = tools.pinned(tool).ok_or_else(|| {
+            let (os, arch) = current_platform().unwrap_or(("this OS", "this architecture"));
+            IpcError::new(
+                ErrorCode::InvalidInput,
+                format!("there is no managed download of {name} for {os} {arch}"),
+            )
+        })?;
+        let binary = tools.managed_path(&entry);
+        // A copy already in place is kept while it runs and reports the pinned version.
+        if is_executable(&binary)
+            && tools
+                .version(tool, &binary, cancel)
+                .await
+                .is_ok_and(|version| version == entry.version)
+        {
+            return Ok(());
+        }
+        let dir = tools.root.join(name);
+        tokio::fs::create_dir_all(&dir).await?;
+        let proxy = self.prefs_get().http_proxy;
+        let client = download::client(proxy.as_deref(), &config.limits, config.https_only)?;
+        let fetched = download::fetch(
+            &client,
+            &entry,
+            &dir,
+            &config.limits,
+            cancel,
+            &mut |received, total| progress.downloading(received, total),
+        )
+        .await?;
+        progress.received = fetched.received;
+        progress.send(ToolPhase::Verifying, None);
+        if fetched.sha256 != entry.sha256.to_ascii_lowercase() {
+            return Err(IpcError::new(
+                ErrorCode::Internal,
+                download::CHECKSUM_MISMATCH,
+            ));
+        }
+        progress.send(ToolPhase::Extracting, None);
+        let staging = tempfile::Builder::new()
+            .prefix(".staging-")
+            .tempdir_in(&dir)?;
+        let staged = staging.path().join(tool.binary());
+        let (target, wanted, max_bytes) = (staged.clone(), entry.clone(), config.limits.max_bytes);
+        tokio::task::spawn_blocking(move || {
+            let extracted = download::extract(fetched.file.path(), &wanted, &target, max_bytes);
+            // Deletes the download.
+            drop(fetched);
+            extracted
+        })
+        .await
+        .map_err(|error| {
+            IpcError::new(
+                ErrorCode::Internal,
+                format!("the extraction stopped: {error}"),
+            )
+        })??;
+        if cancel.is_cancelled() {
+            return Err(download::cancelled());
+        }
+        // The version check runs once, on the copy about to be put in place.
+        let version = read_version(tool, &staged, cancel)
+            .await
+            .map_err(|problem| {
+                if cancel.is_cancelled() {
+                    download::cancelled()
+                } else {
+                    IpcError::new(
+                        ErrorCode::Internal,
+                        format!("the downloaded {name} does not run: {problem}"),
+                    )
+                }
+            })?;
+        if version != entry.version {
+            return Err(IpcError::new(
+                ErrorCode::Internal,
+                format!(
+                    "the downloaded {name} reports {version}, not {}",
+                    entry.version
+                ),
+            ));
+        }
+        let version_dir = dir.join(&entry.version);
+        if version_dir.exists() {
+            std::fs::remove_dir_all(&version_dir)?;
+        }
+        let kept = staging.keep();
+        if let Err(error) = std::fs::rename(&kept, &version_dir) {
+            let _ = std::fs::remove_dir_all(&kept);
+            return Err(error.into());
+        }
+        tools.remember_version(&binary, version);
+        remove_other_entries(&dir, &entry.version);
+        Ok(())
     }
 }
 

@@ -151,6 +151,8 @@ fn run_app(core: AppCore, mut log_guard: Option<WorkerGuard>, context: Context<W
             commands::settings::prefs_get,
             commands::settings::prefs_set,
             commands::tools::tools_status,
+            commands::tools::tools_download,
+            commands::tools::tools_download_cancel,
         ])
         .setup(move |app| {
             events::spawn_forwarder(app.handle().clone(), forwarded);
