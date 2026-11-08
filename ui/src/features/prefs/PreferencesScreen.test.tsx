@@ -222,14 +222,18 @@ test("a failed save restores the list and shows the backend's message", async ()
   expect(screen.getAllByTestId("pref-source-row")).toHaveLength(2);
 });
 
-test("a theme change calls applyTheme and prefs_set", async () => {
+test("the theme is a Segmented control, and Dark applies and saves the theme", async () => {
   const ipc = show();
   await screen.findAllByTestId("pref-source-row");
 
-  fireEvent.keyDown(screen.getByRole("combobox", { name: "Theme" }), {
-    key: "Enter",
-  });
-  fireEvent.click(await screen.findByRole("option", { name: "Dark" }));
+  const group = screen.getByRole("radiogroup", { name: "Theme" });
+  expect(group.getAttribute("data-testid")).toBe("prefs-theme");
+  expect(
+    within(group)
+      .getAllByRole("radio")
+      .map((r) => r.closest("label")?.textContent),
+  ).toEqual(["System", "Dark", "Light"]);
+  fireEvent.click(screen.getByTestId("prefs-theme-dark"));
 
   expect(document.documentElement.dataset.theme).toBe("dark");
   await waitFor(() =>

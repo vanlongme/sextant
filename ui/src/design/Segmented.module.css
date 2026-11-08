@@ -1,0 +1,63 @@
+.track {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-inset);
+}
+
+.option {
+  position: relative;
+  display: flex;
+  cursor: pointer;
+}
+
+.input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  appearance: none;
+}
+
+.segment {
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius-xs);
+  color: var(--text-secondary);
+  transition: var(--transition-control);
+}
+
+.sm .segment {
+  height: 26px;
+  padding: 0 9px;
+  font: var(--type-caption);
+}
+
+.md .segment {
+  height: 32px;
+  padding: 0 12px;
+  font: var(--type-label);
+}
+
+.option:hover .segment {
+  color: var(--text-primary);
+}
+
+.input:checked + .segment {
+  background: var(--surface-card);
+  box-shadow: var(--shadow-1);
+  color: var(--text-primary);
+}
+
+.input:focus-visible + .segment {
+  box-shadow: var(--focus-ring);
+}
+
+.input:checked:focus-visible + .segment {
+  box-shadow: var(--shadow-1), var(--focus-ring);
+}

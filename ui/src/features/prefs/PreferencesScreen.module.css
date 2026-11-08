@@ -69,6 +69,10 @@
   min-width: 0;
 }
 
-.theme {
-  max-width: 240px;
+.themeRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-7);
+  min-height: 52px;
 }

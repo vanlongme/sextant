@@ -8,7 +8,7 @@ import {
   ErrorNotice,
   IconButton,
   Input,
-  Select,
+  Segmented,
   Spinner,
   toast,
 } from "../../design";
@@ -146,12 +146,15 @@ export function PreferencesScreen() {
       <Sources sources={prefs.syncSources} />
       <section className={styles.section}>
         <h3 className={styles.heading}>Appearance</h3>
-        <div className={styles.theme}>
-          <Select
+        <div className={styles.themeRow}>
+          <span>Theme</span>
+          <Segmented
             label="Theme"
+            size="sm"
             value={prefs.theme}
             options={THEMES}
             onChange={(theme) => void setTheme(theme)}
+            testId="prefs-theme"
           />
         </div>
       </section>
