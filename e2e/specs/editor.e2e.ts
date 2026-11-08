@@ -14,8 +14,8 @@ import {
   openCluster,
   openResource,
   resourceRowMenu,
-  searchResources,
   rowId,
+  searchResources,
   setEditorText,
   shown,
 } from "../helpers/ui";
