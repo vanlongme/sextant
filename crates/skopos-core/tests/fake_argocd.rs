@@ -8,7 +8,8 @@ use skopos_core::app_core::AppCore;
 use skopos_core::error::ErrorCode;
 use skopos_core::kubeconfig::ClusterId;
 use skopos_core::resources::{
-    ArgoSyncOptions, ArgoSyncResource, ArgoSyncStrategy, SYNC_WINDOWS_UNVERIFIED,
+    ArgoRollbackOptions, ArgoSyncOptions, ArgoSyncResource, ArgoSyncStrategy,
+    SYNC_WINDOWS_UNVERIFIED,
 };
 use skopos_fakekube::{DenyRule, FakeKube, FakeKubeConfig, FakeResource};
 use support::connected_fake;
@@ -306,4 +307,100 @@ async fn bad_arguments_are_refused_before_any_request() {
         .unwrap_err();
     assert_eq!(error.code, ErrorCode::InvalidInput);
     assert_eq!(fake.request_count(APP), 0);
+}
+
+fn rollback(history_id: i64) -> ArgoRollbackOptions {
+    ArgoRollbackOptions {
+        history_id,
+        prune: false,
+        dry_run: false,
+        acknowledge_sync_windows: false,
+    }
+}
+
+fn with_history() -> Value {
+    let mut app = application();
+    app["status"]["history"] = json!([{
+        "id": 1,
+        "revision": "aaa",
+        "source": application()["spec"]["source"],
+        "deployedAt": "2026-11-01T08:00:00Z",
+    }]);
+    app
+}
+
+#[tokio::test]
+async fn a_rollback_puts_a_sync_of_the_history_entry() {
+    let (core, fake, id, _root) = argocd(FakeKubeConfig::default()).await;
+    fake.upsert("applications", with_history());
+    fake.upsert("appprojects", project(NAMESPACE, json!([])));
+
+    core.argocd_rollback(&id, NAMESPACE, "guestbook", &rollback(1))
+        .await
+        .unwrap();
+
+    let puts = puts(&fake);
+    assert_eq!(puts.len(), 1);
+    let sync = &puts[0]["operation"]["sync"];
+    assert_eq!(sync["revision"], "aaa");
+    assert_eq!(sync["syncStrategy"], json!({ "apply": {} }));
+    assert_eq!(puts[0]["operation"]["initiatedBy"]["username"], "skopos");
+}
+
+#[tokio::test]
+async fn a_rollback_asks_about_windows_and_refuses_a_running_operation() {
+    let (core, fake, id, _root) = argocd(FakeKubeConfig::default()).await;
+    fake.upsert("applications", with_history());
+    let window = json!([{ "kind": "allow", "schedule": "0 22 * * *", "duration": "1h", "applications": ["*"] }]);
+    fake.upsert("appprojects", project(NAMESPACE, window));
+    let error = core
+        .argocd_rollback(&id, NAMESPACE, "guestbook", &rollback(1))
+        .await
+        .unwrap_err();
+    assert_eq!(error.details.as_deref(), Some(SYNC_WINDOWS_UNVERIFIED));
+
+    let mut running = with_history();
+    running["operation"] = json!({ "sync": {} });
+    fake.upsert("applications", running);
+    let acknowledged = ArgoRollbackOptions {
+        acknowledge_sync_windows: true,
+        ..rollback(1)
+    };
+    let error = core
+        .argocd_rollback(&id, NAMESPACE, "guestbook", &acknowledged)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::Conflict);
+    assert_eq!(error.details, None);
+    assert!(puts(&fake).is_empty());
+}
+
+#[tokio::test]
+async fn terminate_puts_the_terminating_phase_and_retries_a_conflict() {
+    let (core, fake, id, _root) = argocd(FakeKubeConfig::default()).await;
+    let mut app = application();
+    app["operation"] = json!({ "sync": {}, "initiatedBy": { "username": "someone" } });
+    app["status"]["operationState"] = json!({ "phase": "Running", "operation": { "sync": {} } });
+    fake.upsert("applications", app);
+    fake.fail_next_writes_to("applications", "guestbook", 409, 1);
+
+    core.argocd_terminate(&id, NAMESPACE, "guestbook")
+        .await
+        .unwrap();
+
+    let puts = puts(&fake);
+    assert_eq!(puts.len(), 2);
+    assert_eq!(puts[1]["status"]["operationState"]["phase"], "Terminating");
+    assert_eq!(puts[1]["operation"]["initiatedBy"]["username"], "someone");
+}
+
+#[tokio::test]
+async fn terminate_with_nothing_in_progress_is_refused_without_a_write() {
+    let (core, fake, id, _root) = ready().await;
+    let error = core
+        .argocd_terminate(&id, NAMESPACE, "guestbook")
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::InvalidInput);
+    assert!(puts(&fake).is_empty());
 }

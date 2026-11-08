@@ -3,7 +3,7 @@
 
 use serde_json::{json, Map, Value};
 
-use super::{ArgoSyncOptions, ArgoSyncStrategy};
+use super::{ArgoRollbackOptions, ArgoSyncOptions, ArgoSyncStrategy};
 use crate::error::{CoreResult, ErrorCode, IpcError};
 use crate::resources::invalid;
 
@@ -160,6 +160,79 @@ pub(super) fn with_operation(mut app: Value, operation: Value) -> CoreResult<Val
     fields.insert("operation".into(), operation);
     if let Some(status) = fields.get_mut("status").and_then(Value::as_object_mut) {
         status.remove("operationState");
+    }
+    Ok(app)
+}
+
+/// The sync operation that returns to one deployment of `status.history`, as the Argo CD API
+/// server writes it: that entry's revision and source, applied without hooks.
+pub(super) fn rollback_operation(
+    app: &Value,
+    options: &ArgoRollbackOptions,
+    name: &str,
+) -> CoreResult<Value> {
+    if auto_sync_enabled(app) {
+        return Err(invalid(format!(
+            "{name} cannot be rolled back while auto-sync is on"
+        )));
+    }
+    let id = options.history_id;
+    let entry = app
+        .pointer("/status/history")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .find(|entry| entry.get("id").and_then(Value::as_i64) == Some(id))
+        .ok_or_else(|| invalid(format!("{name} has no deployment with id {id}")))?;
+    let present = |field: &str| {
+        entry.get(field).filter(|value| match value {
+            Value::String(text) => !text.is_empty(),
+            Value::Array(items) => !items.is_empty(),
+            Value::Object(fields) => !fields.is_empty(),
+            _ => false,
+        })
+    };
+    if present("source").is_none() && present("sources").is_none() {
+        return Err(invalid(format!(
+            "deployment {id} of {name} records no source, so sync to its revision instead"
+        )));
+    }
+    let mut sync = Map::new();
+    for field in ["revision", "revisions", "source", "sources"] {
+        if let Some(value) = present(field) {
+            sync.insert(field.into(), value.clone());
+        }
+    }
+    sync.insert("prune".into(), options.prune.into());
+    sync.insert("dryRun".into(), options.dry_run.into());
+    sync.insert("syncStrategy".into(), json!({ "apply": {} }));
+    if let Some(sync_options) = sync_options(app, &[]) {
+        sync.insert("syncOptions".into(), sync_options);
+    }
+    let mut operation = Map::new();
+    operation.insert("sync".into(), Value::Object(sync));
+    operation.insert("initiatedBy".into(), json!({ "username": USERNAME }));
+    Ok(Value::Object(operation))
+}
+
+/// The Application with its operation marked `Terminating`, which the controller notices and
+/// stops. Refused unless an operation is in progress.
+pub(super) fn terminating(mut app: Value, name: &str) -> CoreResult<Value> {
+    let in_progress = app
+        .get("operation")
+        .is_some_and(|operation| !operation.is_null());
+    match app
+        .pointer_mut("/status/operationState")
+        .and_then(Value::as_object_mut)
+    {
+        Some(state) if in_progress => {
+            state.insert("phase".into(), "Terminating".into());
+        }
+        _ => {
+            return Err(invalid(format!(
+                "{name} has no operation in progress to terminate"
+            )))
+        }
     }
     Ok(app)
 }
@@ -423,5 +496,115 @@ mod tests {
             with_operation(json!("text"), json!({})).unwrap_err().code,
             ErrorCode::Internal
         );
+    }
+
+    fn with_history(entries: Value) -> Value {
+        let mut app = application();
+        app["status"] = json!({ "history": entries });
+        app
+    }
+
+    fn rollback(history_id: i64) -> ArgoRollbackOptions {
+        ArgoRollbackOptions {
+            history_id,
+            prune: true,
+            dry_run: false,
+            acknowledge_sync_windows: false,
+        }
+    }
+
+    #[test]
+    fn a_rollback_syncs_the_entrys_revision_and_source_without_hooks() {
+        let source = json!({
+            "repoURL": "https://git.example.com/apps.git",
+            "path": "guestbook",
+            "targetRevision": "v1",
+        });
+        let mut app = with_history(json!([
+            { "id": 1, "revision": "aaa", "source": source, "deployedAt": "2026-11-01T08:00:00Z" },
+            { "id": 2, "revision": "bbb", "source": source, "deployedAt": "2026-11-02T08:00:00Z" },
+        ]));
+        app["spec"]["syncPolicy"] = json!({
+            "syncOptions": ["CreateNamespace=true"],
+            "retry": { "limit": 2 },
+        });
+        assert_eq!(
+            rollback_operation(&app, &rollback(1), "guestbook").unwrap(),
+            json!({
+                "sync": {
+                    "revision": "aaa",
+                    "source": source,
+                    "prune": true,
+                    "dryRun": false,
+                    "syncStrategy": { "apply": {} },
+                    "syncOptions": ["CreateNamespace=true"],
+                },
+                "initiatedBy": { "username": "skopos" },
+            })
+        );
+    }
+
+    #[test]
+    fn a_rollback_of_several_sources_carries_each_revision() {
+        let sources = json!([
+            { "repoURL": "https://git.example.com/a.git" },
+            { "repoURL": "https://git.example.com/b.git" },
+        ]);
+        let app = with_history(json!([{
+            "id": 4,
+            "revisions": ["aaa", "bbb"],
+            "sources": sources,
+            "deployedAt": "2026-11-01T08:00:00Z",
+        }]));
+        let operation = rollback_operation(&app, &rollback(4), "guestbook").unwrap();
+        assert_eq!(operation["sync"]["revisions"], json!(["aaa", "bbb"]));
+        assert_eq!(operation["sync"]["sources"], sources);
+        assert!(operation.pointer("/sync/revision").is_none(), "{operation}");
+        assert!(operation.pointer("/sync/source").is_none(), "{operation}");
+    }
+
+    #[test]
+    fn a_rollback_is_refused_with_auto_sync_on_a_missing_entry_or_no_source() {
+        let source = json!({ "repoURL": "https://git.example.com/apps.git" });
+        let mut app = with_history(json!([
+            { "id": 1, "revision": "aaa", "source": source, "deployedAt": "2026-11-01T08:00:00Z" },
+            { "id": 2, "revision": "bbb", "deployedAt": "2026-11-02T08:00:00Z" },
+        ]));
+        let refused = |app: &Value, id: i64| {
+            rollback_operation(app, &rollback(id), "guestbook")
+                .unwrap_err()
+                .code
+        };
+        assert_eq!(refused(&app, 9), ErrorCode::InvalidInput);
+        assert_eq!(refused(&app, 2), ErrorCode::InvalidInput);
+        assert_eq!(refused(&application(), 1), ErrorCode::InvalidInput);
+        assert!(rollback_operation(&app, &rollback(1), "guestbook").is_ok());
+        app["spec"]["syncPolicy"] = json!({ "automated": { "prune": true } });
+        assert_eq!(refused(&app, 1), ErrorCode::InvalidInput);
+    }
+
+    #[test]
+    fn terminating_marks_the_operation_in_progress_and_keeps_the_rest() {
+        let mut app = application();
+        app["operation"] = json!({ "sync": {} });
+        app["status"] = json!({ "operationState": { "phase": "Running", "message": "syncing" } });
+        let written = terminating(app, "guestbook").unwrap();
+        assert_eq!(
+            written["status"]["operationState"],
+            json!({ "phase": "Terminating", "message": "syncing" })
+        );
+        assert_eq!(written["operation"], json!({ "sync": {} }));
+    }
+
+    #[test]
+    fn terminating_without_an_operation_in_progress_is_refused() {
+        let refused = |app: Value| terminating(app, "guestbook").unwrap_err().code;
+        let mut app = application();
+        assert_eq!(refused(app.clone()), ErrorCode::InvalidInput);
+        app["status"] = json!({ "operationState": { "phase": "Succeeded" } });
+        assert_eq!(refused(app.clone()), ErrorCode::InvalidInput);
+        app["operation"] = json!({ "sync": {} });
+        app["status"] = json!({});
+        assert_eq!(refused(app), ErrorCode::InvalidInput);
     }
 }

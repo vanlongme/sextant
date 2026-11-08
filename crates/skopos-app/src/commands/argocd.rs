@@ -2,7 +2,7 @@
 
 use skopos_core::error::IpcError;
 use skopos_core::kubeconfig::ClusterId;
-use skopos_core::resources::ArgoSyncOptions;
+use skopos_core::resources::{ArgoRollbackOptions, ArgoSyncOptions};
 use tauri::State;
 
 use crate::state::AppState;
@@ -18,5 +18,32 @@ pub async fn argocd_sync(
     state
         .core
         .argocd_sync(&cluster_id, &namespace, &name, &options)
+        .await
+}
+
+#[tauri::command]
+pub async fn argocd_rollback(
+    state: State<'_, AppState>,
+    cluster_id: ClusterId,
+    namespace: String,
+    name: String,
+    options: ArgoRollbackOptions,
+) -> Result<(), IpcError> {
+    state
+        .core
+        .argocd_rollback(&cluster_id, &namespace, &name, &options)
+        .await
+}
+
+#[tauri::command]
+pub async fn argocd_terminate(
+    state: State<'_, AppState>,
+    cluster_id: ClusterId,
+    namespace: String,
+    name: String,
+) -> Result<(), IpcError> {
+    state
+        .core
+        .argocd_terminate(&cluster_id, &namespace, &name)
         .await
 }

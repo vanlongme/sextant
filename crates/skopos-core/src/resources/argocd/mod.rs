@@ -20,7 +20,8 @@ use crate::app_core::AppCore;
 use crate::error::{CoreResult, ErrorCode, IpcError};
 use crate::kubeconfig::ClusterId;
 use operation::{
-    check_resources, refuse_if_deleting, refuse_if_running, sync_operation, with_operation,
+    check_resources, refuse_if_deleting, refuse_if_running, rollback_operation, sync_operation,
+    terminating, with_operation,
 };
 use windows::{has_sync_windows, project_location};
 
@@ -66,6 +67,18 @@ pub struct ArgoSyncOptions {
     pub sync_options: Vec<String>,
     /// `None`: every resource.
     pub resources: Option<Vec<ArgoSyncResource>>,
+    pub acknowledge_sync_windows: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct ArgoRollbackOptions {
+    /// The `id` of an entry in `status.history`.
+    #[ts(type = "number")]
+    pub history_id: i64,
+    pub prune: bool,
+    pub dry_run: bool,
     pub acknowledge_sync_windows: bool,
 }
 
@@ -178,6 +191,54 @@ impl AppCore {
             self.check_sync_windows(id, &app, options.acknowledge_sync_windows)
                 .await?;
             let app = with_operation(app, operation)?;
+            match self.put_application(id, namespace, name, &app).await {
+                Err(error) if again(&error, &mut attempt) => tokio::time::sleep(RETRY_DELAY).await,
+                result => return result,
+            }
+        }
+    }
+
+    /// Returns to one deployment of `status.history` by starting a sync of that entry's
+    /// revision and source. Refused while auto-sync is on, because auto-sync would undo it.
+    pub async fn argocd_rollback(
+        &self,
+        id: &ClusterId,
+        namespace: &str,
+        name: &str,
+        options: &ArgoRollbackOptions,
+    ) -> CoreResult<()> {
+        let mut attempt = 1;
+        loop {
+            let app = self
+                .fetch_object(id, &applications(), Some(namespace), name)
+                .await?;
+            refuse_if_deleting(&app, name)?;
+            let operation = rollback_operation(&app, options, name)?;
+            refuse_if_running(&app, name)?;
+            self.check_sync_windows(id, &app, options.acknowledge_sync_windows)
+                .await?;
+            let app = with_operation(app, operation)?;
+            match self.put_application(id, namespace, name, &app).await {
+                Err(error) if again(&error, &mut attempt) => tokio::time::sleep(RETRY_DELAY).await,
+                result => return result,
+            }
+        }
+    }
+
+    /// Asks the controller to stop the operation in progress by setting its phase to
+    /// `Terminating`. The controller ends the operation and removes `operation`.
+    pub async fn argocd_terminate(
+        &self,
+        id: &ClusterId,
+        namespace: &str,
+        name: &str,
+    ) -> CoreResult<()> {
+        let mut attempt = 1;
+        loop {
+            let app = self
+                .fetch_object(id, &applications(), Some(namespace), name)
+                .await?;
+            let app = terminating(app, name)?;
             match self.put_application(id, namespace, name, &app).await {
                 Err(error) if again(&error, &mut attempt) => tokio::time::sleep(RETRY_DELAY).await,
                 result => return result,

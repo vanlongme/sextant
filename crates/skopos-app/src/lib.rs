@@ -111,6 +111,8 @@ fn run_app(core: AppCore, mut log_guard: Option<WorkerGuard>, context: Context<W
             commands::actions::secret_update,
             commands::actions::configmap_update,
             commands::argocd::argocd_sync,
+            commands::argocd::argocd_rollback,
+            commands::argocd::argocd_terminate,
             commands::logs::logs_start,
             commands::logs::logs_stop,
             commands::logs::logs_download,
