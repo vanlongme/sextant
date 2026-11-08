@@ -71,7 +71,10 @@ test("lists clusters and filters by search", async () => {
   fireEvent.change(screen.getByTestId("catalog-search"), {
     target: { value: "nothing-like-this" },
   });
-  expect(screen.getByText(/No clusters match/)).toBeTruthy();
+  const noMatch = screen.getByText(/No clusters match/);
+  expect(noMatch).toBeTruthy();
+  // The empty state is its own card, so it must not sit inside the table card.
+  expect(noMatch.closest(".table")).toBeNull();
 });
 
 test("shows the source basename with the full path in its title", async () => {

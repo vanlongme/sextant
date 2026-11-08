@@ -255,7 +255,9 @@ export function CatalogScreen() {
     );
   } else {
     body = (
-      <div className={styles.table}>
+      // The card wraps the table only: the no-match EmptyState is a card of
+      // its own, and spec §6.1 allows no raised card inside a raised card.
+      <div className={rows.length > 0 ? styles.table : undefined}>
         <DataTable
           rows={rows}
           columns={columns}
