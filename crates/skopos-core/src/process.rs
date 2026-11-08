@@ -155,20 +155,20 @@ impl fmt::Display for RunError {
 impl From<RunError> for IpcError {
     fn from(err: RunError) -> Self {
         use std::io::ErrorKind;
-        let code = match &err {
-            RunError::Spawn { error, .. }
+        let message = err.to_string();
+        match &err {
+            RunError::Spawn { program, error }
                 if matches!(
                     error.kind(),
                     ErrorKind::NotFound | ErrorKind::PermissionDenied
                 ) =>
             {
-                ErrorCode::ToolMissing
+                IpcError::new(ErrorCode::ToolMissing, message).with_details(program_name(program))
             }
-            RunError::Spawn { .. } => ErrorCode::Internal,
-            RunError::TimedOut { .. } => ErrorCode::Unreachable,
-            RunError::Cancelled => ErrorCode::Cancelled,
-        };
-        IpcError::new(code, err.to_string())
+            RunError::Spawn { .. } => IpcError::new(ErrorCode::Internal, message),
+            RunError::TimedOut { .. } => IpcError::new(ErrorCode::Unreachable, message),
+            RunError::Cancelled => IpcError::new(ErrorCode::Cancelled, message),
+        }
     }
 }
 
@@ -518,7 +518,9 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(error, RunError::Spawn { .. }), "{error:?}");
-        assert_eq!(IpcError::from(error).code, ErrorCode::ToolMissing);
+        let ipc = IpcError::from(error);
+        assert_eq!(ipc.code, ErrorCode::ToolMissing);
+        assert_eq!(ipc.details.as_deref(), Some("skopos-no-such-program"));
     }
 
     #[tokio::test]
