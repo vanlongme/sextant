@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import {
   EmptyState,
@@ -133,7 +133,8 @@ function Body(props: {
  * object stays as it last looked, with a notice.
  * It renders nothing without an `objectKey` (`<namespace>/<name>`). Escape closes it
  * and hands focus back to what had it before. `resources` lets owners link to their
- * lists, and `summary` adds the kind's table values.
+ * lists, and `summary` adds the kind's table values. `actions` renders the header's
+ * action bar. Opening moves focus to the drawer itself.
  */
 export function DetailDrawer(props: {
   clusterId: string;
@@ -142,6 +143,8 @@ export function DetailDrawer(props: {
   onClose(): void;
   resources?: ApiResourceInfo[];
   summary?: SummaryItem[];
+  /** The header's actions for the object shown; called only while it is in the live list. */
+  actions?(object: KubeObject): ReactNode;
 }) {
   const { clusterId, resource, objectKey: wanted, onClose } = props;
   const list = useResourceList(clusterId, resource);
@@ -160,9 +163,7 @@ export function DetailDrawer(props: {
   useEffect(() => {
     if (!open) return;
     const before = document.activeElement;
-    drawerRef.current
-      ?.querySelector<HTMLElement>('[data-testid="detail-close"]')
-      ?.focus();
+    drawerRef.current?.focus();
     return () => {
       if (before instanceof HTMLElement && before.isConnected) before.focus();
     };
@@ -190,16 +191,20 @@ export function DetailDrawer(props: {
   return (
     <aside
       ref={drawerRef}
+      tabIndex={-1}
       className={styles.drawer}
       aria-label={`${resource.kind} details`}
       data-testid="detail-drawer"
       onKeyDown={(e) => {
-        if (e.key === "Escape") {
-          e.stopPropagation();
-          // Escape in a text box must not throw away what is being typed.
-          if (e.target instanceof HTMLTextAreaElement) return;
-          onClose();
-        }
+        if (e.key !== "Escape") return;
+        // A menu opened from the header sits in a portal outside the drawer. React
+        // still bubbles its keys here, but that Escape belongs to the menu.
+        if (!(e.target instanceof Node) || !e.currentTarget.contains(e.target))
+          return;
+        e.stopPropagation();
+        // Escape in a text box must not throw away what is being typed.
+        if (e.target instanceof HTMLTextAreaElement) return;
+        onClose();
       }}
     >
       <header className={styles.header}>
@@ -208,6 +213,12 @@ export function DetailDrawer(props: {
         </h3>
         <span className={styles.kind}>{resource.kind}</span>
         <div className={styles.grow} />
+        {found && shown && props.actions ? (
+          <>
+            {props.actions(shown)}
+            <span className={styles.divider} aria-hidden="true" />
+          </>
+        ) : null}
         <IconButton
           label="Close details"
           icon={<X size={14} aria-hidden="true" />}

@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { Menu } from "../../design";
 import type { ApiResourceInfo } from "../../ipc/generated/ApiResourceInfo";
 import type { ResourceRef } from "../../ipc/generated/ResourceRef";
 import type { WatchEvent } from "../../ipc/generated/WatchEvent";
@@ -377,7 +378,7 @@ test("Escape closes and focus returns to the row", async () => {
   screen.getByTestId("row").focus();
   rerender(<Host open onClose={onClose} />);
   await act(flush);
-  expect(document.activeElement).toBe(screen.getByTestId("detail-close"));
+  expect(document.activeElement).toBe(screen.getByTestId("detail-drawer"));
   fireEvent.keyDown(document.activeElement as Element, { key: "Escape" });
   expect(onClose).toHaveBeenCalledTimes(1);
   rerender(<Host open={false} onClose={onClose} />);
@@ -632,4 +633,77 @@ test("other kinds show their row and fetch nothing", async () => {
   await f.snapshot([pod()]);
   expect(screen.getByText("app=web")).toBeTruthy();
   expect(f.backend.callsTo("resource_get")).toHaveLength(0);
+});
+
+function withActions(
+  actions: (o: KubeObject) => React.ReactNode,
+  onClose = () => {},
+) {
+  return (
+    <MemoryRouter>
+      <DetailDrawer
+        clusterId="c1"
+        resource={POD}
+        objectKey="team-a/web"
+        onClose={onClose}
+        actions={actions}
+      />
+    </MemoryRouter>
+  );
+}
+
+const probe = (o: KubeObject) => (
+  <button type="button" data-testid="probe">
+    {o.metadata.uid}
+  </button>
+);
+
+test("the header shows the actions of the object shown, then a divider and Close", async () => {
+  const f = fake();
+  render(withActions(probe));
+  await act(flush);
+  await f.snapshot([pod()]);
+  const button = screen.getByTestId("probe");
+  expect(button.textContent).toBe("u1");
+  const divider = button.nextElementSibling as HTMLElement;
+  expect(divider.getAttribute("aria-hidden")).toBe("true");
+  expect(divider.nextElementSibling).toBe(screen.getByTestId("detail-close"));
+});
+
+test("a deleted object keeps how it looked but gets no actions", async () => {
+  const f = fake();
+  render(withActions(probe));
+  await act(flush);
+  await f.snapshot([pod()]);
+  expect(screen.getByTestId("probe")).toBeTruthy();
+  await f.batch([], [{ namespace: "team-a", name: "web" }]);
+  expect(screen.getByTestId("detail-removed")).toBeTruthy();
+  expect(screen.queryByTestId("probe")).toBeNull();
+});
+
+test("Escape in a menu the drawer opened closes the menu, not the drawer", async () => {
+  const f = fake();
+  const onClose = vi.fn();
+  render(
+    withActions(
+      () => (
+        <Menu
+          trigger={
+            <button type="button" data-testid="probe-menu">
+              More
+            </button>
+          }
+          items={[{ id: "x", label: "X", onSelect: () => {} }]}
+        />
+      ),
+      onClose,
+    ),
+  );
+  await act(flush);
+  await f.snapshot([pod()]);
+  fireEvent.keyDown(screen.getByTestId("probe-menu"), { key: "Enter" });
+  fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+  expect(onClose).not.toHaveBeenCalled();
+  fireEvent.keyDown(screen.getByTestId("detail-drawer"), { key: "Escape" });
+  expect(onClose).toHaveBeenCalledTimes(1);
 });

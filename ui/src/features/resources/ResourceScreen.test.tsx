@@ -896,6 +896,27 @@ test("a row's menu lists Edit YAML, the kind's actions, then Delete, each with a
     expect(entry.querySelector("svg")).not.toBeNull();
 });
 
+test("the drawer header opens Edit YAML, and its More actions offer Delete", async () => {
+  const fake = fakeBackend();
+  await show(fake, [pod("web", "team-a")], DEPLOYMENTS);
+  fireEvent.click(row("team-a", "web") as HTMLElement);
+
+  fireEvent.click(screen.getByTestId("detail-action-edit"));
+  expect(useDock.getState().tabs[0]).toMatchObject({
+    kind: "edit",
+    namespace: "team-a",
+    name: "web",
+  });
+  resetDockForTest();
+
+  openMenu("detail-more-actions");
+  expect(
+    screen.getAllByRole("menuitem").map((m) => m.getAttribute("data-testid")),
+  ).toEqual(["menu-item-edit", "menu-item-delete"]);
+  fireEvent.click(screen.getByTestId("menu-item-delete"));
+  expect(await screen.findByRole("dialog")).toBeTruthy();
+});
+
 const GADGET = { group: "example.com", plural: "gadgets", kind: "Gadget" };
 
 test.each([

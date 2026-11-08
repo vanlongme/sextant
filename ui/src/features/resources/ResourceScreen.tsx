@@ -25,6 +25,8 @@ import { DetailDrawer, type SummaryItem } from "../details/DetailDrawer";
 import { DeleteDialog } from "./DeleteDialog";
 import { matchesSearch } from "./filter";
 import { NamespaceFilter, namespaceFilterKey } from "./NamespaceFilter";
+import { ObjectActionBar } from "./ObjectActionBar";
+import { objectActions } from "./objectActions";
 import { RowActions, useActionContext } from "./ResourceActions";
 import styles from "./ResourceScreen.module.css";
 
@@ -162,6 +164,8 @@ export function ResourceScreen(props: {
       },
     ];
   }, [info, crd, resource, context]);
+
+  const kindActions = kindSpec(resource.group, resource.plural)?.actions ?? [];
 
   const isHidden = (c: TableColumn<KubeObject>) =>
     choices[c.id] ? choices[c.id] === "hidden" : Boolean(c.defaultHidden);
@@ -325,6 +329,17 @@ export function ResourceScreen(props: {
           onClose={() => openObject(null)}
           resources={resources}
           summary={summary}
+          actions={(object) => (
+            <ObjectActionBar
+              items={objectActions({
+                object,
+                kindActions,
+                info,
+                context,
+                onDelete: (o) => setDeleting([o]),
+              })}
+            />
+          )}
         />
       </div>
 
