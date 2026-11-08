@@ -116,3 +116,12 @@ svg.lucide {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* SkoposIDE overrides of two light-theme design system values that miss 4.5:1 on
+   --surface-sunken (spec §7). :not() keeps them out of the dark theme, whose block in
+   tinyorbit.css has the same specificity as a plain :root. Remove them once the design
+   system fixes these values. */
+:root:not([data-theme="dark"]) {
+  --text-danger: var(--red-700);
+  --status-warning-text: #ad5600;
+}
