@@ -44,7 +44,7 @@
 .chip {
   padding: 1px var(--space-5);
   border: 1px solid var(--border-subtle);
-  border-radius: 999px;
+  border-radius: var(--radius-lg);
   font-family: var(--font-mono);
   overflow-wrap: anywhere;
 }
@@ -77,5 +77,6 @@
 }
 
 .link:focus-visible {
-  outline: 2px solid var(--focus-ring-color);
+  outline: none;
+  box-shadow: var(--focus-ring);
 }

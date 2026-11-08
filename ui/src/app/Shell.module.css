@@ -4,7 +4,7 @@
 
 .shell {
   display: grid;
-  grid-template-columns: 56px minmax(0, 1fr);
+  grid-template-columns: 57px minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr) 24px;
   height: 100%;
 }
@@ -20,10 +20,14 @@
   align-items: center;
   justify-content: space-between;
   padding: 0 var(--space-7);
-  background: var(--surface-card);
+  background: var(--surface-sunken);
   border-top: 1px solid var(--border-subtle);
   color: var(--text-secondary);
-  font-size: 12px;
+  font: var(--type-caption);
+}
+
+.statusLine {
+  font: var(--type-mono);
 }
 
 .placeholder {

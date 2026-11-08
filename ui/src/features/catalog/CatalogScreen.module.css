@@ -32,6 +32,14 @@
   user-select: text;
 }
 
+.table {
+  overflow: clip;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-1);
+}
+
 /* Fixed layout, so one long name cannot push the other columns off screen. */
 .table table {
   table-layout: fixed;

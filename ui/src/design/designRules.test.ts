@@ -1,26 +1,10 @@
 import { expect, test } from "vitest";
 import { CSS_FILES, cssRules } from "../test/css";
 
-// Stylesheets restyled so far. Each restyle task adds its files here.
-const RESTYLED = [
-  "/src/design/Button.module.css",
-  "/src/design/IconButton.module.css",
-  "/src/design/Input.module.css",
-  "/src/design/Select.module.css",
-  "/src/design/Tabs.module.css",
-  "/src/design/Badge.module.css",
-  "/src/design/StatusDot.module.css",
-  "/src/design/Toast.module.css",
-  "/src/design/Tooltip.module.css",
-  "/src/design/Spinner.module.css",
-  "/src/design/EmptyState.module.css",
-  "/src/design/ErrorNotice.module.css",
-  "/src/design/Dialog.module.css",
-  "/src/design/ConfirmDialog.module.css",
-  "/src/design/Menu.module.css",
-  "/src/design/VirtualTable.module.css",
-  "/src/design/DataTable.module.css",
-];
+// Every stylesheet but the vendored tokens and the base layer.
+const RESTYLED = Object.keys(CSS_FILES).filter(
+  (p) => !p.endsWith("/tinyorbit.css") && !p.endsWith("/global.css"),
+);
 
 const RING = /var\(--focus-ring\)|var\(--focus-ring-color\)|var\(--glow-/;
 
