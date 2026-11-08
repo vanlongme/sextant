@@ -104,6 +104,7 @@ const FIXTURES: Record<string, SpecFixture> = {
   kinds: { kubeconfigs: {}, start: startKindFixture },
   "config-kinds": { kubeconfigs: {}, start: startKindFixture },
   drain: { kubeconfigs: {}, start: startKindFixture },
+  actions: { kubeconfigs: {}, start: startKindFixture },
   screens: { kubeconfigs: {}, start: startKindFixture },
 };
 
