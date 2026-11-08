@@ -1,0 +1,59 @@
+.host {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.button {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: var(--transition-control);
+}
+
+.button:hover {
+  background: var(--surface-hover);
+}
+
+.button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.button[data-state="done"] svg {
+  color: var(--status-nominal-text);
+}
+
+.button[data-state="failed"] svg {
+  color: var(--text-danger);
+}
+
+.pill {
+  position: absolute;
+  top: 50%;
+  right: calc(100% + var(--space-3));
+  transform: translateY(-50%);
+  padding: 1px var(--space-4);
+  border-radius: var(--radius-xs);
+  background: var(--surface-inverse);
+  color: var(--text-inverse);
+  font: var(--type-caption);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

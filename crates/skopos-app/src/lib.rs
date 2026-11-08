@@ -81,6 +81,7 @@ fn run_app(core: AppCore, mut log_guard: Option<WorkerGuard>, context: Context<W
     let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
     let forwarded = core.clone();
     let built = builder
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
