@@ -49,7 +49,9 @@
 }
 
 .chevron {
-  width: 10px;
+  display: flex;
+  flex: none;
+  width: 12px;
 }
 
 .list {
@@ -65,14 +67,20 @@
   display: none;
 }
 
+/* flex: none keeps the top Overview link, a direct item of the scrolling sidebar, from
+   shrinking to nothing now that overflow: hidden lets its minimum height drop to 0. */
 .link {
-  display: flex;
-  align-items: center;
+  display: block;
+  flex: none;
   height: 28px;
   padding: 0 var(--space-7);
+  overflow: hidden;
   border-radius: var(--radius-xs);
   color: var(--text-primary);
+  line-height: 28px;
   text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .link:hover {

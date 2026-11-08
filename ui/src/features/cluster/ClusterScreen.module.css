@@ -26,6 +26,12 @@
   max-width: 720px;
 }
 
+/* The Overview page sits straight in the layout's content area, so it pads itself like
+   the resource screens do. */
+.home {
+  padding: var(--space-7) var(--space-8);
+}
+
 .heading {
   margin: 0;
   font-size: 14px;

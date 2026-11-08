@@ -29,6 +29,11 @@
   height: var(--control-md);
 }
 
+.icon {
+  display: flex;
+  color: var(--text-secondary);
+}
+
 .trigger:hover {
   border-color: var(--border-strong-color);
 }

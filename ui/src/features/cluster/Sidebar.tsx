@@ -1,3 +1,4 @@
+import { ChevronDown, ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
 import { NavLink } from "react-router";
 import { ErrorNotice, Spinner } from "../../design";
@@ -27,6 +28,7 @@ function Item(props: {
           isActive ? `${styles.link} ${styles.active}` : styles.link
         }
         data-testid={`nav-item-${groupSegment(group)}-${plural}`}
+        title={label}
       >
         {label}
       </NavLink>
@@ -56,7 +58,7 @@ function Section(props: {
           onClick={() => setOpen(!open)}
         >
           <span aria-hidden="true" className={styles.chevron}>
-            {open ? "▾" : "▸"}
+            {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
           </span>
           {props.label}
         </button>

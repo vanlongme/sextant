@@ -14,6 +14,15 @@ body,
   margin: 0;
 }
 
+/* Native controls and scrollbars follow the theme. */
+:root {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
 body {
   background: var(--surface-page);
   color: var(--text-primary);
@@ -63,6 +72,47 @@ pre {
 
 svg.lucide {
   stroke-width: 1.75;
+}
+
+/* Native checkboxes drawn as the design system's Checkbox: an 18 px box with 5 px
+   corners, filled with the accent when on. The marks are Lucide's check at 2.75 stroke
+   and a 9 px dash. */
+input[type="checkbox"] {
+  appearance: none;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  border: 1px solid var(--border-strong-color);
+  border-radius: var(--radius-xs);
+  background: var(--surface-card) center / 13px no-repeat;
+  vertical-align: middle;
+  cursor: pointer;
+  transition: var(--transition-control);
+}
+
+input[type="checkbox"]:checked,
+input[type="checkbox"]:indeterminate {
+  border-color: var(--surface-accent);
+  background-color: var(--surface-accent);
+  box-shadow: var(--shadow-1);
+}
+
+input[type="checkbox"]:checked {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+}
+
+input[type="checkbox"]:indeterminate {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 13 13'%3E%3Crect x='2' y='5.75' width='9' height='1.5' rx='0.75' fill='white'/%3E%3C/svg%3E");
+}
+
+input[type="checkbox"]:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+input[type="checkbox"]:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 * {

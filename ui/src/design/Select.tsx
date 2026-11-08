@@ -1,4 +1,5 @@
 import * as RS from "@radix-ui/react-select";
+import { ChevronDown } from "lucide-react";
 import { useId } from "react";
 import styles from "./Select.module.css";
 
@@ -20,7 +21,9 @@ export function Select<T extends string>(props: {
       >
         <RS.Trigger className={styles.trigger} aria-labelledby={labelId}>
           <RS.Value />
-          <RS.Icon aria-hidden="true">▾</RS.Icon>
+          <RS.Icon aria-hidden="true" className={styles.icon}>
+            <ChevronDown size={16} />
+          </RS.Icon>
         </RS.Trigger>
         <RS.Portal>
           <RS.Content
