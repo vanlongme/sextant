@@ -15,6 +15,9 @@ const RESTYLED = [
   "/src/design/Spinner.module.css",
   "/src/design/EmptyState.module.css",
   "/src/design/ErrorNotice.module.css",
+  "/src/design/Dialog.module.css",
+  "/src/design/ConfirmDialog.module.css",
+  "/src/design/Menu.module.css",
 ];
 
 const RING = /var\(--focus-ring\)|var\(--focus-ring-color\)|var\(--glow-/;
@@ -120,4 +123,23 @@ test("badges read a state on a soft pill, and toasts and tooltips enter without 
     const css = CSS_FILES[`/src/design/${file}.module.css`];
     expect(css).not.toMatch(/data-state="closed"[^{]*\{[^}]*animation/);
   }
+});
+
+test("dialogs sit on a blurred scrim with the deepest shadow and no exit animation", () => {
+  const dialog = cssRules(CSS_FILES["/src/design/Dialog.module.css"]);
+  const decls = (s: string) =>
+    Object.fromEntries(dialog.find((r) => r.selector === s)?.decls ?? []);
+  expect(decls(".overlay").background).toBe("var(--scrim)");
+  expect(decls(".overlay")["backdrop-filter"]).toBe("var(--blur-thin)");
+  expect(decls(".content")["box-shadow"]).toBe("var(--shadow-4)");
+  expect(decls(".content")["border-radius"]).toBe("var(--radius-xl)");
+  expect(CSS_FILES["/src/design/Dialog.module.css"]).not.toMatch(
+    /data-state="closed"[^{]*\{[^}]*animation/,
+  );
+  const menu = cssRules(CSS_FILES["/src/design/Menu.module.css"]);
+  const content = Object.fromEntries(
+    menu.find((r) => r.selector === ".content")?.decls ?? [],
+  );
+  expect(content["box-shadow"]).toBe("var(--shadow-3)");
+  expect(content["border-radius"]).toBe("var(--radius-md)");
 });
