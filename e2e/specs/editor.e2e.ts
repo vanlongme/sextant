@@ -14,6 +14,7 @@ import {
   openCluster,
   openResource,
   resourceRowMenu,
+  searchResources,
   rowId,
   setEditorText,
   shown,
@@ -80,6 +81,9 @@ async function expectStored(name: string, value: string): Promise<void> {
 /** Opens a config map from its row menu and waits for its YAML. */
 async function openEditor(name: string, value: string): Promise<string> {
   await openResource("nav-item-core-configmaps", "ConfigMap");
+  // The 34 px rows and the dock leave room for about 11 rows, so a row far
+  // down the list sits under the dock. Filter the list so the row is at the top.
+  await searchResources(name);
   await shown(rowId(NS, name));
   await resourceRowMenu(name, "edit");
   return editorContaining(`key: ${value}`);
