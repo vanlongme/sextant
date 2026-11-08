@@ -36,8 +36,8 @@ export function YamlEditor(props: {
           automaticLayout: true,
           detectIndentation: false,
           fontFamily:
-            "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-          fontSize: 13,
+            '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
+          fontSize: 12,
           insertSpaces: true,
           minimap: { enabled: false },
           scrollBeyondLastLine: false,
