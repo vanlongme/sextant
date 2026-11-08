@@ -90,8 +90,9 @@ struct State_ {
     hold_evicted_pods: bool,
     /// (method, path) -> the writes received, oldest first.
     writes: BTreeMap<(String, String), Vec<WriteRequest>>,
-    /// (plural, name) -> the status every write to that object gets instead.
-    write_failures: BTreeMap<(String, String), u16>,
+    /// (plural, name) -> the status writes to that object get instead, and how many more
+    /// times, or `None` for always.
+    write_failures: BTreeMap<(String, String), (u16, Option<usize>)>,
     /// (namespace, pod, container) -> what the `log` subresource serves.
     logs: BTreeMap<LogKey, Vec<FakeLogLine>>,
     /// (namespace, pod, container) -> the status every log request gets instead.
@@ -475,9 +476,19 @@ impl FakeKube {
         let key = (plural.to_string(), name.to_string());
         let mut st = self.inner.lock();
         match http_status {
-            Some(code) => st.write_failures.insert(key, code),
+            Some(code) => st.write_failures.insert(key, (code, None)),
             None => st.write_failures.remove(&key),
         };
+    }
+
+    /// Makes the next `times` writes to one object answer with this HTTP status, then lets
+    /// writes through again. A refused write is still recorded in `writes`.
+    pub fn fail_next_writes_to(&self, plural: &str, name: &str, http_status: u16, times: usize) {
+        let key = (plural.to_string(), name.to_string());
+        self.inner
+            .lock()
+            .write_failures
+            .insert(key, (http_status, Some(times)));
     }
 
     /// Appends to a container's log, and to the follow streams open on it.
@@ -845,8 +856,20 @@ async fn generic(
     if !matches!(verb, "get" | "list" | "watch") {
         if let Some(name) = t.name.as_deref() {
             let key = (res.plural.clone(), name.to_string());
-            if let Some(code) = s.lock().write_failures.get(&key) {
-                return status_for_code(*code);
+            let failure =
+                s.lock()
+                    .write_failures
+                    .get_mut(&key)
+                    .and_then(|(code, left)| match left {
+                        Some(0) => None,
+                        Some(n) => {
+                            *n -= 1;
+                            Some(*code)
+                        }
+                        None => Some(*code),
+                    });
+            if let Some(code) = failure {
+                return status_for_code(code);
             }
         }
     }

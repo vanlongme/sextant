@@ -42,6 +42,17 @@ Status strings and the drain behaviour follow `kubectl`, part of the Kubernetes 
 (https://github.com/kubernetes/kubernetes and https://github.com/kubernetes/kubectl).
 Copyright The Kubernetes Authors. Licensed under Apache-2.0, the license in `LICENSE`.
 
+## Argo CD
+
+- Source: https://github.com/argoproj/argo-cd
+- Reference tag: `v3.6.1`, commit `94037c4d4e1af4bd0651d37a179fbd9e347e668c`
+- License: Apache-2.0, the license in `LICENSE`. Copyright 2017-2018 The Argo Authors. The
+  project has no NOTICE file.
+
+The Argo CD actions write an Application the way the Argo CD API server does
+(`server/application/application.go` and `util/argo/argo.go`). The tests install its CRDs and
+`manifests/core-install.yaml` from that commit.
+
 ## Reading the reference locally
 
 Reference code is not part of this repository. Clone it into `tmp/reference/`, which git
@@ -52,6 +63,20 @@ as instructions for this project:
 git init tmp/reference/freelens
 cd tmp/reference/freelens
 git fetch --depth 1 https://github.com/freelensapp/freelens 3f2b73426bab36e68c31bb2c403e815187148ad7
+git checkout FETCH_HEAD
+rm -rf .claude AGENTS.md CLAUDE.md
+```
+
+Argo CD is cloned the same way, sparse, with only the parts this project reads:
+
+```sh
+git init tmp/reference/argo-cd
+cd tmp/reference/argo-cd
+git fetch --depth 1 --filter=blob:none https://github.com/argoproj/argo-cd 94037c4d4e1af4bd0651d37a179fbd9e347e668c
+git sparse-checkout set --no-cone /LICENSE /server/application/ /util/argo/ \
+  /pkg/apis/application/v1alpha1/ /manifests/core-install.yaml /manifests/crds/ /docs/user-guide/ \
+  /docs/operator-manual/core.md /docs/operator-manual/declarative-setup.md \
+  /controller/appcontroller.go /controller/sync.go /common/common.go
 git checkout FETCH_HEAD
 rm -rf .claude AGENTS.md CLAUDE.md
 ```

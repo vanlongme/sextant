@@ -3,6 +3,7 @@
 mod access;
 mod actions;
 mod apply;
+mod argocd;
 mod discovery;
 mod drain;
 mod hub;
@@ -13,6 +14,7 @@ mod types;
 
 pub use actions::{DataChange, SecretValue};
 pub use apply::ApplyResult;
+pub use argocd::{ArgoSyncOptions, ArgoSyncResource, ArgoSyncStrategy, SYNC_WINDOWS_UNVERIFIED};
 pub(crate) use drain::RunningDrain;
 pub use drain::{DrainEvent, DrainOptions, DrainOutcome, PodRef, SkipReason, SkippedPod};
 pub(crate) use hub::WatchHub;
