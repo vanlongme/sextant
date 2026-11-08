@@ -1,3 +1,4 @@
+import { CirclePause, CirclePlay, Play } from "lucide-react";
 import { toast, useNow } from "../../design";
 import { api } from "../../ipc/api";
 import {
@@ -82,6 +83,7 @@ const durationMs = (o: KubeObject) => {
 export const triggerAction: KindAction = {
   id: "trigger",
   label: "Trigger",
+  icon: Play,
   run: async (ctx, o) => {
     const { name, namespace = "" } = o.metadata;
     const yes = await ctx.confirm({
@@ -99,6 +101,7 @@ export const triggerAction: KindAction = {
 export const suspendAction: KindAction = {
   id: "suspend",
   label: "Suspend",
+  icon: CirclePause,
   requires: "patch",
   visible: (o) => !o.spec?.suspend,
   run: (ctx, o) =>
@@ -113,6 +116,7 @@ export const suspendAction: KindAction = {
 export const resumeAction: KindAction = {
   id: "resume",
   label: "Resume",
+  icon: CirclePlay,
   requires: "patch",
   visible: (o) => Boolean(o.spec?.suspend),
   run: (ctx, o) =>

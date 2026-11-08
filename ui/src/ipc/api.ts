@@ -108,6 +108,18 @@ export const api = {
       name,
       propagation,
     }),
+  resourceForceFinalize: (
+    clusterId: string,
+    resource: ResourceRef,
+    namespace: string | null,
+    name: string,
+  ) =>
+    call<void>("resource_force_finalize", {
+      clusterId,
+      resource,
+      namespace,
+      name,
+    }),
   resourceEvents: (clusterId: string, involved: InvolvedRef) =>
     call<JsonValue[]>("resource_events", { clusterId, involved }),
   workloadScale: (

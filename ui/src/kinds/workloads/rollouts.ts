@@ -1,3 +1,4 @@
+import { MoveVertical, RotateCw } from "lucide-react";
 import { createElement } from "react";
 import { toast } from "../../design";
 import { api } from "../../ipc/api";
@@ -63,6 +64,7 @@ export function strategyText(
 export const scaleAction: KindAction = {
   id: "scale",
   label: "Scale",
+  icon: MoveVertical,
   run: (ctx, o) =>
     ctx.dialog((close) =>
       createElement(ScaleDialog, {
@@ -77,6 +79,7 @@ export const scaleAction: KindAction = {
 export const restartAction: KindAction = {
   id: "restart",
   label: "Restart",
+  icon: RotateCw,
   requires: "patch",
   run: async (ctx, o) => {
     const { name, namespace = "" } = o.metadata;

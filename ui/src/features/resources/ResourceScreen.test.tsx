@@ -6,6 +6,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { Circle } from "lucide-react";
 import { MemoryRouter, Outlet, Route, Routes } from "react-router";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { Toaster } from "../../design";
@@ -701,11 +702,18 @@ test("a registered kind supplies its columns and row actions", async () => {
       },
     ],
     actions: [
-      { id: "poke", label: "Poke", run },
-      { id: "never", label: "Never", visible: () => false, run },
+      { id: "poke", label: "Poke", icon: Circle, run },
+      {
+        id: "never",
+        label: "Never",
+        icon: Circle,
+        visible: () => false,
+        run,
+      },
       {
         id: "fail",
         label: "Explode",
+        icon: Circle,
         run: () => Promise.reject(new Error("the gadget exploded")),
       },
     ],
@@ -740,6 +748,7 @@ test("an action can ask for confirmation", async () => {
       {
         id: "ask",
         label: "Ask",
+        icon: Circle,
         run: async (ctx) => {
           answers.push(
             await ctx.confirm({
@@ -866,6 +875,27 @@ test("Edit YAML in a row's menu opens the object in the dock", async () => {
   resetDockForTest();
 });
 
+test("a row's menu lists Edit YAML, the kind's actions, then Delete, each with an icon", async () => {
+  registerKind("kinds.test", "sprockets", {
+    actions: [{ id: "spin", label: "Spin", icon: Circle, run: () => {} }],
+  });
+  const sprockets = info({
+    group: "kinds.test",
+    plural: "sprockets",
+    kind: "Sprocket",
+  });
+  await show(fakeBackend(), [pod("s")], sprockets);
+  openMenu("row-menu-s");
+  const entries = screen.getAllByRole("menuitem");
+  expect(entries.map((e) => e.getAttribute("data-testid"))).toEqual([
+    "menu-item-edit",
+    "menu-item-spin",
+    "menu-item-delete",
+  ]);
+  for (const entry of entries)
+    expect(entry.querySelector("svg")).not.toBeNull();
+});
+
 const GADGET = { group: "example.com", plural: "gadgets", kind: "Gadget" };
 
 test.each([
@@ -875,7 +905,15 @@ test.each([
   "an action that needs patch, with canPatch %s, is disabled: %s",
   async (canPatch, disabled) => {
     registerKind("example.com", "gadgets", {
-      actions: [{ id: "go", label: "Go", requires: "patch", run: () => {} }],
+      actions: [
+        {
+          id: "go",
+          label: "Go",
+          icon: Circle,
+          requires: "patch",
+          run: () => {},
+        },
+      ],
     });
     await show(fakeBackend(), [pod("a")], info(GADGET, { canPatch }));
     openMenu("row-menu-a");

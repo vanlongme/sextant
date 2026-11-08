@@ -1,3 +1,4 @@
+import type { LucideIcon } from "lucide-react";
 import { type ComponentType, createElement, type ReactNode } from "react";
 import { type TableColumn, useNow } from "../design/VirtualTable";
 import type { ApiResourceInfo } from "../ipc/generated/ApiResourceInfo";
@@ -7,9 +8,15 @@ import { formatAge, type KubeObject } from "./objects";
 export interface KindAction {
   id: string;
   label: string;
+  /** Drawn at 16 px in menus and on the drawer's header buttons. */
+  icon: LucideIcon;
   danger?: boolean;
+  /** Also shown as an icon button in the drawer header. */
+  top?: boolean;
+  /** `"end"` places the action after Force finalize, just before Delete. */
+  placement?: "end";
   /** The access the action needs; it is disabled without it. */
-  requires?: "update" | "patch";
+  requires?: "update" | "patch" | "delete";
   visible?(o: KubeObject): boolean;
   run(ctx: ActionContext, o: KubeObject): void | Promise<void>;
 }

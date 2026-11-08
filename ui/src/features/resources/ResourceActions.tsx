@@ -1,13 +1,13 @@
 import { Ellipsis } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
-import { Button, ConfirmDialog, Menu, toast } from "../../design";
-import { failureMessage } from "../../ipc/client";
+import { Button, ConfirmDialog, Menu } from "../../design";
 import type { ApiResourceInfo } from "../../ipc/generated/ApiResourceInfo";
 import type { ResourceRef } from "../../ipc/generated/ResourceRef";
 import type { KubeObject } from "../../kinds/objects";
 import type { ActionContext, KindAction } from "../../kinds/registry";
 import { editTab, useDock } from "../../stores/dock";
+import { type ObjectActionItem, objectActions } from "./objectActions";
 
 type ConfirmOptions = Parameters<ActionContext["confirm"]>[0];
 
@@ -79,19 +79,22 @@ export function useActionContext(
   };
 }
 
-async function runAction(
-  action: KindAction,
-  context: ActionContext,
-  object: KubeObject,
-): Promise<void> {
-  try {
-    await action.run(context, object);
-  } catch (error) {
-    toast.error(`${action.label} failed`, failureMessage(error));
-  }
+/** The items of a `Menu` for an action list, each with its 16 px icon. */
+export function menuItems(items: ObjectActionItem[]) {
+  return items.map((it) => {
+    const Icon = it.icon;
+    return {
+      id: it.id,
+      label: it.label,
+      icon: <Icon size={16} aria-hidden="true" />,
+      danger: it.danger,
+      disabled: it.disabled,
+      onSelect: it.run,
+    };
+  });
 }
 
-/** The menu at the end of a row: the kind's own actions, then Edit YAML and Delete. */
+/** The menu at the end of a row, with the same actions as the drawer header. */
 export function RowActions(props: {
   object: KubeObject;
   actions: KindAction[];
@@ -99,7 +102,7 @@ export function RowActions(props: {
   info: ApiResourceInfo;
   onDelete(object: KubeObject): void;
 }) {
-  const { object, context, info } = props;
+  const { object, actions, context, info, onDelete } = props;
   const { name } = object.metadata;
   return (
     <Menu
@@ -116,34 +119,15 @@ export function RowActions(props: {
           <Ellipsis size={16} aria-hidden="true" />
         </Button>
       }
-      items={[
-        ...props.actions
-          .filter((a) => a.visible?.(object) ?? true)
-          .map((a) => ({
-            id: a.id,
-            label: a.label,
-            danger: a.danger,
-            disabled:
-              a.requires === "patch"
-                ? !info.canPatch
-                : a.requires === "update"
-                  ? !info.canUpdate
-                  : false,
-            onSelect: () => void runAction(a, context, object),
-          })),
-        {
-          id: "edit",
-          label: "Edit YAML",
-          onSelect: () => context.openEditor(object),
-        },
-        {
-          id: "delete",
-          label: "Delete",
-          danger: true,
-          disabled: !info.canDelete,
-          onSelect: () => props.onDelete(object),
-        },
-      ]}
+      items={menuItems(
+        objectActions({
+          object,
+          kindActions: actions,
+          info,
+          context,
+          onDelete,
+        }),
+      )}
     />
   );
 }

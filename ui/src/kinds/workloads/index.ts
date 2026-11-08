@@ -1,3 +1,4 @@
+import { LogOut } from "lucide-react";
 import { toast } from "../../design";
 import { api } from "../../ipc/api";
 import {
@@ -36,6 +37,7 @@ registerKind("", "pods", {
     {
       id: "evict",
       label: "Evict",
+      icon: LogOut,
       danger: true,
       run: async (ctx, o) => {
         const name = o.metadata.name;

@@ -1,3 +1,4 @@
+import { ArrowDownToLine, CirclePause, CirclePlay } from "lucide-react";
 import { createElement } from "react";
 import { toast } from "../../design";
 import { api } from "../../ipc/api";
@@ -11,6 +12,7 @@ import { internalIp, nodeRoles, nodeStatus, nodeTaints } from "./node";
 const cordon: KindAction = {
   id: "cordon",
   label: "Cordon",
+  icon: CirclePause,
   requires: "patch",
   visible: (o) => !o.spec?.unschedulable,
   run: async (ctx, o) => {
@@ -22,6 +24,7 @@ const cordon: KindAction = {
 const uncordon: KindAction = {
   id: "uncordon",
   label: "Uncordon",
+  icon: CirclePlay,
   requires: "patch",
   visible: (o) => Boolean(o.spec?.unschedulable),
   run: async (ctx, o) => {
@@ -33,6 +36,7 @@ const uncordon: KindAction = {
 const drain: KindAction = {
   id: "drain",
   label: "Drain",
+  icon: ArrowDownToLine,
   danger: true,
   requires: "patch",
   run: (ctx, o) =>
