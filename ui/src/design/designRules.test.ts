@@ -8,6 +8,13 @@ const RESTYLED = [
   "/src/design/Input.module.css",
   "/src/design/Select.module.css",
   "/src/design/Tabs.module.css",
+  "/src/design/Badge.module.css",
+  "/src/design/StatusDot.module.css",
+  "/src/design/Toast.module.css",
+  "/src/design/Tooltip.module.css",
+  "/src/design/Spinner.module.css",
+  "/src/design/EmptyState.module.css",
+  "/src/design/ErrorNotice.module.css",
 ];
 
 const RING = /var\(--focus-ring\)|var\(--focus-ring-color\)|var\(--glow-/;
@@ -96,4 +103,21 @@ test("controls use the design system's heights", () => {
   expect(height("/src/design/Select.module.css", `${tall} .trigger`)).toBe(
     "var(--control-md)",
   );
+});
+
+test("badges read a state on a soft pill, and toasts and tooltips enter without an exit animation", () => {
+  const badge = cssRules(CSS_FILES["/src/design/Badge.module.css"]);
+  const tone = (s: string) =>
+    Object.fromEntries(badge.find((r) => r.selector === s)?.decls ?? []);
+  expect(tone(".ok")).toEqual({
+    background: "var(--status-nominal-soft)",
+    color: "var(--status-nominal-text)",
+  });
+  expect(tone(".warn").color).toBe("var(--status-warning-text)");
+  expect(tone(".danger").color).toBe("var(--status-critical-text)");
+  expect(tone(".info").color).toBe("var(--text-on-accent-soft)");
+  for (const file of ["Toast", "Tooltip"]) {
+    const css = CSS_FILES[`/src/design/${file}.module.css`];
+    expect(css).not.toMatch(/data-state="closed"[^{]*\{[^}]*animation/);
+  }
 });

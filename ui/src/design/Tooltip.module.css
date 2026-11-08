@@ -1,9 +1,14 @@
 .content {
-  background: var(--surface-sunken);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-control);
-  color: var(--text-primary);
   padding: var(--space-3) var(--space-5);
-  font-size: 12px;
+  border-radius: var(--radius-xs);
+  background: var(--surface-inverse);
+  color: var(--text-inverse);
+  font: var(--type-caption);
+  box-shadow: var(--shadow-2);
   z-index: 1000;
+}
+
+.content[data-state="delayed-open"],
+.content[data-state="instant-open"] {
+  animation: to-fade-in var(--dur-fast) var(--ease-out);
 }

@@ -1,28 +1,34 @@
 .badge {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
   padding: 0 var(--space-5);
-  border: 1px solid currentColor;
-  border-radius: 999px;
-  font-size: 11px;
-  line-height: 18px;
+  border-radius: var(--radius-full);
+  font: var(--type-caption);
+  white-space: nowrap;
 }
 
 .ok {
+  background: var(--status-nominal-soft);
   color: var(--status-nominal-text);
 }
 
 .warn {
+  background: var(--status-warning-soft);
   color: var(--status-warning-text);
 }
 
 .danger {
-  color: var(--text-danger);
+  background: var(--status-critical-soft);
+  color: var(--status-critical-text);
 }
 
 .info {
-  color: var(--text-accent);
+  background: var(--surface-accent-soft);
+  color: var(--text-on-accent-soft);
 }
 
 .neutral {
-  color: var(--text-secondary);
+  background: var(--status-neutral-soft);
+  color: var(--status-neutral-text);
 }

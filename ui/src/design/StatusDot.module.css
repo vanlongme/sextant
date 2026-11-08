@@ -1,5 +1,6 @@
 .dot {
   display: inline-block;
+  flex: none;
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -7,21 +8,21 @@
 }
 
 .ok {
-  color: var(--status-nominal-text);
+  color: var(--status-nominal);
 }
 
 .warn {
-  color: var(--status-warning-text);
+  color: var(--status-warning);
 }
 
 .danger {
-  color: var(--text-danger);
+  color: var(--status-critical);
 }
 
 .info {
-  color: var(--text-accent);
+  color: var(--surface-accent);
 }
 
 .neutral {
-  color: var(--text-secondary);
+  color: var(--status-offline);
 }
