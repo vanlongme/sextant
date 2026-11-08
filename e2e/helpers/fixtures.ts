@@ -35,7 +35,10 @@ export interface SpecFixture {
    * Starts what the spec needs before the app does, such as a fake API server,
    * and returns the kubeconfigs it wants written, with a way to stop it.
    */
-  start?: () => Promise<{ kubeconfigs: Record<string, string>; stop(): Promise<void> }>;
+  start?: () => Promise<{
+    kubeconfigs: Record<string, string>;
+    stop(): Promise<void>;
+  }>;
 }
 
 const KIND_KUBECONFIG = path.resolve(__dirname, "..", ".tmp", "kubeconfig");
@@ -44,7 +47,10 @@ const KIND_KUBECONFIG = path.resolve(__dirname, "..", ".tmp", "kubeconfig");
 async function startConnectionFixture() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "skopos-e2e-fake-"));
   const fakePath = path.join(dir, "fake");
-  const fake = await startFakeKube({ kubeconfigPath: fakePath, context: "fake" });
+  const fake = await startFakeKube({
+    kubeconfigPath: fakePath,
+    context: "fake",
+  });
   return {
     kubeconfigs: {
       kind: fs.readFileSync(KIND_KUBECONFIG, "utf8"),
@@ -62,7 +68,10 @@ async function startConnectionFixture() {
 async function startSmokeFixture() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "skopos-e2e-smoke-"));
   const fakePath = path.join(dir, "fake");
-  const fake = await startFakeKube({ kubeconfigPath: fakePath, context: "fake" });
+  const fake = await startFakeKube({
+    kubeconfigPath: fakePath,
+    context: "fake",
+  });
   return {
     kubeconfigs: { fake: fs.readFileSync(fakePath, "utf8") },
     async stop() {
@@ -95,6 +104,7 @@ const FIXTURES: Record<string, SpecFixture> = {
   kinds: { kubeconfigs: {}, start: startKindFixture },
   "config-kinds": { kubeconfigs: {}, start: startKindFixture },
   drain: { kubeconfigs: {}, start: startKindFixture },
+  screens: { kubeconfigs: {}, start: startKindFixture },
 };
 
 /** Specs with no entry start with an empty `~/.kube`. */

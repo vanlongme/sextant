@@ -47,8 +47,17 @@ async function envForSpec(spec: string): Promise<AppEnv> {
 
 export const config = {
   runner: "local",
-  specs: specSet === "smoke" ? ["./specs/smoke/**/*.e2e.ts"] : ["./specs/**/*.e2e.ts"],
-  exclude: specSet === "smoke" ? [] : ["./specs/smoke/**"],
+  specs:
+    specSet === "smoke"
+      ? ["./specs/smoke/**/*.e2e.ts"]
+      : specSet === "screens"
+        ? ["./specs/screens/**/*.e2e.ts"]
+        : ["./specs/**/*.e2e.ts"],
+  // The full set skips the smoke spec and the screenshot set, which asserts nothing.
+  exclude:
+    specSet === "smoke" || specSet === "screens"
+      ? []
+      : ["./specs/smoke/**", "./specs/screens/**"],
   maxInstances: 1,
   // Launcher half only. The worker half needs `browser.executeAsync`, which
   // webdriverio 10 removed: it fails in `before()` and then delays every element
