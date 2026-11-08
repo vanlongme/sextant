@@ -577,8 +577,6 @@ mod tests {
 
     #[cfg(unix)]
     mod unix {
-        use std::os::unix::fs::PermissionsExt;
-
         use super::*;
 
         /// Zombies count as gone: nothing runs any more.
@@ -726,6 +724,8 @@ mod tests {
         #[cfg(target_os = "linux")]
         #[tokio::test]
         async fn a_program_still_open_for_writing_starts_once_it_is_closed() {
+            use std::os::unix::fs::PermissionsExt;
+
             let dir = tempfile::tempdir().unwrap();
             let program = dir.path().join("busy.sh");
             std::fs::write(&program, "#!/bin/sh\nprintf ran\n").unwrap();
