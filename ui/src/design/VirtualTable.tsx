@@ -28,7 +28,7 @@ export type TableSort = { id: string; dir: "asc" | "desc" };
 
 const DEFAULT_ROW_HEIGHT = 34;
 const OVERSCAN = 10;
-const SELECT_TRACK_PX = 32;
+const SELECT_TRACK_PX = 40;
 const CLOCK_TICK_MS = 30_000;
 
 let clockNow = Date.now();

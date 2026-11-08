@@ -58,6 +58,11 @@
   background: var(--surface-hover);
 }
 
+.bodyRow.selected:hover,
+.bodyRow.active:hover {
+  background: var(--surface-selected);
+}
+
 .clickable {
   cursor: pointer;
 }

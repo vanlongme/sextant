@@ -26,6 +26,14 @@ const OUT = path.resolve(__dirname, "../../../tmp/screens");
 async function setTheme(theme: "light" | "dark"): Promise<void> {
   await browser.execute((t) => {
     document.documentElement.dataset.theme = t;
+    // Transitions do not advance under the WebKit driver; without this the
+    // light shots keep the dark colours of transitioned controls.
+    if (!document.getElementById("shot-no-transition")) {
+      const style = document.createElement("style");
+      style.id = "shot-no-transition";
+      style.textContent = "*,*::before,*::after{transition:none!important;animation:none!important}";
+      document.head.appendChild(style);
+    }
   }, theme);
   // One frame for Monaco's theme observer and the repaint.
   await browser.pause(300);
