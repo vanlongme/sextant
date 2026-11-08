@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::error::{CoreResult, ErrorCode, IpcError};
 use crate::kubeconfig::SyncSource;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
@@ -39,6 +40,43 @@ pub struct Prefs {
     /// The local terminal's shell. `None` picks one per F11.
     #[ts(optional = nullable)]
     pub terminal_shell: Option<String>,
+    /// Used instead of looking helm up (F14). `None`: `PATH`, then the managed copy.
+    #[ts(optional = nullable)]
+    pub helm_path: Option<String>,
+    #[ts(optional = nullable)]
+    pub kubectl_path: Option<String>,
+    /// For downloads and helm, such as `http://proxy.example:3128`. `None`: the system proxy.
+    #[ts(optional = nullable)]
+    pub http_proxy: Option<String>,
+}
+
+impl Prefs {
+    /// Trims the tool fields and treats blank ones as not set. The proxy must be an http or
+    /// https URL.
+    pub fn normalized(mut self) -> CoreResult<Prefs> {
+        for field in [
+            &mut self.helm_path,
+            &mut self.kubectl_path,
+            &mut self.http_proxy,
+        ] {
+            *field = field
+                .take()
+                .map(|value| value.trim().to_owned())
+                .filter(|value| !value.is_empty());
+        }
+        if let Some(proxy) = self.http_proxy.as_deref() {
+            let valid = url::Url::parse(proxy)
+                .is_ok_and(|url| matches!(url.scheme(), "http" | "https") && url.host().is_some());
+            if !valid {
+                // The value is not repeated: it may hold a password.
+                return Err(IpcError::new(
+                    ErrorCode::InvalidInput,
+                    "the HTTP proxy must be an http or https URL, such as http://proxy.example:3128",
+                ));
+            }
+        }
+        Ok(self)
+    }
 }
 
 #[cfg(test)]
@@ -50,11 +88,59 @@ mod tests {
         let prefs = Prefs {
             theme: Theme::Dark,
             sync_sources: vec![SyncSource::Dir("/h/.kube".into())],
-            terminal_shell: None,
+            http_proxy: Some("http://proxy.example:3128".into()),
+            ..Prefs::default()
         };
         let v = serde_json::to_value(&prefs).unwrap();
         assert_eq!(v["theme"], "dark");
         assert_eq!(v["syncSources"][0]["kind"], "dir");
+        assert_eq!(v["httpProxy"], "http://proxy.example:3128");
+        assert!(v["helmPath"].is_null());
+    }
+
+    #[test]
+    fn blank_tool_fields_are_saved_as_none_and_values_are_trimmed() {
+        let prefs = Prefs {
+            helm_path: Some("  ".into()),
+            kubectl_path: Some(" /usr/local/bin/kubectl ".into()),
+            http_proxy: Some("".into()),
+            ..Prefs::default()
+        }
+        .normalized()
+        .unwrap();
+        assert_eq!(prefs.helm_path, None);
+        assert_eq!(
+            prefs.kubectl_path.as_deref(),
+            Some("/usr/local/bin/kubectl")
+        );
+        assert_eq!(prefs.http_proxy, None);
+    }
+
+    #[test]
+    fn only_an_http_or_https_proxy_is_accepted() {
+        for good in [
+            "http://proxy.example:3128",
+            " https://user:pw@proxy.example ",
+        ] {
+            let prefs = Prefs {
+                http_proxy: Some(good.into()),
+                ..Prefs::default()
+            };
+            assert!(prefs.normalized().is_ok(), "{good}");
+        }
+        for bad in [
+            "socks5://proxy.example:1080",
+            "proxy.example:3128",
+            "http://",
+            "not a url",
+        ] {
+            let prefs = Prefs {
+                http_proxy: Some(bad.into()),
+                ..Prefs::default()
+            };
+            let error = prefs.normalized().unwrap_err();
+            assert_eq!(error.code, ErrorCode::InvalidInput, "{bad}");
+        }
     }
 
     #[test]

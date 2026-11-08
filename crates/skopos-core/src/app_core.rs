@@ -26,6 +26,7 @@ use crate::prefs::{ClusterSettings, Prefs};
 use crate::resources::{RunningDrain, WatchHub};
 use crate::sessions::SessionRegistry;
 use crate::store::{JsonStore, StoreWarning};
+use crate::tools::Tools;
 use crate::ui_state::UiState;
 
 const STORE_VERSION: u32 = 1;
@@ -79,6 +80,7 @@ struct Inner {
     sessions: Arc<SessionRegistry>,
     home: PathBuf,
     portforwards: Arc<PortForwards>,
+    tools: Tools,
     /// Held across a preferences write and the matching source change, so
     /// concurrent calls cannot leave the sync on sources that were not saved last.
     sync: Mutex<Option<KubeconfigSync>>,
@@ -214,6 +216,7 @@ impl AppCore {
                 sessions: Arc::new(SessionRegistry::default()),
                 home: paths.home.clone(),
                 portforwards: Arc::new(PortForwards::new(portforward_definitions, events.clone())),
+                tools: Tools::new(&paths.data),
                 sync: Mutex::new(Some(sync)),
                 snapshots,
                 sync_events: Mutex::new(Some(sync_events)),
@@ -417,6 +420,10 @@ impl AppCore {
         &self.inner.home
     }
 
+    pub(crate) fn tools(&self) -> &Tools {
+        &self.inner.tools
+    }
+
     pub(crate) fn sessions(&self) -> &Arc<SessionRegistry> {
         &self.inner.sessions
     }
@@ -431,6 +438,7 @@ impl AppCore {
 
     /// Saves `p` and applies its sync sources immediately.
     pub fn prefs_set(&self, p: Prefs) -> CoreResult<()> {
+        let p = p.normalized()?;
         // Cluster ids hash the path, so a relative one would change between launches.
         if let Some(path) = p
             .sync_sources

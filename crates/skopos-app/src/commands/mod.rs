@@ -10,3 +10,4 @@ pub mod portforward;
 pub mod resources;
 pub mod sessions;
 pub mod settings;
+pub mod tools;
