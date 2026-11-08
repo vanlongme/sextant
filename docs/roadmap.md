@@ -9,7 +9,7 @@ its acceptance checklist passes.
 
 | Area | Scope |
 |---|---|
-| GitOps | Flux and Argo CD: objects, sync status, reconcile and sync actions |
+| GitOps | Flux: objects, sync status and reconcile actions. Argo CD moved into Milestone A on 2026-11-07 |
 | Gateway API | Gateways, routes, classes, with relationship views |
 | Policy | Admission policies and bindings |
 | Dynamic Resource Allocation | Device classes, resource claims, slices |

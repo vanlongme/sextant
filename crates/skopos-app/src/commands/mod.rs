@@ -2,6 +2,7 @@
 //! writes behind them run off the main thread, which would otherwise freeze the UI.
 
 pub mod actions;
+pub mod argocd;
 pub mod catalog;
 pub mod cluster;
 pub mod logs;

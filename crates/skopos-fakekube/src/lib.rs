@@ -90,8 +90,11 @@ struct State_ {
     hold_evicted_pods: bool,
     /// (method, path) -> the writes received, oldest first.
     writes: BTreeMap<(String, String), Vec<WriteRequest>>,
-    /// (plural, name) -> the status every write to that object gets instead.
-    write_failures: BTreeMap<(String, String), u16>,
+    /// (plural, name) -> the status writes to that object get instead, and how many more
+    /// times, or `None` for always.
+    write_failures: BTreeMap<(String, String), (u16, Option<usize>)>,
+    /// (plural, name) -> a finalizer put back after every write, as an admission policy would.
+    kept_finalizers: BTreeMap<(String, String), String>,
     /// (namespace, pod, container) -> what the `log` subresource serves.
     logs: BTreeMap<LogKey, Vec<FakeLogLine>>,
     /// (namespace, pod, container) -> the status every log request gets instead.
@@ -208,6 +211,20 @@ impl Inner {
         obj["metadata"]["uid"] = json!(uid);
         obj["metadata"]["creationTimestamp"] = json!(created_at);
         obj["metadata"]["resourceVersion"] = json!(rv.to_string());
+        let kept = st
+            .kept_finalizers
+            .get(&(res.plural.clone(), name.clone()))
+            .cloned();
+        if let Some(kept) = kept {
+            let mut finalizers = obj["metadata"]["finalizers"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
+            if !finalizers.iter().any(|f| f.as_str() == Some(kept.as_str())) {
+                finalizers.push(json!(kept));
+                obj["metadata"]["finalizers"] = json!(finalizers);
+            }
+        }
         st.objects
             .entry(res.plural.clone())
             .or_default()
@@ -283,6 +300,7 @@ impl FakeKube {
                 hold_evicted_pods: false,
                 writes: BTreeMap::new(),
                 write_failures: BTreeMap::new(),
+                kept_finalizers: BTreeMap::new(),
                 logs: BTreeMap::new(),
                 log_failures: BTreeMap::new(),
                 log_requests: Vec::new(),
@@ -475,9 +493,29 @@ impl FakeKube {
         let key = (plural.to_string(), name.to_string());
         let mut st = self.inner.lock();
         match http_status {
-            Some(code) => st.write_failures.insert(key, code),
+            Some(code) => st.write_failures.insert(key, (code, None)),
             None => st.write_failures.remove(&key),
         };
+    }
+
+    /// Makes the next `times` writes to one object answer with this HTTP status, then lets
+    /// writes through again. A refused write is still recorded in `writes`.
+    pub fn fail_next_writes_to(&self, plural: &str, name: &str, http_status: u16, times: usize) {
+        let key = (plural.to_string(), name.to_string());
+        self.inner
+            .lock()
+            .write_failures
+            .insert(key, (http_status, Some(times)));
+    }
+
+    /// Puts `finalizer` back on one object after every write to it, as a mutating admission
+    /// policy or a quick controller would.
+    pub fn keep_finalizer(&self, plural: &str, name: &str, finalizer: &str) {
+        let key = (plural.to_string(), name.to_string());
+        self.inner
+            .lock()
+            .kept_finalizers
+            .insert(key, finalizer.to_string());
     }
 
     /// Appends to a container's log, and to the follow streams open on it.
@@ -845,8 +883,20 @@ async fn generic(
     if !matches!(verb, "get" | "list" | "watch") {
         if let Some(name) = t.name.as_deref() {
             let key = (res.plural.clone(), name.to_string());
-            if let Some(code) = s.lock().write_failures.get(&key) {
-                return status_for_code(*code);
+            let failure =
+                s.lock()
+                    .write_failures
+                    .get_mut(&key)
+                    .and_then(|(code, left)| match left {
+                        Some(0) => None,
+                        Some(n) => {
+                            *n -= 1;
+                            Some(*code)
+                        }
+                        None => Some(*code),
+                    });
+            if let Some(code) = failure {
+                return status_for_code(code);
             }
         }
     }
@@ -1286,25 +1336,26 @@ fn patch(s: &Shared, res: &FakeResource, t: &Target, headers: &HeaderMap, body: 
 fn delete_one(s: &Shared, res: &FakeResource, t: &Target, body: &[u8]) -> Response {
     let key = key_of(res, t);
     let mut st = s.lock();
-    let wanted_uid = serde_json::from_slice::<Value>(body).ok().and_then(|doc| {
-        doc.pointer("/preconditions/uid")
-            .and_then(Value::as_str)
-            .map(str::to_string)
-    });
-    let found_uid = st
-        .objects
-        .get(&res.plural)
-        .and_then(|m| m.get(&key))
-        .and_then(|o| o.pointer("/metadata/uid"))
-        .and_then(Value::as_str)
-        .map(str::to_string);
-    if let (Some(wanted), Some(found)) = (wanted_uid, found_uid) {
-        if wanted != found {
-            return status(
-                409,
-                "Conflict",
-                &format!("Precondition failed: UID in precondition: {wanted}, UID in object meta: {found}"),
-            );
+    let options = serde_json::from_slice::<Value>(body).ok();
+    let found = st.objects.get(&res.plural).and_then(|m| m.get(&key));
+    for (field, label) in [("uid", "UID"), ("resourceVersion", "ResourceVersion")] {
+        let wanted = options
+            .as_ref()
+            .and_then(|doc| doc.pointer(&format!("/preconditions/{field}")))
+            .and_then(Value::as_str);
+        let stored = found
+            .and_then(|o| o.pointer(&format!("/metadata/{field}")))
+            .and_then(Value::as_str);
+        if let (Some(wanted), Some(stored)) = (wanted, stored) {
+            if wanted != stored {
+                return status(
+                    409,
+                    "Conflict",
+                    &format!(
+                        "Precondition failed: {label} in precondition: {wanted}, {label} in object meta: {stored}"
+                    ),
+                );
+            }
         }
     }
     match s.remove(&mut st, &res.plural, &key.0, &key.1) {
