@@ -24,9 +24,16 @@ import {
   Terminal,
   X,
 } from "lucide-react";
-import { type KeyboardEvent, type PointerEvent, useRef, useState } from "react";
+import {
+  type KeyboardEvent,
+  type PointerEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { flushSync } from "react-dom";
 import { Button, ConfirmDialog, IconButton } from "../../design";
+import { useCatalog } from "../../stores/catalog";
 import {
   DOCK_DEFAULT_HEIGHT,
   DOCK_MIN_HEIGHT,
@@ -34,11 +41,14 @@ import {
   dockMaxHeight,
   newCreateTab,
   tabsForCluster,
+  terminalTab,
   useDock,
 } from "../../stores/dock";
 import { CreateResourceTab } from "../editor/CreateResourceTab";
 import { EditResourceTab } from "../editor/EditResourceTab";
 import { LogsTab } from "../logs/LogsTab";
+import { TerminalTab } from "../terminal/TerminalTab";
+import { isTerminalShortcut } from "../terminal/terminalKeys";
 import styles from "./Dock.module.css";
 
 const KEYBOARD_RESIZE_STEP = 24;
@@ -55,7 +65,7 @@ const TAB_ICONS: Record<DockTab["kind"], LucideIcon> = {
   nodeShell: Terminal,
 };
 
-function TabBody({ tab }: { tab: DockTab }) {
+function TabBody({ tab, shown }: { tab: DockTab; shown: boolean }) {
   switch (tab.kind) {
     case "edit":
       return <EditResourceTab tab={tab} />;
@@ -63,7 +73,20 @@ function TabBody({ tab }: { tab: DockTab }) {
       return <CreateResourceTab tab={tab} />;
     case "logs":
       return <LogsTab tab={tab} />;
+    case "terminal":
+    case "shell":
+    case "attach":
+    case "nodeShell":
+      return <TerminalTab tab={tab} shown={shown} />;
   }
+}
+
+/** Opens the cluster's local terminal, or brings it forward, and shows the dock. */
+function openTerminal(clusterId: string): void {
+  const name =
+    useCatalog.getState().clusters.find((c) => c.id === clusterId)?.name ??
+    null;
+  useDock.getState().open(terminalTab(clusterId, name));
 }
 
 /** The drag handle on the dock's top edge. Up makes the dock taller. */
@@ -202,6 +225,19 @@ export function Dock(props: { clusterId: string }) {
     }),
   );
 
+  // Ctrl+` anywhere on the cluster's screen. xterm leaves it alone, so it also works
+  // from inside a terminal.
+  useEffect(() => {
+    function onKey(event: globalThis.KeyboardEvent): void {
+      if (!isTerminalShortcut(event)) return;
+      if (document.querySelector('[role="dialog"]') !== null) return;
+      event.preventDefault();
+      openTerminal(clusterId);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [clusterId]);
+
   // The saved layout comes first, so its tabs do not appear after a moment.
   if (!restored) return null;
 
@@ -272,6 +308,15 @@ export function Dock(props: { clusterId: string }) {
           </SortableContext>
         </DndContext>
         <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => openTerminal(clusterId)}
+          data-testid="dock-terminal"
+        >
+          <SquareTerminal size={14} aria-hidden="true" />
+          Terminal
+        </Button>
+        <Button
           variant="ghost"
           size="sm"
           onClick={() => useDock.getState().open(newCreateTab(clusterId))}
@@ -298,7 +343,7 @@ export function Dock(props: { clusterId: string }) {
       </div>
       {tabs.map((tab) => (
         // Hidden, not unmounted: another tab or minimizing must keep the editor,
-        // and a Logs tab keeps streaming.
+        // and Logs and terminal tabs keep their sessions.
         <div
           key={tab.id}
           id={`dock-panel-${tab.id}`}
@@ -308,7 +353,7 @@ export function Dock(props: { clusterId: string }) {
           hidden={!expanded || tab.id !== active?.id}
           data-testid={`dock-panel-${tab.id}`}
         >
-          <TabBody tab={tab} />
+          <TabBody tab={tab} shown={expanded && tab.id === active?.id} />
         </div>
       ))}
       {closing ? (

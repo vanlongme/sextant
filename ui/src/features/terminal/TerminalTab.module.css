@@ -1,0 +1,45 @@
+.root {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.toolbar {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-4) 14px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.status {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-4);
+  color: var(--text-secondary);
+  font: var(--type-caption);
+}
+
+.note {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--text-secondary);
+  font: var(--type-caption);
+}
+
+/* The terminal area: the view's host fills it, inset by its padding. */
+.view {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--surface-sunken);
+}

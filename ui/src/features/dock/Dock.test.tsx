@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ResourceRef } from "../../ipc/generated/ResourceRef";
+import { resetCatalogForTest } from "../../stores/catalog";
 import {
   editTab,
   logsTab,
@@ -21,7 +22,14 @@ import {
   useDock,
 } from "../../stores/dock";
 import { resetResourcesForTest } from "../../stores/resources";
-import { flush, mockBackend } from "../../test/ipc";
+import { type Backend, flush, mockBackend } from "../../test/ipc";
+import {
+  captureResizeObservers,
+  connectClusters,
+  installFakeViews,
+} from "../../test/terminal";
+import { resetSessionsForTest } from "../terminal/sessions";
+import { setTermViewFactory } from "../terminal/termView";
 import { Dock } from "./Dock";
 
 vi.mock("../editor/YamlEditor", () => ({
@@ -66,22 +74,35 @@ async function show(clusterId = "c1") {
   return view;
 }
 
+let backend: Backend;
+
 beforeEach(() => {
   resetDockForTest();
   vi.stubGlobal("innerHeight", 1000);
-  mockBackend({
+  installFakeViews();
+  captureResizeObservers();
+  backend = mockBackend({
     resource_get_yaml: (a: { name: string }) => `kind: Pod\nname: ${a.name}\n`,
     logs_start: () => "s1",
     logs_stop: () => null,
     session_ack: () => null,
     resources_subscribe: () => "sub",
     resources_unsubscribe: () => null,
+    terminal_start: () => "t1",
+    node_shell_start: () => "n1",
+    session_write: () => null,
+    session_resize: () => null,
+    session_stop: () => null,
+    cluster_settings_get: () => ({ nodeShellImage: null }),
   });
 });
 
 afterEach(() => {
+  resetSessionsForTest();
   resetDockForTest();
   resetResourcesForTest();
+  resetCatalogForTest();
+  setTermViewFactory(null);
   vi.unstubAllGlobals();
 });
 
@@ -401,4 +422,107 @@ test("the resize handle states its limits, and a double-click resets the height"
   fireEvent.doubleClick(handle);
   expect(handle.getAttribute("aria-valuenow")).toBe("320");
   expect(useDock.getState().height).toBe(320);
+});
+
+const backquote = { code: "Backquote", key: "`" };
+
+function tabIds(): string[] {
+  return useDock.getState().tabs.map((t) => t.id);
+}
+
+test("the Terminal button sits right before Create and opens the cluster's terminal", async () => {
+  connectClusters({ id: "c1", name: "kind-dev" });
+  await show();
+
+  const button = screen.getByTestId("dock-terminal");
+  expect(button.textContent).toBe("Terminal");
+  expect(button.querySelector("svg")?.innerHTML).toBe(
+    iconMarkup(SquareTerminal),
+  );
+  const order = [...(button.parentElement?.children ?? [])].map((el) =>
+    el.getAttribute("data-testid"),
+  );
+  expect(order.indexOf("create-resource")).toBe(
+    order.indexOf("dock-terminal") + 1,
+  );
+
+  fireEvent.click(button);
+  await act(flush);
+  expect(useDock.getState().tabs).toEqual([terminalTab("c1", "kind-dev")]);
+  expect(screen.getByTestId("dock-tab-terminal:c1").textContent).toBe(
+    "Terminal · kind-dev",
+  );
+  expect(within(panel("terminal:c1")).getByTestId("terminal-tab")).toBeTruthy();
+  expect(backend.callsTo("terminal_start")).toMatchObject([
+    { clusterId: "c1" },
+  ]);
+});
+
+test("the Terminal button brings the open terminal forward and shows the dock", async () => {
+  connectClusters({ id: "c1", name: "kind-dev" });
+  useDock.getState().open(terminalTab("c1", "kind-dev"));
+  useDock.getState().open(WEB);
+  useDock.getState().setMinimized(true);
+  await show();
+
+  fireEvent.click(screen.getByTestId("dock-terminal"));
+  await act(flush);
+  expect(tabIds()).toEqual(["terminal:c1", WEB.id]);
+  expect(useDock.getState().activeId).toBe("terminal:c1");
+  expect(useDock.getState().minimized).toBe(false);
+});
+
+test("Ctrl+` opens the terminal, also from inside a terminal, and other modifiers do nothing", async () => {
+  connectClusters({ id: "c1", name: "kind-dev" });
+  await show();
+
+  fireEvent.keyDown(window, { ...backquote, ctrlKey: true, shiftKey: true });
+  fireEvent.keyDown(window, { ...backquote, ctrlKey: true, altKey: true });
+  fireEvent.keyDown(window, { ...backquote, ctrlKey: true, metaKey: true });
+  fireEvent.keyDown(window, backquote);
+  expect(tabIds()).toEqual([]);
+
+  fireEvent.keyDown(window, { ...backquote, ctrlKey: true });
+  await act(flush);
+  expect(tabIds()).toEqual(["terminal:c1"]);
+
+  act(() => useDock.getState().setMinimized(true));
+  fireEvent.keyDown(screen.getByTestId("terminal-view"), {
+    ...backquote,
+    ctrlKey: true,
+  });
+  await act(flush);
+  expect(useDock.getState().minimized).toBe(false);
+  expect(tabIds()).toEqual(["terminal:c1"]);
+});
+
+test("Ctrl+` does nothing while a dialog is open", async () => {
+  useDock.getState().open(WEB);
+  await show();
+  fireEvent.change(editorOf(WEB.id), { target: { value: "edited: true\n" } });
+  fireEvent.click(screen.getByTestId(`dock-close-${WEB.id}`));
+  await screen.findByRole("dialog");
+
+  fireEvent.keyDown(window, { ...backquote, ctrlKey: true });
+  await act(flush);
+  expect(tabIds()).toEqual([WEB.id]);
+});
+
+test("restored tabs: a hidden terminal starts when its tab is shown, a node shell waits for Reconnect", async () => {
+  connectClusters({ id: "c1", name: "kind-dev" });
+  const terminal = terminalTab("c1", "kind-dev");
+  const nodeShell = nodeShellTabFor("c1", "worker-1");
+  useDock.getState().open(terminal);
+  useDock.getState().open(nodeShell);
+  await show();
+
+  expect(backend.callsTo("terminal_start")).toEqual([]);
+  expect(
+    within(panel(nodeShell.id)).getByTestId("terminal-status").textContent,
+  ).toBe("Not connected");
+
+  fireEvent.click(screen.getByTestId(`dock-tab-${terminal.id}`));
+  await act(flush);
+  expect(backend.callsTo("terminal_start")).toHaveLength(1);
+  expect(backend.callsTo("node_shell_start")).toEqual([]);
 });
