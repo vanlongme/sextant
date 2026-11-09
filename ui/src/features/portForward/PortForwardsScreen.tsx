@@ -25,6 +25,7 @@ import {
   STATE_LOOK,
   targetText,
 } from "./forwardText";
+import { PortForwardDrawer } from "./PortForwardDrawer";
 
 /** The same action menu as the resource lists, with the items of spec §6.3. */
 function RowMenu({ forward }: { forward: PortForward }) {
@@ -121,6 +122,10 @@ export function PortForwardsScreen({ clusterId }: { clusterId: string }) {
   const rows = useMemo(() => forwardsOf(all, clusterId), [all, clusterId]);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [removing, setRemoving] = useState(false);
+  const [openId, setOpenId] = useState<string | null>(null);
+  // Derived from the list, so the drawer closes when its forward goes away.
+  const opened =
+    openId === null ? undefined : rows.find((f) => f.id === openId);
 
   // Only the rows on screen count, so a forward that went away is never sent.
   const shownSelected = rows.filter((f) => selected.has(f.id)).map((f) => f.id);
@@ -178,6 +183,8 @@ export function PortForwardsScreen({ clusterId }: { clusterId: string }) {
         selectTestId={(f) => `pf-select-${f.id}`}
         selected={selected}
         onSelectedChange={setSelected}
+        onRowClick={(f) => setOpenId(f.id)}
+        activeKey={opened?.id}
         testId="pf-table"
       />
     );
@@ -210,6 +217,14 @@ export function PortForwardsScreen({ clusterId }: { clusterId: string }) {
       </div>
       <div className={styles.body}>
         <div className={styles.main}>{body}</div>
+        {opened ? (
+          <PortForwardDrawer
+            key={opened.id}
+            clusterId={clusterId}
+            forward={opened}
+            onClose={() => setOpenId(null)}
+          />
+        ) : null}
       </div>
     </div>
   );

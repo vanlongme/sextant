@@ -355,3 +355,46 @@ test("an event replaces the rows", async () => {
   expect(screen.getByTestId("pf-status-a").textContent).toBe("Stopped");
   expect(screen.getByTestId("pf-local-a").textContent).toBe("random");
 });
+
+test("clicking a row opens its drawer, and Escape gives focus back to the row", async () => {
+  await loadWith([RUNNING_A, STOPPED_B]);
+  show();
+  const row = screen.getByTestId("pf-row-a");
+  row.focus();
+  fireEvent.click(row);
+
+  const drawer = screen.getByTestId("pf-drawer");
+  expect(within(drawer).getByTestId("pf-drawer-title").textContent).toBe(
+    "service/web",
+  );
+  expect(document.activeElement).toBe(drawer);
+  expect(row.getAttribute("aria-current")).toBe("true");
+
+  fireEvent.keyDown(drawer, { key: "Escape" });
+  expect(screen.queryByTestId("pf-drawer")).toBeNull();
+  expect(document.activeElement).toBe(screen.getByTestId("pf-row-a"));
+});
+
+test("the drawer follows its forward and closes when it disappears", async () => {
+  await loadWith([RUNNING_A, STOPPED_B]);
+  show();
+  fireEvent.click(screen.getByTestId("pf-row-a"));
+  expect(screen.getByTestId("pf-drawer-status").textContent).toBe("Running");
+
+  await emitEvent("portforward://changed", [
+    { ...RUNNING_A, state: "stopped", boundPort: null },
+    STOPPED_B,
+  ]);
+  expect(screen.getByTestId("pf-drawer-status").textContent).toBe("Stopped");
+
+  await emitEvent("portforward://changed", [STOPPED_B]);
+  expect(screen.queryByTestId("pf-drawer")).toBeNull();
+});
+
+test("an item of the row menu does not open the drawer", async () => {
+  await loadWith([RUNNING_A], { portforward_stop: () => null });
+  show();
+  openMenu("a");
+  await pick("pf-stop-a");
+  expect(screen.queryByTestId("pf-drawer")).toBeNull();
+});
