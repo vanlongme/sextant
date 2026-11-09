@@ -301,6 +301,30 @@ test("pressing Start twice before the answer adds and starts one forward", async
   expect(close).toHaveBeenCalledTimes(1);
 });
 
+test("Cancel and Escape do nothing while Start is in flight", async () => {
+  let answer: (f: PortForward) => void = () => {};
+  backend({
+    portforward_start: () =>
+      new Promise<PortForward>((resolve) => {
+        answer = resolve;
+      }),
+  });
+  const close = show({ port: 8443 });
+  await pressStart();
+  const cancel = screen.getByRole("button", { name: "Cancel" });
+  expect((cancel as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(cancel);
+  fireEvent.keyDown(screen.getByTestId("pf-dialog"), { key: "Escape" });
+  await act(flush);
+  expect(close).not.toHaveBeenCalled();
+
+  await act(async () => {
+    answer(started());
+    await flush();
+  });
+  expect(close).toHaveBeenCalledTimes(1);
+});
+
 test("a failed start shows the message in the dialog and removes the new definition", async () => {
   const calls = backend({ portforward_start: NOT_AVAILABLE });
   const close = show({ port: 8443 });

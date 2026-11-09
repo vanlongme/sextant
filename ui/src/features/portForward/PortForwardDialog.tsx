@@ -109,11 +109,12 @@ export function PortForwardDialog(props: {
       testId="pf-dialog"
       title={`Port forward ${kind}/${name}`}
       onOpenChange={(open) => {
-        if (!open) close();
+        // Closing mid-start would drop the failure message of createAndStart.
+        if (!open && !busy) close();
       }}
       footer={
         <>
-          <Button variant="ghost" onClick={close}>
+          <Button variant="ghost" disabled={busy} onClick={close}>
             Cancel
           </Button>
           <Button
