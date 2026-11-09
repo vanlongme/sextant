@@ -5,6 +5,7 @@ pub mod actions;
 pub mod argocd;
 pub mod catalog;
 pub mod cluster;
+pub mod helm;
 pub mod logs;
 pub mod portforward;
 pub mod resources;

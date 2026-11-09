@@ -1,0 +1,4 @@
+# What the ConfigMap holds, and what the notes print.
+message: hello
+# Adds a Deployment whose pod never becomes ready, so an install that waits never ends.
+stuck: false

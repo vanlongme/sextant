@@ -17,6 +17,7 @@ use ts_rs::TS;
 use crate::catalog::{build_entries, ClusterEntry, PastedConfigs};
 use crate::cluster::{ClusterManager, ConnectTimeouts, ConnectionLogEntry, ConnectionState};
 use crate::error::{CoreResult, ErrorCode, IpcError};
+use crate::helm::Helm;
 use crate::kubeconfig::{
     default_sources, ClusterId, KubeconfigSync, SyncSnapshot, SyncSource, SyncWarning,
 };
@@ -84,6 +85,7 @@ struct Inner {
     home: PathBuf,
     portforwards: Arc<PortForwards>,
     tools: Tools,
+    helm: Helm,
     /// Held across a preferences write and the matching source change, so
     /// concurrent calls cannot leave the sync on sources that were not saved last.
     sync: Mutex<Option<KubeconfigSync>>,
@@ -189,6 +191,7 @@ impl AppCore {
         paths.ensure_dirs()?;
         let (events, _) = broadcast::channel(EVENT_BACKLOG);
         let connections = Arc::new(ClusterManager::start(&paths.data, events.clone()));
+        let helm = Helm::new(connections.runtime_dir().to_path_buf());
         let mut warnings = Vec::new();
         let (prefs, sources) = open_prefs(&paths, kubeconfig_env.as_deref(), &mut warnings);
         let clusters = open_store(&paths, CLUSTERS_FILE, &mut warnings);
@@ -220,6 +223,7 @@ impl AppCore {
                 home: paths.home.clone(),
                 portforwards: Arc::new(PortForwards::new(portforward_definitions, events.clone())),
                 tools: Tools::new(&paths.data),
+                helm,
                 sync: Mutex::new(Some(sync)),
                 snapshots,
                 sync_events: Mutex::new(Some(sync_events)),
@@ -430,6 +434,10 @@ impl AppCore {
 
     pub(crate) fn tools(&self) -> &Tools {
         &self.inner.tools
+    }
+
+    pub(crate) fn helm(&self) -> &Helm {
+        &self.inner.helm
     }
 
     pub(crate) fn sessions(&self) -> &Arc<SessionRegistry> {

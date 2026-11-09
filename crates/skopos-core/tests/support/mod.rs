@@ -74,6 +74,16 @@ pub async fn connected_kind() -> (AppCore, ClusterId, TempDir) {
     (core, id, root)
 }
 
+/// A core whose only kubeconfig is `kubeconfig`, connected to `context`.
+pub async fn connected_with(kubeconfig: &str, context: &str) -> (AppCore, ClusterId, TempDir) {
+    let root = tempfile::tempdir().unwrap();
+    let kube_dir = root.path().join("home").join(".kube");
+    std::fs::create_dir_all(&kube_dir).unwrap();
+    std::fs::write(kube_dir.join("config"), kubeconfig).unwrap();
+    let (core, id) = start_core(root.path(), context).await;
+    (core, id, root)
+}
+
 /// Waits out a leftover from an earlier failed run, then creates the namespace.
 async fn create_namespace(client: &Client, name: &str) {
     let namespaces: Api<Namespace> = Api::all(client.clone());

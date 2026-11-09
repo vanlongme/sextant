@@ -304,12 +304,12 @@ impl Default for ToolsConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct FileStamp {
+pub(crate) struct FileStamp {
     len: u64,
     modified: Option<SystemTime>,
 }
 
-fn stamp(path: &Path) -> Option<FileStamp> {
+pub(crate) fn stamp(path: &Path) -> Option<FileStamp> {
     let metadata = std::fs::metadata(path).ok()?;
     Some(FileStamp {
         len: metadata.len(),
@@ -540,7 +540,6 @@ impl AppCore {
     }
 
     /// What helm runs with on top of the app's environment (spec §5.1).
-    #[allow(dead_code)] // Plan 2's helm commands use it.
     pub(crate) fn tool_env(&self) -> Vec<(OsString, OsString)> {
         proxy_env(self.prefs_get().http_proxy.as_deref())
     }
