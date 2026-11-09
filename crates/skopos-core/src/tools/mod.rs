@@ -304,12 +304,12 @@ impl Default for ToolsConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct FileStamp {
+pub(crate) struct FileStamp {
     len: u64,
     modified: Option<SystemTime>,
 }
 
-fn stamp(path: &Path) -> Option<FileStamp> {
+pub(crate) fn stamp(path: &Path) -> Option<FileStamp> {
     let metadata = std::fs::metadata(path).ok()?;
     Some(FileStamp {
         len: metadata.len(),

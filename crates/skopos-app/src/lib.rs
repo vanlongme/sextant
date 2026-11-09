@@ -155,6 +155,14 @@ fn run_app(core: AppCore, mut log_guard: Option<WorkerGuard>, context: Context<W
             commands::tools::tools_download,
             commands::tools::tools_download_cancel,
             commands::helm::helm_version,
+            commands::helm::helm_repo_list,
+            commands::helm::helm_repo_add,
+            commands::helm::helm_repo_remove,
+            commands::helm::helm_repo_update,
+            commands::helm::helm_chart_search,
+            commands::helm::helm_chart_versions,
+            commands::helm::helm_chart_readme,
+            commands::helm::helm_chart_values,
         ])
         .setup(move |app| {
             events::spawn_forwarder(app.handle().clone(), forwarded);

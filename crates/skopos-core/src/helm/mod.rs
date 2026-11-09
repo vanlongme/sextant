@@ -4,13 +4,23 @@
 // Tasks 2-4 of the Helm plan call these helpers; Task 4 removes this line.
 #![allow(dead_code)]
 
+mod charts;
+mod repos;
+
+pub use charts::{ChartSearch, ChartSummary, ChartVersion, RepoProblem, RepoProblemKind};
+pub use repos::{HelmRepo, HelmRepoAdd};
+
+use charts::{HelmDirs, RepoIndex};
+
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
-use std::sync::{LazyLock, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use regex::Regex;
+use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio_util::sync::CancellationToken;
 use ts_rs::TS;
@@ -19,7 +29,7 @@ use crate::app_core::AppCore;
 use crate::error::{CoreResult, ErrorCode, IpcError};
 use crate::process::{self, Output, ProcessOutput, ProcessSpec};
 use crate::resources::invalid;
-use crate::tools::{ToolName, ToolSource};
+use crate::tools::{FileStamp, ToolName, ToolSource};
 
 /// The oldest helm 3 release that has every flag this module passes.
 pub const HELM_MINIMUM: &str = "3.13";
@@ -191,6 +201,21 @@ pub(crate) fn flag(name: &str, value: impl AsRef<OsStr>) -> OsString {
     arg
 }
 
+/// Plain arguments, for the parts of a command that never hold a user's text.
+pub(crate) fn args(items: &[&str]) -> Vec<OsString> {
+    items.iter().map(OsString::from).collect()
+}
+
+/// helm's JSON output.
+pub(crate) fn parse_json<T: DeserializeOwned>(what: &str, stdout: &[u8]) -> CoreResult<T> {
+    serde_json::from_slice(stdout).map_err(|e| {
+        IpcError::new(
+            ErrorCode::Internal,
+            format!("helm's {what} could not be read: {e}"),
+        )
+    })
+}
+
 /// A repo, chart or release name that helm takes as a positional argument. One that starts
 /// with `-` would be read as a flag; a path separator would name another chart or file.
 pub(crate) fn check_name(what: &str, name: &str) -> CoreResult<()> {
@@ -290,6 +315,10 @@ pub(crate) struct HelmBinary {
 pub(crate) struct Helm {
     runtime_dir: PathBuf,
     homes: Mutex<Option<HelmHomes>>,
+    /// `helm env`'s answers, per helm binary.
+    dirs: Mutex<HashMap<PathBuf, HelmDirs>>,
+    /// Parsed repo indexes by file, with the stamp the file had when it was read.
+    indexes: Mutex<HashMap<PathBuf, (FileStamp, Arc<RepoIndex>)>>,
 }
 
 impl Helm {
@@ -297,6 +326,8 @@ impl Helm {
         Helm {
             runtime_dir,
             homes: Mutex::new(None),
+            dirs: Mutex::new(HashMap::new()),
+            indexes: Mutex::new(HashMap::new()),
         }
     }
 
@@ -335,6 +366,7 @@ impl AppCore {
 
     pub fn set_helm_homes_for_test(&self, homes: HelmHomes) {
         *lock(&self.helm().homes) = Some(homes);
+        lock(&self.helm().dirs).clear();
     }
 
     /// The proxy variables, and the test folders when they are set.
