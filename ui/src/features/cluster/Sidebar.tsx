@@ -7,6 +7,7 @@ import {
   customResourceGroups,
   groupSegment,
   type NavSection,
+  navItemKey,
   resourcePath,
   visibleSections,
 } from "../../kinds/nav";
@@ -28,6 +29,24 @@ function Item(props: {
           isActive ? `${styles.link} ${styles.active}` : styles.link
         }
         data-testid={`nav-item-${groupSegment(group)}-${plural}`}
+        title={label}
+      >
+        {label}
+      </NavLink>
+    </li>
+  );
+}
+
+function RouteItem(props: { clusterId: string; path: string; label: string }) {
+  const { clusterId, path, label } = props;
+  return (
+    <li>
+      <NavLink
+        to={`/cluster/${encodeURIComponent(clusterId)}/${path}`}
+        className={({ isActive }) =>
+          isActive ? `${styles.link} ${styles.active}` : styles.link
+        }
+        data-testid={`nav-${path}`}
         title={label}
       >
         {label}
@@ -73,15 +92,24 @@ function Section(props: {
 function SectionItems(props: { clusterId: string; section: NavSection }) {
   const { clusterId, section } = props;
   const overview = section.overview;
-  const items = section.items.map((i) => (
-    <Item
-      key={`${i.group}/${i.plural}`}
-      clusterId={clusterId}
-      group={i.group}
-      plural={i.plural}
-      label={i.label}
-    />
-  ));
+  const items = section.items.map((i) =>
+    i.type === "route" ? (
+      <RouteItem
+        key={navItemKey(i)}
+        clusterId={clusterId}
+        path={i.path}
+        label={i.label}
+      />
+    ) : (
+      <Item
+        key={navItemKey(i)}
+        clusterId={clusterId}
+        group={i.group}
+        plural={i.plural}
+        label={i.label}
+      />
+    ),
+  );
   if (overview === undefined) return items;
   return [
     <li key="overview">

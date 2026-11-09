@@ -11,6 +11,7 @@ export function Menu(props: {
     icon?: ReactNode;
     danger?: boolean;
     disabled?: boolean;
+    testId?: string;
     onSelect(): void;
   }[];
 }) {
@@ -25,7 +26,7 @@ export function Menu(props: {
               className={`${styles.item} ${it.danger ? styles.danger : ""}`}
               disabled={it.disabled}
               onSelect={it.onSelect}
-              data-testid={`menu-item-${it.id}`}
+              data-testid={it.testId ?? `menu-item-${it.id}`}
             >
               {it.icon ? <span className={styles.icon}>{it.icon}</span> : null}
               {it.label}

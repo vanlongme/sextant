@@ -64,3 +64,36 @@ test("a cluster route renders the cluster's name", async () => {
 
   expect(await screen.findByRole("heading", { name: "alpha" })).toBeTruthy();
 });
+
+test("the port forwards route shows its screen with the sidebar entry active", async () => {
+  window.location.hash = "#/cluster/id-alpha/port-forwards";
+  mockBackend({
+    catalog_list: () => [
+      clusterEntry({
+        contextName: "alpha",
+        state: {
+          status: "connected",
+          info: {
+            version: "v1",
+            distribution: "kind",
+            nodeCount: 1,
+            namespaces: [],
+            namespacesRestricted: false,
+            isAdmin: true,
+          },
+        },
+      }),
+    ],
+    catalog_warnings: () => [],
+    hotbar_get: () => [],
+    resources_discover: () => [],
+    ui_state_get: () => null,
+    ui_state_set: () => null,
+  });
+
+  render(<App />);
+
+  expect(await screen.findByTestId("port-forwards-screen")).toBeTruthy();
+  const link = await screen.findByTestId("nav-port-forwards");
+  expect(link.getAttribute("aria-current")).toBe("page");
+});

@@ -6,6 +6,7 @@ import {
   Dialog,
   ErrorNotice,
   IconButton,
+  Menu,
   StatusDot,
 } from "./index";
 
@@ -69,4 +70,22 @@ test("Dialog puts its test id on the dialog", () => {
   const dialog = screen.getByTestId("hello-dialog");
   expect(dialog.getAttribute("role")).toBe("dialog");
   expect(dialog.textContent).toContain("Body");
+});
+
+test("a Menu item carries its own test id when it has one", () => {
+  render(
+    <Menu
+      trigger={<button type="button">Open</button>}
+      items={[
+        { id: "a", label: "A", onSelect: () => {} },
+        { id: "b", label: "B", testId: "own-b", onSelect: () => {} },
+      ]}
+    />,
+  );
+  fireEvent.keyDown(screen.getByRole("button", { name: "Open" }), {
+    key: "Enter",
+  });
+  expect(screen.getByTestId("menu-item-a").textContent).toBe("A");
+  expect(screen.getByTestId("own-b").textContent).toBe("B");
+  expect(screen.queryByTestId("menu-item-b")).toBeNull();
 });

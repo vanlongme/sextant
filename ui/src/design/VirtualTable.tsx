@@ -98,6 +98,8 @@ export function VirtualTable<T>(props: {
   rowTestId?(row: T): string;
   /** What a row's checkbox is named after: `Select <label>`. Defaults to the row key. */
   rowLabel?(row: T): string;
+  /** The test id of a row's checkbox. */
+  selectTestId?(row: T): string;
   activeKey?: string;
   testId?: string;
   rowHeight?: number;
@@ -305,6 +307,7 @@ export function VirtualTable<T>(props: {
                     <input
                       type="checkbox"
                       aria-label={`Select ${props.rowLabel?.(row) ?? key}`}
+                      data-testid={props.selectTestId?.(row)}
                       checked={isSelected}
                       onChange={(e) =>
                         toggleRow(

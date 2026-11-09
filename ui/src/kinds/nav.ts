@@ -8,12 +8,28 @@ export interface NavResource {
   plural: string;
 }
 
+/** A screen of the cluster that is not a resource list, at `/cluster/:id/<path>`. */
+export interface NavRoute {
+  type: "route";
+  label: string;
+  path: string;
+}
+
+export type NavItem = NavResource | NavRoute;
+
+/** A key for an item, unique in the sidebar. */
+export function navItemKey(item: NavItem): string {
+  return item.type === "route"
+    ? `route:${item.path}`
+    : `${item.group}/${item.plural}`;
+}
+
 export interface NavSection {
   id: string;
   label: string;
   /** A first "Overview" entry that links to `/cluster/:id/<overview>`. */
   overview?: string;
-  items: NavResource[];
+  items: NavItem[];
 }
 
 function r(label: string, group: string, plural: string): NavResource {
@@ -23,9 +39,9 @@ function r(label: string, group: string, plural: string): NavResource {
 /**
  * The sidebar sections of F4, in order. Overview is the cluster home route and not
  * a resource. The Workloads Overview entry is in the sidebar, but its page is
- * a placeholder until the overview screens (F17). Helm (Charts, Releases) and Port
- * Forwarding arrive in later phases (Helm in Phase 4, Port Forwarding in Phase 5),
- * so they are left out for now. Custom Resources starts with Definitions; the
+ * a placeholder until the overview screens (F17). Helm (Charts, Releases) arrives in
+ * Phase 4, so it is left out for now. Port Forwarding is a route of the cluster
+ * screen, not a resource kind. Custom Resources starts with Definitions; the
  * entries for each CRD are added by `customResourceGroups`.
  */
 export const NAV_SECTIONS: NavSection[] = [
@@ -78,6 +94,7 @@ export const NAV_SECTIONS: NavSection[] = [
       r("Ingresses", "networking.k8s.io", "ingresses"),
       r("IngressClasses", "networking.k8s.io", "ingressclasses"),
       r("NetworkPolicies", "networking.k8s.io", "networkpolicies"),
+      { type: "route", label: "Port Forwarding", path: "port-forwards" },
     ],
   },
   {
@@ -162,7 +179,10 @@ export function visibleSections(resources: ApiResourceInfo[]): NavSection[] {
   const ok = listable(resources);
   return NAV_SECTIONS.map((section) => ({
     ...section,
-    items: section.items.filter((i) => ok.has(`${i.group}/${i.plural}`)),
+    // A route needs no resource to list, so it always shows.
+    items: section.items.filter(
+      (i) => i.type === "route" || ok.has(`${i.group}/${i.plural}`),
+    ),
   })).filter((section) => section.items.length > 0);
 }
 

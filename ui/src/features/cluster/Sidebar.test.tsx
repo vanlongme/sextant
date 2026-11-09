@@ -65,7 +65,12 @@ test("shows the visible sections and items", async () => {
   expect(screen.getByTestId("nav-overview-workloads")).toBeTruthy();
   expect(screen.getByTestId("nav-item-core-pods")).toBeTruthy();
   expect(screen.getByTestId("nav-item-apps-deployments")).toBeTruthy();
-  expect(screen.queryByTestId("nav-section-network")).toBeNull();
+  const network = screen.getByTestId("nav-section-network");
+  expect(
+    within(network)
+      .getAllByRole("link")
+      .map((a) => a.getAttribute("data-testid")),
+  ).toEqual(["nav-port-forwards"]);
   expect(screen.queryByTestId("nav-item-batch-jobs")).toBeNull();
   const group = screen.getByTestId("nav-crd-group-acme.io");
   expect(within(group).getByTestId("nav-item-acme.io-gadgets")).toBeTruthy();
@@ -178,4 +183,15 @@ test("without list access to definitions, CRD groups still show", async () => {
 test("every nav section id is distinct", () => {
   const ids = NAV_SECTIONS.map((s) => s.id);
   expect(new Set(ids).size).toBe(ids.length);
+});
+
+test("Port Forwarding links to the cluster's port forwards and is active there", async () => {
+  await show({}, "/cluster/c1/port-forwards");
+  const link = screen.getByTestId("nav-port-forwards");
+  expect(link.textContent).toBe("Port Forwarding");
+  expect(link.getAttribute("href")).toBe("/cluster/c1/port-forwards");
+  expect(link.getAttribute("aria-current")).toBe("page");
+  expect(
+    screen.getByTestId("nav-overview").getAttribute("aria-current"),
+  ).toBeNull();
 });

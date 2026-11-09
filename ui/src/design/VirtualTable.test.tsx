@@ -365,3 +365,22 @@ test("rows are 34 px tall unless rowHeight says otherwise", () => {
   );
   expect(screen.getByTestId("row-a").style.height).toBe("34px");
 });
+
+test("a row's checkbox carries the test id selectTestId gives", () => {
+  render(
+    <VirtualTable
+      rows={[row("a"), row("b")]}
+      columns={columns}
+      rowKey={rowKey}
+      selected={new Set(["b"])}
+      onSelectedChange={() => {}}
+      selectTestId={(r) => `select-${r.id}`}
+    />,
+  );
+  expect((screen.getByTestId("select-a") as HTMLInputElement).checked).toBe(
+    false,
+  );
+  expect((screen.getByTestId("select-b") as HTMLInputElement).checked).toBe(
+    true,
+  );
+});

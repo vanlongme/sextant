@@ -5,6 +5,7 @@ import {
   groupFromSegment,
   groupSegment,
   NAV_SECTIONS,
+  navItemKey,
   resourcePath,
   visibleSections,
 } from "./nav";
@@ -67,6 +68,7 @@ const EXPECTED: [string, string[]][] = [
       "networking.k8s.io/ingresses",
       "networking.k8s.io/ingressclasses",
       "networking.k8s.io/networkpolicies",
+      "route:port-forwards",
     ],
   ],
   [
@@ -93,13 +95,12 @@ const EXPECTED: [string, string[]][] = [
 ];
 
 const allServed = () =>
-  NAV_SECTIONS.flatMap((s) => s.items).map((i) => info(i.group, i.plural));
+  NAV_SECTIONS.flatMap((s) => s.items).flatMap((i) =>
+    i.type === "resource" ? [info(i.group, i.plural)] : [],
+  );
 
 test("NAV_SECTIONS covers every F4 resource", () => {
-  const actual = NAV_SECTIONS.map((s) => [
-    s.id,
-    s.items.map((i) => `${i.group}/${i.plural}`),
-  ]);
+  const actual = NAV_SECTIONS.map((s) => [s.id, s.items.map(navItemKey)]);
   expect(actual).toEqual(EXPECTED);
   expect(NAV_SECTIONS.map((s) => s.label)).toEqual([
     "Nodes",
@@ -118,8 +119,8 @@ test("NAV_SECTIONS covers every F4 resource", () => {
 test("items not served are hidden", () => {
   const served = allServed().filter((r) => r.resource.plural !== "cronjobs");
   const workloads = visibleSections(served).find((s) => s.id === "workloads");
-  expect(workloads?.items.map((i) => i.plural)).not.toContain("cronjobs");
-  expect(workloads?.items.map((i) => i.plural)).toContain("jobs");
+  expect(workloads?.items.map(navItemKey)).not.toContain("batch/cronjobs");
+  expect(workloads?.items.map(navItemKey)).toContain("batch/jobs");
 });
 
 test("items the user cannot list are hidden", () => {
@@ -127,17 +128,28 @@ test("items the user cannot list are hidden", () => {
     r.resource.plural === "secrets" ? { ...r, canList: false } : r,
   );
   const config = visibleSections(served).find((s) => s.id === "config");
-  expect(config?.items.map((i) => i.plural)).not.toContain("secrets");
-  expect(config?.items.map((i) => i.plural)).toContain("configmaps");
+  expect(config?.items.map(navItemKey)).not.toContain("/secrets");
+  expect(config?.items.map(navItemKey)).toContain("/configmaps");
 });
 
-test("sections with no visible items disappear", () => {
-  const sections = visibleSections([
-    info("", "pods"),
-    info("", "nodes", { canList: false }),
+test("sections with no visible items disappear; Port Forwarding needs no listable resource", () => {
+  const shape = (resources: ApiResourceInfo[]) =>
+    visibleSections(resources).map((s) => [s.id, s.items.map(navItemKey)]);
+  expect(
+    shape([info("", "pods"), info("", "nodes", { canList: false })]),
+  ).toEqual([
+    ["workloads", ["/pods"]],
+    ["network", ["route:port-forwards"]],
   ]);
-  expect(sections.map((s) => s.id)).toEqual(["workloads"]);
-  expect(visibleSections([])).toEqual([]);
+  expect(shape([])).toEqual([["network", ["route:port-forwards"]]]);
+});
+
+test("the Network group ends with Port Forwarding, a route of the cluster screen", () => {
+  expect(NAV_SECTIONS.find((s) => s.id === "network")?.items.at(-1)).toEqual({
+    type: "route",
+    label: "Port Forwarding",
+    path: "port-forwards",
+  });
 });
 
 test("custom resources group by API group and exclude built-ins", () => {

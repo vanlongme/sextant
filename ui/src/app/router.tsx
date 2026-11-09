@@ -3,6 +3,7 @@ import { CatalogScreen } from "../features/catalog/CatalogScreen";
 import { ClusterOverview } from "../features/cluster/ClusterHome";
 import { WorkloadsOverview } from "../features/cluster/ClusterLayout";
 import { ClusterScreen } from "../features/cluster/ClusterScreen";
+import { PortForwardsRoute } from "../features/portForward/PortForwardsScreen";
 import { PreferencesScreen } from "../features/prefs/PreferencesScreen";
 import { ResourceRoute } from "../features/resources/ResourceScreen";
 import { Shell } from "./Shell";
@@ -23,6 +24,7 @@ export function createAppRouter() {
             { index: true, element: <ClusterOverview /> },
             { path: "workloads", element: <WorkloadsOverview /> },
             { path: "r/:group/:plural", element: <ResourceRoute /> },
+            { path: "port-forwards", element: <PortForwardsRoute /> },
           ],
         },
         { path: "preferences", element: <PreferencesScreen /> },
