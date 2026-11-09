@@ -1,7 +1,11 @@
 //! Helm (F15). Each command delegates to `AppCore`.
 
 use skopos_core::error::IpcError;
-use skopos_core::helm::{ChartSearch, ChartVersion, HelmInfo, HelmRepo, HelmRepoAdd};
+use skopos_core::helm::{
+    ChartSearch, ChartVersion, HelmInfo, HelmReleaseDetail, HelmReleaseList, HelmRepo, HelmRepoAdd,
+    HelmRevision,
+};
+use skopos_core::kubeconfig::ClusterId;
 use tauri::State;
 
 use crate::state::AppState;
@@ -70,4 +74,53 @@ pub async fn helm_chart_values(
     version: String,
 ) -> Result<String, IpcError> {
     state.core.helm_chart_values(&repo, &chart, &version).await
+}
+
+#[tauri::command]
+pub async fn helm_release_list(
+    state: State<'_, AppState>,
+    cluster_id: ClusterId,
+    namespaces: Option<Vec<String>>,
+) -> Result<HelmReleaseList, IpcError> {
+    state.core.helm_release_list(&cluster_id, namespaces).await
+}
+
+#[tauri::command]
+pub async fn helm_release_get(
+    state: State<'_, AppState>,
+    cluster_id: ClusterId,
+    namespace: String,
+    name: String,
+) -> Result<HelmReleaseDetail, IpcError> {
+    state
+        .core
+        .helm_release_get(&cluster_id, &namespace, &name)
+        .await
+}
+
+#[tauri::command]
+pub async fn helm_release_values(
+    state: State<'_, AppState>,
+    cluster_id: ClusterId,
+    namespace: String,
+    name: String,
+    all: bool,
+) -> Result<String, IpcError> {
+    state
+        .core
+        .helm_release_values(&cluster_id, &namespace, &name, all)
+        .await
+}
+
+#[tauri::command]
+pub async fn helm_release_history(
+    state: State<'_, AppState>,
+    cluster_id: ClusterId,
+    namespace: String,
+    name: String,
+) -> Result<Vec<HelmRevision>, IpcError> {
+    state
+        .core
+        .helm_release_history(&cluster_id, &namespace, &name)
+        .await
 }

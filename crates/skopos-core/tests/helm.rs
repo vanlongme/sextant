@@ -2,14 +2,19 @@
 //! `kind_helm.rs`. The scripts need a Unix shell, so this file runs on Unix.
 #![cfg(unix)]
 
+mod support;
+
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use skopos_core::app_core::AppCore;
 use skopos_core::error::ErrorCode;
 use skopos_core::helm::{HelmHomes, HelmRepo, HelmRepoAdd, RepoProblem, RepoProblemKind};
+use skopos_core::kubeconfig::ClusterId;
 use skopos_core::paths::AppPaths;
 use skopos_core::tools::{ToolSource, ToolsConfig};
+use skopos_fakekube::FakeKubeConfig;
+use support::connected_fake;
 use tempfile::TempDir;
 
 /// A fake helm in its own folder. `helm version` prints `version`. Any other call appends
@@ -401,5 +406,250 @@ async fn readme_and_values_ask_helm_for_that_version() {
         .await
         .unwrap_err();
     assert_eq!(error.code, ErrorCode::InvalidInput);
+    core.shutdown().await;
+}
+
+/// The `--kubeconfig=` argument helm gets for `id`.
+fn kubeconfig_arg(core: &AppCore, id: &ClusterId) -> String {
+    let path = core.cluster_kubeconfig_path(id).unwrap();
+    format!("--kubeconfig={}", path.display())
+}
+
+const LIST: &str = r#"[{"name":"web","namespace":"skopos-test-helm","revision":"2","updated":"2026-11-09 09:25:49.373528822 +0700 +07","status":"deployed","chart":"skopos-fixture-0.2.0","app_version":"1.1.0"},{"name":"api","namespace":"default","revision":"1","updated":"2026-11-09 09:20:00 +0700 +07","status":"failed","chart":"skopos-fixture-0.1.0","app_version":"1.0.0"}]"#;
+
+const FORBIDDEN: &str = r#"echo 'Error: list: failed to list: secrets is forbidden: User "viewer" cannot list resource "secrets" in API group ""' >&2; exit 1"#;
+
+#[tokio::test]
+async fn releases_are_listed_with_the_cluster_kubeconfig() {
+    let helm = FakeHelm::new("v4.3.1", &format!("printf '%s' '{LIST}'"));
+    let (core, _fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
+    helm.configure(&core);
+    let list = core.helm_release_list(&id, None).await.unwrap();
+    let names: Vec<(&str, &str)> = list
+        .releases
+        .iter()
+        .map(|r| (r.namespace.as_str(), r.name.as_str()))
+        .collect();
+    assert_eq!(names, [("default", "api"), ("skopos-test-helm", "web")]);
+    assert!(!list.partial);
+    assert!(list.failed_namespaces.is_empty());
+    assert_eq!(
+        list.releases[1].updated.as_deref(),
+        Some("2026-11-09T09:25:49.373528822+07:00")
+    );
+    let kubeconfig = kubeconfig_arg(&core, &id);
+    let expected = strings(&[
+        "list",
+        kubeconfig.as_str(),
+        "--all-namespaces",
+        "--deployed",
+        "--failed",
+        "--pending",
+        "--superseded",
+        "--uninstalled",
+        "--uninstalling",
+        "--max=0",
+        "--output=json",
+    ]);
+    assert_eq!(helm.calls(), [expected]);
+    core.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_forbidden_list_of_every_namespace_lists_each_namespace() {
+    let body = format!(
+        "case \"$*\" in *--all-namespaces*|*--namespace=kube-system*) {FORBIDDEN};; esac\n\
+         printf '%s' '[{{\"name\":\"web\",\"namespace\":\"default\",\"revision\":\"2\",\"status\":\"deployed\",\"chart\":\"skopos-fixture-0.2.0\"}}]'"
+    );
+    let helm = FakeHelm::new("v4.3.1", &body);
+    let (core, _fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
+    helm.configure(&core);
+    let list = core.helm_release_list(&id, None).await.unwrap();
+    assert_eq!(list.releases.len(), 1);
+    assert_eq!(list.releases[0].namespace, "default");
+    assert!(list.partial);
+    assert_eq!(list.failed_namespaces, ["kube-system"]);
+    let mut namespaces: Vec<String> = helm
+        .calls()
+        .iter()
+        .flat_map(|call| {
+            call.iter()
+                .filter(|arg| arg.starts_with("--namespace="))
+                .cloned()
+        })
+        .collect();
+    namespaces.sort();
+    assert_eq!(
+        namespaces,
+        ["--namespace=default", "--namespace=kube-system"]
+    );
+    core.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_list_is_refused_when_every_namespace_fails() {
+    let helm = FakeHelm::new("v4.3.1", FORBIDDEN);
+    let (core, _fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
+    helm.configure(&core);
+    let error = core.helm_release_list(&id, None).await.unwrap_err();
+    assert_eq!(error.code, ErrorCode::Forbidden);
+    assert!(error.message.contains("forbidden"), "{}", error.message);
+    let error = core
+        .helm_release_list(&id, Some(vec!["default".into()]))
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::Forbidden);
+    let calls = helm.calls().len();
+    let empty = core.helm_release_list(&id, Some(Vec::new())).await.unwrap();
+    assert!(empty.releases.is_empty() && !empty.partial);
+    assert_eq!(helm.calls().len(), calls);
+    let error = core
+        .helm_release_list(&id, Some(vec!["Bad".into()]))
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::InvalidInput);
+    core.shutdown().await;
+}
+
+const STATUS: &str = r#"{"name":"rel","info":{"first_deployed":"2026-11-09T09:25:49.373528822+07:00","last_deployed":"2026-11-09T09:30:12.1+07:00","description":"Upgrade complete","status":"deployed","notes":"Release rel holds hello."},"manifest":"---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: rel-config\n---\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: rel-web\n---\napiVersion: v1\nkind: Namespace\nmetadata:\n  name: rel-space\n---\napiVersion: example.test/v1\nkind: Widget\nmetadata:\n  name: gadget\n","version":2,"namespace":"skopos-test-helm"}"#;
+
+const HISTORY: &str = r#"[{"revision":1,"updated":"2026-11-09T09:25:49.373528822+07:00","status":"superseded","chart":"skopos-fixture-0.1.0","app_version":"1.0.0","description":"Install complete"},{"revision":2,"updated":"2026-11-09T09:30:12.1+07:00","status":"deployed","chart":"skopos-fixture-0.2.0","app_version":"1.1.0","description":"Upgrade complete"}]"#;
+
+#[tokio::test]
+async fn a_release_detail_comes_from_status_history_and_discovery() {
+    let body = format!(
+        "case \"$1\" in status) printf '%s' '{STATUS}';; history) printf '%s' '{HISTORY}';; esac"
+    );
+    let helm = FakeHelm::new("v4.3.1", &body);
+    let (core, _fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
+    helm.configure(&core);
+    let detail = core
+        .helm_release_get(&id, "skopos-test-helm", "rel")
+        .await
+        .unwrap();
+    assert_eq!(detail.release.chart, "skopos-fixture-0.2.0");
+    assert_eq!(detail.release.app_version.as_deref(), Some("1.1.0"));
+    let resources: Vec<(String, Option<String>, Option<String>)> = detail
+        .resources
+        .iter()
+        .map(|r| {
+            (
+                r.name.clone(),
+                r.namespace.clone(),
+                r.resource.as_ref().map(|served| served.plural.clone()),
+            )
+        })
+        .collect();
+    assert_eq!(
+        resources,
+        [
+            (
+                "rel-config".into(),
+                Some("skopos-test-helm".into()),
+                Some("configmaps".into())
+            ),
+            (
+                "rel-web".into(),
+                Some("skopos-test-helm".into()),
+                Some("deployments".into())
+            ),
+            ("rel-space".into(), None, Some("namespaces".into())),
+            ("gadget".into(), None, None),
+        ]
+    );
+    let kubeconfig = kubeconfig_arg(&core, &id);
+    let kubeconfig = kubeconfig.as_str();
+    let mut calls = helm.calls();
+    calls.sort();
+    assert_eq!(
+        calls,
+        [
+            strings(&[
+                "history",
+                "rel",
+                kubeconfig,
+                "--namespace=skopos-test-helm",
+                "--max=10000",
+                "--output=json"
+            ]),
+            strings(&[
+                "status",
+                "rel",
+                kubeconfig,
+                "--namespace=skopos-test-helm",
+                "--output=json"
+            ]),
+        ]
+    );
+    let history = core
+        .helm_release_history(&id, "skopos-test-helm", "rel")
+        .await
+        .unwrap();
+    assert_eq!(
+        history.iter().map(|r| r.revision).collect::<Vec<_>>(),
+        [2, 1]
+    );
+    let error = core
+        .helm_release_get(&id, "skopos-test-helm", "-rel")
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::InvalidInput);
+    core.shutdown().await;
+}
+
+#[tokio::test]
+async fn release_values_print_null_as_empty() {
+    let helm = FakeHelm::new(
+        "v4.3.1",
+        r#"case "$*" in *--all*) printf 'message: hello\nreplicas: 0\n';; *) printf 'null\n';; esac"#,
+    );
+    let (core, _fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
+    helm.configure(&core);
+    let given = core
+        .helm_release_values(&id, "skopos-test-helm", "rel", false)
+        .await
+        .unwrap();
+    assert_eq!(given, "");
+    let all = core
+        .helm_release_values(&id, "skopos-test-helm", "rel", true)
+        .await
+        .unwrap();
+    assert_eq!(all, "message: hello\nreplicas: 0\n");
+    let kubeconfig = kubeconfig_arg(&core, &id);
+    let kubeconfig = kubeconfig.as_str();
+    assert_eq!(
+        helm.calls(),
+        [
+            strings(&[
+                "get",
+                "values",
+                "rel",
+                kubeconfig,
+                "--namespace=skopos-test-helm",
+                "--output=yaml"
+            ]),
+            strings(&[
+                "get",
+                "values",
+                "rel",
+                kubeconfig,
+                "--namespace=skopos-test-helm",
+                "--all",
+                "--output=yaml"
+            ]),
+        ]
+    );
+    core.shutdown().await;
+}
+
+#[tokio::test]
+async fn release_commands_need_a_connected_cluster() {
+    let helm = FakeHelm::new("v4.3.1", "exit 0");
+    let (core, _fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
+    helm.configure(&core);
+    core.cluster_disconnect(&id).await.unwrap();
+    let error = core.helm_release_list(&id, None).await.unwrap_err();
+    assert_eq!(error.code, ErrorCode::Unreachable);
+    assert!(helm.calls().is_empty());
     core.shutdown().await;
 }

@@ -5,9 +5,13 @@
 #![allow(dead_code)]
 
 mod charts;
+mod releases;
 mod repos;
 
 pub use charts::{ChartSearch, ChartSummary, ChartVersion, RepoProblem, RepoProblemKind};
+pub use releases::{
+    HelmRelease, HelmReleaseDetail, HelmReleaseList, HelmRevision, ManifestResource,
+};
 pub use repos::{HelmRepo, HelmRepoAdd};
 
 use charts::{HelmDirs, RepoIndex};
@@ -199,6 +203,12 @@ pub(crate) fn flag(name: &str, value: impl AsRef<OsStr>) -> OsString {
     let mut arg = OsString::from(format!("--{name}="));
     arg.push(value);
     arg
+}
+
+/// What every cluster command passes: the per-context kubeconfig F3 writes, and the
+/// namespace.
+pub(crate) fn cluster_args(kubeconfig: &Path, namespace: &str) -> Vec<OsString> {
+    vec![flag("kubeconfig", kubeconfig), flag("namespace", namespace)]
 }
 
 /// Plain arguments, for the parts of a command that never hold a user's text.
