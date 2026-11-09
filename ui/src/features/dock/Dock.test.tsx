@@ -1,12 +1,23 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
-import { FileCode, FilePlus, type LucideIcon, ScrollText } from "lucide-react";
+import {
+  FileCode,
+  FilePlus,
+  type LucideIcon,
+  Plug,
+  ScrollText,
+  SquareTerminal,
+  Terminal,
+} from "lucide-react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ResourceRef } from "../../ipc/generated/ResourceRef";
 import {
   editTab,
   logsTab,
   newCreateTab,
+  nodeShellTabFor,
+  podSessionTab,
   resetDockForTest,
+  terminalTab,
   useDock,
 } from "../../stores/dock";
 import { resetResourcesForTest } from "../../stores/resources";
@@ -273,15 +284,23 @@ test("each tab shows its kind's 14 px icon before its title", async () => {
     metadata: { name: "web", namespace: "team-a" },
     spec: { containers: [{ name: "main" }] },
   });
-  useDock.getState().open(WEB);
-  useDock.getState().open(create);
-  useDock.getState().open(logs);
+  const terminal = terminalTab("c1", "kind-dev");
+  const shell = podSessionTab("shell", "c1", "team-a", "web", "main");
+  const attach = podSessionTab("attach", "c1", "team-a", "web", "main");
+  const nodeShell = nodeShellTabFor("c1", "worker-1");
+  for (const tab of [WEB, create, logs, terminal, shell, attach, nodeShell]) {
+    useDock.getState().open(tab);
+  }
   await show();
 
   for (const [tab, Icon] of [
     [WEB, FileCode],
     [create, FilePlus],
     [logs, ScrollText],
+    [terminal, SquareTerminal],
+    [shell, Terminal],
+    [attach, Plug],
+    [nodeShell, Terminal],
   ] as const) {
     const button = screen.getByTestId(`dock-tab-${tab.id}`);
     const svg = button.querySelector("svg");
@@ -293,6 +312,9 @@ test("each tab shows its kind's 14 px icon before its title", async () => {
   expect(
     screen.getByTestId(`dock-close-${logs.id}`).getAttribute("aria-label"),
   ).toBe("Close Logs · web");
+  expect(
+    screen.getByTestId(`dock-close-${terminal.id}`).getAttribute("aria-label"),
+  ).toBe("Close Terminal · kind-dev");
 });
 
 test("a Logs tab's panel holds the Logs view, which starts its stream", async () => {

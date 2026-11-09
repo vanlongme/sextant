@@ -17,8 +17,11 @@ import {
   FileCode,
   FilePlus,
   type LucideIcon,
+  Plug,
   Plus,
   ScrollText,
+  SquareTerminal,
+  Terminal,
   X,
 } from "lucide-react";
 import { type KeyboardEvent, type PointerEvent, useRef, useState } from "react";
@@ -46,6 +49,10 @@ const TAB_ICONS: Record<DockTab["kind"], LucideIcon> = {
   edit: FileCode,
   create: FilePlus,
   logs: ScrollText,
+  terminal: SquareTerminal,
+  shell: Terminal,
+  attach: Plug,
+  nodeShell: Terminal,
 };
 
 function TabBody({ tab }: { tab: DockTab }) {

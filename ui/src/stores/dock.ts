@@ -35,7 +35,6 @@ export type LogTabOptions = {
   wrap: boolean;
 };
 
-// Terminal tab kinds come with B3.
 export type DockTab =
   | {
       id: string;
@@ -64,9 +63,67 @@ export type DockTab =
       name: string;
       options: LogTabOptions;
       dirty: false;
+    }
+  | {
+      id: string;
+      kind: "terminal";
+      clusterId: string;
+      title: string;
+      dirty: false;
+    }
+  | {
+      id: string;
+      kind: "shell";
+      clusterId: string;
+      title: string;
+      dirty: false;
+      namespace: string;
+      pod: string;
+      container: string | null;
+    }
+  | {
+      id: string;
+      kind: "attach";
+      clusterId: string;
+      title: string;
+      dirty: false;
+      namespace: string;
+      pod: string;
+      container: string | null;
+    }
+  | {
+      id: string;
+      kind: "nodeShell";
+      clusterId: string;
+      title: string;
+      dirty: false;
+      node: string;
     };
 
 export type LogsDockTab = Extract<DockTab, { kind: "logs" }>;
+export type TerminalDockTab = Extract<DockTab, { kind: "terminal" }>;
+export type PodSessionDockTab = Extract<DockTab, { kind: "shell" | "attach" }>;
+export type NodeShellDockTab = Extract<DockTab, { kind: "nodeShell" }>;
+/** A tab whose body is a terminal session. */
+export type SessionDockTab =
+  | TerminalDockTab
+  | PodSessionDockTab
+  | NodeShellDockTab;
+
+type EditableTab = Extract<DockTab, { kind: "edit" | "create" }>;
+
+function canBeDirty(tab: DockTab): tab is EditableTab {
+  return tab.kind === "edit" || tab.kind === "create";
+}
+
+export function isSessionTab(tab: DockTab): tab is SessionDockTab {
+  return (
+    tab.kind === "terminal" ||
+    tab.kind === "shell" ||
+    tab.kind === "attach" ||
+    tab.kind === "nodeShell"
+  );
+}
 
 /** What the dock keeps across restarts (spec §7.1). */
 export interface DockLayout {
@@ -92,9 +149,13 @@ export interface DockState {
   activate(id: string): void;
   setHeight(px: number): void;
   setMinimized(v: boolean): void;
-  /** Logs tabs are never dirty, so they are left alone. */
+  /** Edit and create tabs only: the other kinds are never dirty. */
   setDirty(id: string, dirty: boolean): void;
   setLogOptions(id: string, patch: Partial<LogTabOptions>): void;
+  /** The container of a Shell or Attach tab. Other tabs are left alone. */
+  setContainer(id: string, container: string): void;
+  /** Titles the terminal tab of each cluster given after the cluster's catalog name. */
+  renameTerminals(clusters: readonly { id: string; name: string }[]): void;
   /**
    * Applies the saved layout. Tabs opened before it arrived stay after the saved
    * ones, and the one the user opened last stays active.
@@ -177,11 +238,11 @@ export const useDock: UseBoundStore<StoreApi<DockState>> = create<DockState>(
     setDirty: (id, dirty) =>
       set((state) =>
         state.tabs.some(
-          (t) => t.id === id && t.kind !== "logs" && t.dirty !== dirty,
+          (t) => t.id === id && canBeDirty(t) && t.dirty !== dirty,
         )
           ? {
               tabs: state.tabs.map((t) =>
-                t.id === id && t.kind !== "logs" ? { ...t, dirty } : t,
+                t.id === id && canBeDirty(t) ? { ...t, dirty } : t,
               ),
             }
           : state,
@@ -194,6 +255,27 @@ export const useDock: UseBoundStore<StoreApi<DockState>> = create<DockState>(
             : t,
         ),
       })),
+    setContainer: (id, container) =>
+      set((state) => ({
+        tabs: state.tabs.map((t) =>
+          t.id === id && (t.kind === "shell" || t.kind === "attach")
+            ? { ...t, container }
+            : t,
+        ),
+      })),
+    renameTerminals: (clusters) =>
+      set((state) => {
+        const names = new Map(clusters.map((c) => [c.id, c.name] as const));
+        let changed = false;
+        const tabs = state.tabs.map((t) => {
+          if (t.kind !== "terminal") return t;
+          const name = names.get(t.clusterId);
+          if (name === undefined || terminalTitle(name) === t.title) return t;
+          changed = true;
+          return { ...t, title: terminalTitle(name) };
+        });
+        return changed ? { tabs } : state;
+      }),
     restore: (layout) => {
       for (const tab of layout.tabs) {
         const n = CREATE_ID.exec(tab.id);
@@ -317,6 +399,118 @@ export function logsTab(
     },
     dirty: false,
   };
+}
+
+interface ContainerState {
+  name: string;
+  state?: { running?: unknown };
+}
+
+/**
+ * The container a Shell or Attach tab starts on: the first of `spec.containers` that
+ * runs, else the first one. Init and ephemeral containers are never offered.
+ */
+export function defaultContainer(pod: KubeObject): string | null {
+  const names: string[] = (pod.spec?.containers ?? []).map(
+    (c: { name: string }) => c.name,
+  );
+  const states: ContainerState[] = pod.status?.containerStatuses ?? [];
+  const running = names.find((name) =>
+    states.some((s) => s.name === name && s.state?.running !== undefined),
+  );
+  return running ?? names[0] ?? null;
+}
+
+export function terminalTabId(clusterId: string): string {
+  return `terminal:${clusterId}`;
+}
+
+/** "Terminal" until the catalog has given the cluster's name. */
+export function terminalTitle(clusterName: string | null): string {
+  return clusterName === null ? "Terminal" : `Terminal · ${clusterName}`;
+}
+
+/** The cluster's one local terminal. */
+export function terminalTab(
+  clusterId: string,
+  clusterName: string | null,
+): TerminalDockTab {
+  return {
+    id: terminalTabId(clusterId),
+    kind: "terminal",
+    clusterId,
+    title: terminalTitle(clusterName),
+    dirty: false,
+  };
+}
+
+export function podSessionTab(
+  kind: "shell" | "attach",
+  clusterId: string,
+  namespace: string,
+  pod: string,
+  container: string | null,
+): PodSessionDockTab {
+  return {
+    id: `${kind}:${clusterId}:${namespace}/${pod}`,
+    kind,
+    clusterId,
+    title: `${kind === "shell" ? "Shell" : "Attach"} · ${pod}`,
+    dirty: false,
+    namespace,
+    pod,
+    container,
+  };
+}
+
+/** A shell in the Pod, on its default container. */
+export function shellTab(
+  clusterId: string,
+  pod: KubeObject,
+): PodSessionDockTab {
+  return podSessionTab(
+    "shell",
+    clusterId,
+    pod.metadata.namespace ?? "",
+    pod.metadata.name,
+    defaultContainer(pod),
+  );
+}
+
+/** An attach to the PID 1 of the Pod's default container. */
+export function attachTab(
+  clusterId: string,
+  pod: KubeObject,
+): PodSessionDockTab {
+  return podSessionTab(
+    "attach",
+    clusterId,
+    pod.metadata.namespace ?? "",
+    pod.metadata.name,
+    defaultContainer(pod),
+  );
+}
+
+export function nodeShellTabFor(
+  clusterId: string,
+  node: string,
+): NodeShellDockTab {
+  return {
+    id: `node-shell:${clusterId}:${node}`,
+    kind: "nodeShell",
+    clusterId,
+    title: `Shell · ${node}`,
+    dirty: false,
+    node,
+  };
+}
+
+/** A root shell on the node. */
+export function nodeShellTab(
+  clusterId: string,
+  node: KubeObject,
+): NodeShellDockTab {
+  return nodeShellTabFor(clusterId, node.metadata.name);
 }
 
 /** A new tab for creating resources. */

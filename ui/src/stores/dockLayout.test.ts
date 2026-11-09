@@ -8,7 +8,10 @@ import {
   type DockTab,
   editTab,
   logsTab,
+  nodeShellTabFor,
+  podSessionTab,
   resetDockForTest,
+  terminalTab,
   useDock,
   writeDraft,
 } from "./dock";
@@ -323,4 +326,98 @@ test("a catalog that has already loaded is applied right after restore", async (
   });
   await restoreDockLayout();
   expect(ids()).toEqual([LOGS.id]);
+});
+
+const TERMINAL = terminalTab("c1", null);
+const SHELL = podSessionTab("shell", "c1", "shop", "web-1", "app");
+const ATTACH = podSessionTab("attach", "c2", "shop", "web-1", null);
+const NODE_SHELL = nodeShellTabFor("c1", "worker-1");
+
+const SAVED_TERMINAL = { id: "terminal:c1", kind: "terminal", clusterId: "c1" };
+const SAVED_SHELL = {
+  id: "shell:c1:shop/web-1",
+  kind: "shell",
+  clusterId: "c1",
+  namespace: "shop",
+  pod: "web-1",
+  container: "app",
+};
+const SAVED_ATTACH = {
+  id: "attach:c2:shop/web-1",
+  kind: "attach",
+  clusterId: "c2",
+  namespace: "shop",
+  pod: "web-1",
+  container: null,
+};
+const SAVED_NODE_SHELL = {
+  id: "node-shell:c1:worker-1",
+  kind: "nodeShell",
+  clusterId: "c1",
+  node: "worker-1",
+};
+
+test("the session kinds save their fields and come back with their titles", () => {
+  useDock.setState({
+    tabs: [terminalTab("c1", "kind-dev"), SHELL, ATTACH, NODE_SHELL],
+    activeId: SHELL.id,
+  });
+  const written = JSON.parse(
+    JSON.stringify(serializeLayout(useDock.getState())),
+  );
+  expect(written.tabs).toEqual([
+    SAVED_TERMINAL,
+    SAVED_SHELL,
+    SAVED_ATTACH,
+    SAVED_NODE_SHELL,
+  ]);
+  expect(parseLayout(written).tabs).toEqual([
+    TERMINAL,
+    SHELL,
+    ATTACH,
+    NODE_SHELL,
+  ]);
+});
+
+test("a malformed session tab is dropped alone", () => {
+  const layout = parseLayout(
+    saved([
+      SAVED_TERMINAL,
+      { ...SAVED_TERMINAL, id: "terminal:c2" },
+      { ...SAVED_SHELL, pod: "" },
+      { ...SAVED_SHELL, container: "" },
+      { ...SAVED_SHELL, container: 3 },
+      { ...SAVED_SHELL, namespace: null },
+      { ...SAVED_SHELL, id: "shell:c1:shop/other" },
+      { ...SAVED_ATTACH, kind: "shell" },
+      { ...SAVED_NODE_SHELL, node: "" },
+      { ...SAVED_NODE_SHELL, id: "node-shell:c1:worker-2" },
+      SAVED_SHELL,
+      SAVED_ATTACH,
+      SAVED_NODE_SHELL,
+    ]),
+  );
+  expect(layout.tabs).toEqual([TERMINAL, SHELL, ATTACH, NODE_SHELL]);
+});
+
+test("a restored terminal tab reads Terminal until the catalog has loaded, then its cluster's name", async () => {
+  mockBackend({
+    ui_state_get: () => saved([SAVED_TERMINAL, SAVED_NODE_SHELL]),
+    ui_state_set: () => null,
+  });
+  await restoreDockLayout();
+  expect(useDock.getState().tabs.map((t) => t.title)).toEqual([
+    "Terminal",
+    "Shell · worker-1",
+  ]);
+
+  useCatalog.setState({
+    loading: false,
+    error: null,
+    clusters: [clusterEntry({ id: "c1", name: "kind-dev" })],
+  });
+  expect(useDock.getState().tabs.map((t) => t.title)).toEqual([
+    "Terminal · kind-dev",
+    "Shell · worker-1",
+  ]);
 });

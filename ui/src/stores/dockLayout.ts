@@ -12,13 +12,17 @@ import {
   type LogTabOptions,
   logsTabId,
   logsTitle,
+  nodeShellTabFor,
+  podSessionTab,
+  terminalTab,
+  terminalTabId,
   useDock,
 } from "./dock";
 
 export const DOCK_LAYOUT_KEY = "dock:layout";
 export const LAYOUT_SAVE_DELAY_MS = 300;
 
-/** A tab as saved (spec §7.1): its title is rebuilt on load, and it comes back clean. */
+/** A tab as saved (spec §7.1, and B3 §7 for the session kinds): its title is rebuilt on load, and it comes back clean. */
 export type SavedTab =
   | {
       id: string;
@@ -37,7 +41,17 @@ export type SavedTab =
       namespace: string;
       name: string;
       options: LogTabOptions;
-    };
+    }
+  | { id: string; kind: "terminal"; clusterId: string }
+  | {
+      id: string;
+      kind: "shell" | "attach";
+      clusterId: string;
+      namespace: string;
+      pod: string;
+      container: string | null;
+    }
+  | { id: string; kind: "nodeShell"; clusterId: string; node: string };
 
 export type SavedLayout = {
   version: 1;
@@ -139,6 +153,24 @@ function parseTab(v: JsonValue | undefined): DockTab | null {
         dirty: false,
       };
     }
+    case "terminal":
+      return id === terminalTabId(clusterId)
+        ? terminalTab(clusterId, null)
+        : null;
+    case "shell":
+    case "attach": {
+      const { pod, container } = v;
+      if (!isName(namespace) || !isName(pod)) return null;
+      if (!(container === null || isName(container))) return null;
+      const tab = podSessionTab(kind, clusterId, namespace, pod, container);
+      return tab.id === id ? tab : null;
+    }
+    case "nodeShell": {
+      const { node } = v;
+      if (!isName(node)) return null;
+      const tab = nodeShellTabFor(clusterId, node);
+      return tab.id === id ? tab : null;
+    }
     default:
       return null;
   }
@@ -198,6 +230,25 @@ function savedTab(tab: DockTab): SavedTab {
         name: tab.name,
         options: tab.options,
       };
+    case "terminal":
+      return { id: tab.id, kind: "terminal", clusterId: tab.clusterId };
+    case "shell":
+    case "attach":
+      return {
+        id: tab.id,
+        kind: tab.kind,
+        clusterId: tab.clusterId,
+        namespace: tab.namespace,
+        pod: tab.pod,
+        container: tab.container,
+      };
+    case "nodeShell":
+      return {
+        id: tab.id,
+        kind: "nodeShell",
+        clusterId: tab.clusterId,
+        node: tab.node,
+      };
   }
 }
 
@@ -248,13 +299,17 @@ function startWriting(): () => void {
   };
 }
 
-/** Drops the tabs of unknown clusters once, when the catalog has loaded without error. */
+/**
+ * Once, when the catalog has loaded without error: drops the tabs of unknown clusters,
+ * and names each restored terminal tab after its cluster.
+ */
 function pruneOnce(): () => void {
   let done = false;
   function check(catalog: CatalogState): void {
     if (done || catalog.loading || catalog.error !== null) return;
     done = true;
     useDock.getState().keepClusters(catalog.clusters.map((c) => c.id));
+    useDock.getState().renameTerminals(catalog.clusters);
   }
   check(useCatalog.getState());
   if (done) return () => {};
