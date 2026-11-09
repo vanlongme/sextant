@@ -2,12 +2,16 @@
 
 use skopos_core::error::IpcError;
 use skopos_core::helm::{
-    ChartSearch, ChartVersion, HelmInfo, HelmReleaseDetail, HelmReleaseList, HelmRepo, HelmRepoAdd,
-    HelmRevision,
+    ChartSearch, ChartVersion, HelmInfo, HelmInstallRequest, HelmPreview, HelmReleaseDetail,
+    HelmReleaseList, HelmRepo, HelmRepoAdd, HelmRevision, HelmUpgradeRequest,
 };
 use skopos_core::kubeconfig::ClusterId;
+use skopos_core::sessions::SessionEvent;
+use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::State;
+use tokio::sync::mpsc;
 
+use crate::commands::sessions::{forward_output, OUTPUT_BACKLOG};
 use crate::state::AppState;
 
 #[tauri::command]
@@ -123,4 +127,97 @@ pub async fn helm_release_history(
         .core
         .helm_release_history(&cluster_id, &namespace, &name)
         .await
+}
+
+#[tauri::command]
+pub async fn helm_install_preview(
+    state: State<'_, AppState>,
+    cluster_id: ClusterId,
+    request: HelmInstallRequest,
+) -> Result<HelmPreview, IpcError> {
+    state.core.helm_install_preview(&cluster_id, &request).await
+}
+
+#[tauri::command]
+pub async fn helm_upgrade_preview(
+    state: State<'_, AppState>,
+    cluster_id: ClusterId,
+    request: HelmUpgradeRequest,
+) -> Result<HelmPreview, IpcError> {
+    state.core.helm_upgrade_preview(&cluster_id, &request).await
+}
+
+#[tauri::command]
+pub async fn helm_install_start(
+    state: State<'_, AppState>,
+    cluster_id: ClusterId,
+    request: HelmInstallRequest,
+    on_data: Channel<InvokeResponseBody>,
+    on_event: Channel<SessionEvent>,
+) -> Result<String, IpcError> {
+    let (tx, rx) = mpsc::channel(OUTPUT_BACKLOG);
+    let id = state
+        .core
+        .helm_install_start(&cluster_id, &request, tx)
+        .await?;
+    forward_output(state.core.clone(), id.clone(), rx, on_data, on_event);
+    Ok(id)
+}
+
+#[tauri::command]
+pub async fn helm_upgrade_start(
+    state: State<'_, AppState>,
+    cluster_id: ClusterId,
+    request: HelmUpgradeRequest,
+    on_data: Channel<InvokeResponseBody>,
+    on_event: Channel<SessionEvent>,
+) -> Result<String, IpcError> {
+    let (tx, rx) = mpsc::channel(OUTPUT_BACKLOG);
+    let id = state
+        .core
+        .helm_upgrade_start(&cluster_id, &request, tx)
+        .await?;
+    forward_output(state.core.clone(), id.clone(), rx, on_data, on_event);
+    Ok(id)
+}
+
+// The IPC contract fixes these arguments, and a command takes them one by one.
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn helm_rollback_start(
+    state: State<'_, AppState>,
+    cluster_id: ClusterId,
+    namespace: String,
+    release: String,
+    revision: u32,
+    wait: bool,
+    on_data: Channel<InvokeResponseBody>,
+    on_event: Channel<SessionEvent>,
+) -> Result<String, IpcError> {
+    let (tx, rx) = mpsc::channel(OUTPUT_BACKLOG);
+    let id = state
+        .core
+        .helm_rollback_start(&cluster_id, &namespace, &release, revision, wait, tx)
+        .await?;
+    forward_output(state.core.clone(), id.clone(), rx, on_data, on_event);
+    Ok(id)
+}
+
+#[tauri::command]
+pub async fn helm_uninstall_start(
+    state: State<'_, AppState>,
+    cluster_id: ClusterId,
+    namespace: String,
+    release: String,
+    wait: bool,
+    on_data: Channel<InvokeResponseBody>,
+    on_event: Channel<SessionEvent>,
+) -> Result<String, IpcError> {
+    let (tx, rx) = mpsc::channel(OUTPUT_BACKLOG);
+    let id = state
+        .core
+        .helm_uninstall_start(&cluster_id, &namespace, &release, wait, tx)
+        .await?;
+    forward_output(state.core.clone(), id.clone(), rx, on_data, on_event);
+    Ok(id)
 }

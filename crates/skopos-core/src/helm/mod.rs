@@ -1,13 +1,12 @@
 //! Helm (F15). Every operation runs one `helm` process with an argument array, never a
 //! shell. helm keeps its own config, so the repos match the user's `helm` CLI. Cluster
 //! commands pass the per-context kubeconfig that F3 writes.
-// Tasks 2-4 of the Helm plan call these helpers; Task 4 removes this line.
-#![allow(dead_code)]
-
+mod actions;
 mod charts;
 mod releases;
 mod repos;
 
+pub use actions::{ChartRef, HelmInstallRequest, HelmPreview, HelmUpgradeRequest};
 pub use charts::{ChartSearch, ChartSummary, ChartVersion, RepoProblem, RepoProblemKind};
 pub use releases::{
     HelmRelease, HelmReleaseDetail, HelmReleaseList, HelmRevision, ManifestResource,

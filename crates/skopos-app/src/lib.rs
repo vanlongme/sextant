@@ -167,6 +167,12 @@ fn run_app(core: AppCore, mut log_guard: Option<WorkerGuard>, context: Context<W
             commands::helm::helm_release_get,
             commands::helm::helm_release_values,
             commands::helm::helm_release_history,
+            commands::helm::helm_install_preview,
+            commands::helm::helm_upgrade_preview,
+            commands::helm::helm_install_start,
+            commands::helm::helm_upgrade_start,
+            commands::helm::helm_rollback_start,
+            commands::helm::helm_uninstall_start,
         ])
         .setup(move |app| {
             events::spawn_forwarder(app.handle().clone(), forwarded);

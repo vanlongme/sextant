@@ -13,12 +13,12 @@ use tokio::sync::mpsc;
 use crate::state::AppState;
 
 /// Output waits here while the webview catches up. Flow control keeps it small.
-const OUTPUT_BACKLOG: usize = 32;
+pub(crate) const OUTPUT_BACKLOG: usize = 32;
 
 /// Hands a session's output to its two channels: raw bytes, and events as JSON. The first
 /// failed send stops the session. The last event ends the forwarding, because a process
 /// left holding the PTY could keep this channel open.
-fn forward_output(
+pub(crate) fn forward_output(
     core: AppCore,
     session: String,
     mut output: mpsc::Receiver<SessionOutput>,

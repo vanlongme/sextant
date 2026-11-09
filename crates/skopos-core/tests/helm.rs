@@ -6,16 +6,22 @@ mod support;
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use skopos_core::app_core::AppCore;
 use skopos_core::error::ErrorCode;
-use skopos_core::helm::{HelmHomes, HelmRepo, HelmRepoAdd, RepoProblem, RepoProblemKind};
+use skopos_core::helm::{
+    ChartRef, HelmHomes, HelmInstallRequest, HelmRepo, HelmRepoAdd, HelmUpgradeRequest,
+    RepoProblem, RepoProblemKind,
+};
 use skopos_core::kubeconfig::ClusterId;
 use skopos_core::paths::AppPaths;
+use skopos_core::sessions::{SessionEvent, SessionOutput};
 use skopos_core::tools::{ToolSource, ToolsConfig};
 use skopos_fakekube::FakeKubeConfig;
 use support::connected_fake;
 use tempfile::TempDir;
+use tokio::sync::mpsc;
 
 /// A fake helm in its own folder. `helm version` prints `version`. Any other call appends
 /// its arguments to `calls`, one per line and then a line `--`, and runs `body`. Each call
@@ -651,5 +657,324 @@ async fn release_commands_need_a_connected_cluster() {
     let error = core.helm_release_list(&id, None).await.unwrap_err();
     assert_eq!(error.code, ErrorCode::Unreachable);
     assert!(helm.calls().is_empty());
+    core.shutdown().await;
+}
+
+fn install_request() -> HelmInstallRequest {
+    HelmInstallRequest {
+        namespace: "skopos-test-helm".into(),
+        release_name: Some("rel".into()),
+        chart: ChartRef {
+            repo: "fixture".into(),
+            chart: "skopos-fixture".into(),
+            version: "0.1.0".into(),
+        },
+        values: "message: hi\n".into(),
+        create_namespace: true,
+        wait: false,
+    }
+}
+
+/// The helm values files left in a core's runtime folder.
+fn values_files(root: &Path) -> Vec<PathBuf> {
+    let runtime = root.join("app/data/runtime");
+    std::fs::read_dir(runtime)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("helm-values-")
+        })
+        .collect()
+}
+
+fn is_last(event: &SessionEvent) -> bool {
+    matches!(
+        event,
+        SessionEvent::Exited { .. } | SessionEvent::Failed { .. }
+    )
+}
+
+/// Everything a session sent until its last event: the text, and the events.
+async fn session_output(mut output: mpsc::Receiver<SessionOutput>) -> (String, Vec<SessionEvent>) {
+    let mut data = Vec::new();
+    let mut events = Vec::new();
+    let collect = async {
+        while let Some(item) = output.recv().await {
+            match item {
+                SessionOutput::Data(bytes) => data.extend(bytes),
+                SessionOutput::Event(event) => {
+                    let last = is_last(&event);
+                    events.push(event);
+                    if last {
+                        break;
+                    }
+                }
+            }
+        }
+    };
+    tokio::time::timeout(Duration::from_secs(30), collect)
+        .await
+        .expect("the session ended");
+    (String::from_utf8_lossy(&data).into_owned(), events)
+}
+
+/// Copies the values file helm was given to `<fake root>/values-seen`.
+const COPY_VALUES: &str = r#"for arg in "$@"; do
+  case "$arg" in --values=*) cp "${arg#--values=}" "$(dirname "$0")/../values-seen";; esac
+done"#;
+
+#[tokio::test]
+async fn an_install_streams_helms_output_and_exits_zero() {
+    let body =
+        format!("{COPY_VALUES}\necho 'NAME: rel'\necho 'a warning' >&2\necho 'STATUS: deployed'");
+    let helm = FakeHelm::new("v4.3.1", &body);
+    let (core, _fake, id, root) = connected_fake(FakeKubeConfig::default()).await;
+    helm.configure(&core);
+    let (tx, rx) = mpsc::channel(32);
+    let session = core
+        .helm_install_start(&id, &install_request(), tx)
+        .await
+        .unwrap();
+    assert!(session.starts_with("session-"), "{session}");
+    let (data, events) = session_output(rx).await;
+    assert!(
+        matches!(events[0], SessionEvent::Started { tty: false }),
+        "{events:?}"
+    );
+    assert!(
+        matches!(events.last(), Some(SessionEvent::Exited { code: Some(0) })),
+        "{events:?}"
+    );
+    for text in ["NAME: rel\n", "a warning\n", "STATUS: deployed\n"] {
+        assert!(data.contains(text), "{data}");
+    }
+    let seen = std::fs::read_to_string(helm.path().join("values-seen")).unwrap();
+    assert_eq!(seen, "message: hi\n");
+    let call = &helm.calls()[0];
+    assert_eq!(call[..3], ["install", "rel", "fixture/skopos-fixture"]);
+    assert_eq!(call[3], kubeconfig_arg(&core, &id));
+    let runtime = root.path().join("app/data/runtime");
+    let values_prefix = format!("--values={}", runtime.join("helm-values-").display());
+    assert!(
+        call.iter().any(|arg| arg.starts_with(&values_prefix)),
+        "{call:?}"
+    );
+    assert!(call.contains(&"--create-namespace".to_owned()), "{call:?}");
+    assert!(core.sessions_wait_idle(Duration::from_secs(5)).await);
+    assert!(values_files(root.path()).is_empty());
+    core.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_failed_action_reports_helms_last_error_line() {
+    let helm = FakeHelm::new(
+        "v4.3.1",
+        r#"echo 'level=ERROR msg="release name check failed" error="cannot reuse a name that is still in use"' >&2
+echo 'Error: INSTALLATION FAILED: release name check failed: cannot reuse a name that is still in use' >&2
+exit 1"#,
+    );
+    let (core, _fake, id, root) = connected_fake(FakeKubeConfig::default()).await;
+    helm.configure(&core);
+    let (tx, rx) = mpsc::channel(32);
+    core.helm_install_start(&id, &install_request(), tx)
+        .await
+        .unwrap();
+    let (data, events) = session_output(rx).await;
+    assert!(data.contains("level=ERROR"), "{data}");
+    let Some(SessionEvent::Failed { error, .. }) = events.last() else {
+        panic!("{events:?}");
+    };
+    assert_eq!(error.code, ErrorCode::Conflict);
+    assert_eq!(
+        error.message,
+        "INSTALLATION FAILED: release name check failed: cannot reuse a name that is still in use"
+    );
+    assert!(error.details.as_deref().unwrap().contains("level=ERROR"));
+    assert!(core.sessions_wait_idle(Duration::from_secs(5)).await);
+    assert!(values_files(root.path()).is_empty());
+    core.shutdown().await;
+}
+
+#[tokio::test]
+async fn stopping_an_action_ends_it_as_cancelled_and_deletes_the_values_file() {
+    let helm = FakeHelm::new("v4.3.1", "echo waiting\nexec sleep 30");
+    let (core, _fake, id, root) = connected_fake(FakeKubeConfig::default()).await;
+    helm.configure(&core);
+    let mut request = install_request();
+    request.wait = true;
+    let (tx, mut rx) = mpsc::channel(32);
+    let session = core.helm_install_start(&id, &request, tx).await.unwrap();
+    loop {
+        let item = tokio::time::timeout(Duration::from_secs(30), rx.recv())
+            .await
+            .expect("helm printed something");
+        match item {
+            Some(SessionOutput::Data(bytes))
+                if String::from_utf8_lossy(&bytes).contains("waiting") =>
+            {
+                break
+            }
+            Some(_) => {}
+            None => panic!("the session ended early"),
+        }
+    }
+    assert_eq!(values_files(root.path()).len(), 1);
+    let stopped = Instant::now();
+    core.session_stop(&session);
+    let (_, events) = session_output(rx).await;
+    let Some(SessionEvent::Failed { error, .. }) = events.last() else {
+        panic!("{events:?}");
+    };
+    assert_eq!(error.code, ErrorCode::Cancelled);
+    assert!(stopped.elapsed() < Duration::from_secs(10));
+    assert!(core.sessions_wait_idle(Duration::from_secs(5)).await);
+    assert!(values_files(root.path()).is_empty());
+    core.shutdown().await;
+}
+
+#[tokio::test]
+async fn bad_requests_are_refused_before_helm_runs() {
+    let helm = FakeHelm::new("v4.3.1", "exit 0");
+    let (core, _fake, id, root) = connected_fake(FakeKubeConfig::default()).await;
+    helm.configure(&core);
+    let mut bad_values = install_request();
+    bad_values.values = "a: [\n".into();
+    let mut bad_name = install_request();
+    bad_name.release_name = Some("Bad_Name".into());
+    let mut no_version = install_request();
+    no_version.chart.version = String::new();
+    for request in [&bad_values, &bad_name, &no_version] {
+        let (tx, _rx) = mpsc::channel(32);
+        let error = core.helm_install_start(&id, request, tx).await.unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidInput, "{request:?}");
+        let error = core.helm_install_preview(&id, request).await.unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidInput, "{request:?}");
+    }
+    let (tx, _rx) = mpsc::channel(32);
+    let error = core
+        .helm_rollback_start(&id, "skopos-test-helm", "rel", 0, false, tx)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::InvalidInput);
+    let (tx, _rx) = mpsc::channel(32);
+    let error = core
+        .helm_uninstall_start(&id, "skopos-test-helm", "-rel", false, tx)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::InvalidInput);
+    assert!(helm.calls().is_empty());
+    assert_eq!(core.session_count(), 0);
+    assert!(values_files(root.path()).is_empty());
+    core.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_preview_returns_the_dry_run_and_starts_no_session() {
+    let preview = r#"{"name":"rel","info":{"status":"pending-install","notes":"Release rel holds hi."},"manifest":"---\nkind: ConfigMap\n"}"#;
+    let helm = FakeHelm::new("v4.3.1", &format!("printf '%s' '{preview}'"));
+    let (core, _fake, id, root) = connected_fake(FakeKubeConfig::default()).await;
+    helm.configure(&core);
+    let mut request = install_request();
+    request.wait = true;
+    let found = core.helm_install_preview(&id, &request).await.unwrap();
+    assert_eq!(found.release_name, "rel");
+    assert_eq!(found.manifest, "---\nkind: ConfigMap\n");
+    assert_eq!(found.notes.as_deref(), Some("Release rel holds hi."));
+    let call = &helm.calls()[0];
+    assert!(
+        call.ends_with(&strings(&["--dry-run=server", "--output=json"])),
+        "{call:?}"
+    );
+    assert!(
+        !call.iter().any(|arg| arg.starts_with("--wait")),
+        "{call:?}"
+    );
+    assert_eq!(core.session_count(), 0);
+    assert!(values_files(root.path()).is_empty());
+    core.shutdown().await;
+}
+
+#[tokio::test]
+async fn an_upgrade_sends_the_whole_values_set() {
+    let helm = FakeHelm::new("v3.22.1", COPY_VALUES);
+    let (core, _fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
+    helm.configure(&core);
+    let request = HelmUpgradeRequest {
+        namespace: "skopos-test-helm".into(),
+        release: "rel".into(),
+        chart: ChartRef {
+            repo: "fixture".into(),
+            chart: "skopos-fixture".into(),
+            version: "0.2.0".into(),
+        },
+        values: String::new(),
+        wait: true,
+    };
+    let (tx, rx) = mpsc::channel(32);
+    core.helm_upgrade_start(&id, &request, tx).await.unwrap();
+    let (_, events) = session_output(rx).await;
+    assert!(
+        matches!(events.last(), Some(SessionEvent::Exited { code: Some(0) })),
+        "{events:?}"
+    );
+    let seen = std::fs::read_to_string(helm.path().join("values-seen")).unwrap();
+    assert_eq!(seen, "");
+    let call = &helm.calls()[0];
+    assert_eq!(call[..3], ["upgrade", "rel", "fixture/skopos-fixture"]);
+    assert!(
+        call.ends_with(&strings(&["--reset-values", "--wait"])),
+        "{call:?}"
+    );
+    core.shutdown().await;
+}
+
+#[tokio::test]
+async fn rollback_and_uninstall_run_as_sessions() {
+    let helm = FakeHelm::new("v4.3.1", "echo 'Happy Helming!'");
+    let (core, _fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
+    helm.configure(&core);
+    let (tx, rx) = mpsc::channel(32);
+    core.helm_rollback_start(&id, "skopos-test-helm", "rel", 1, true, tx)
+        .await
+        .unwrap();
+    let (data, events) = session_output(rx).await;
+    assert!(data.contains("Happy Helming!"), "{data}");
+    assert!(
+        matches!(events.last(), Some(SessionEvent::Exited { code: Some(0) })),
+        "{events:?}"
+    );
+    let (tx, rx) = mpsc::channel(32);
+    core.helm_uninstall_start(&id, "skopos-test-helm", "rel", false, tx)
+        .await
+        .unwrap();
+    let (_, events) = session_output(rx).await;
+    assert!(
+        matches!(events.last(), Some(SessionEvent::Exited { code: Some(0) })),
+        "{events:?}"
+    );
+    let kubeconfig = kubeconfig_arg(&core, &id);
+    let kubeconfig = kubeconfig.as_str();
+    assert_eq!(
+        helm.calls(),
+        [
+            strings(&[
+                "rollback",
+                "rel",
+                "1",
+                kubeconfig,
+                "--namespace=skopos-test-helm",
+                "--wait=watcher"
+            ]),
+            strings(&[
+                "uninstall",
+                "rel",
+                kubeconfig,
+                "--namespace=skopos-test-helm"
+            ]),
+        ]
+    );
     core.shutdown().await;
 }
