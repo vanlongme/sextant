@@ -244,7 +244,7 @@ async function dockTabCount(): Promise<number> {
 /** Closes every dock tab, discarding unsaved changes. */
 export async function closeDockTabs(): Promise<void> {
   for (let left = await dockTabCount(); left > 0; left = await dockTabCount()) {
-    await browser.$('[data-testid^="dock-close-"]').click();
+    await browser.$$('[data-testid^="dock-close-"]')[0].click();
     const discard = dialogButton("Discard");
     await browser.waitUntil(
       async () => (await discard.isExisting()) || (await dockTabCount()) < left,
@@ -265,4 +265,73 @@ export async function dockTabTitles(): Promise<string[]> {
       (tab) => tab.textContent ?? "",
     ),
   );
+}
+
+/** The panel of the dock tab on screen. Hidden panels keep their content. */
+export const DOCK_PANEL = '[data-testid="dock"] [role="tabpanel"]:not([hidden])';
+
+/** An element of the dock tab on screen. */
+export function inDockPanel(id: string) {
+  return browser.$(`${DOCK_PANEL} [data-testid="${id}"]`);
+}
+
+/** The rows xterm draws in the terminal on screen, top to bottom, without trailing spaces. */
+export async function terminalRows(): Promise<string[]> {
+  return browser.execute(
+    (panel) =>
+      Array.from(document.querySelectorAll(`${panel} .xterm-rows > div`)).map((row) =>
+        (row.textContent ?? "").replace(/\u00a0/g, " ").trimEnd(),
+      ),
+    DOCK_PANEL,
+  );
+}
+
+export async function terminalStatus(): Promise<string> {
+  return inDockPanel("terminal-status").getText();
+}
+
+export async function expectTerminalStatus(label: string, timeout = 60000): Promise<void> {
+  await browser.waitUntil(async () => (await terminalStatus()) === label, {
+    timeout,
+    interval: 500,
+    timeoutMsg: `the terminal status never read "${label}"`,
+  });
+}
+
+/** Waits for a row that reads exactly `line`, apart from surrounding spaces. */
+export async function expectTerminalLine(line: string, timeout = 60000): Promise<void> {
+  await browser.waitUntil(
+    async () => (await terminalRows()).some((row) => row.trim() === line),
+    { timeout, interval: 500, timeoutMsg: `the terminal never printed the line "${line}"` },
+  );
+}
+
+/**
+ * Types `text` into the terminal on screen, then presses Enter. WebKitWebDriver gives a key
+ * action's keydown a keyCode equal to the character code, which xterm reads as a function key
+ * for `p`, `s`, `$`, `-` and others. So each character goes in as the text-insertion input event
+ * xterm also accepts, and only Enter is a key press.
+ */
+export async function typeInTerminal(text: string): Promise<void> {
+  await browser.execute(
+    (panel, chars) => {
+      const area = document.querySelector<HTMLTextAreaElement>(`${panel} .xterm-helper-textarea`);
+      if (!area) throw new Error("no terminal on screen");
+      area.focus();
+      for (const ch of chars) {
+        area.dispatchEvent(new InputEvent("input", { data: ch, inputType: "insertText" }));
+      }
+    },
+    DOCK_PANEL,
+    Array.from(text),
+  );
+  await browser.keys("Enter");
+}
+
+/** Picks Shell on a node's row menu and waits for its confirmation. */
+export async function requestNodeShell(node: string): Promise<void> {
+  await openResource("nav-item-core-nodes", "Node");
+  await searchResources(node);
+  await resourceRowMenu(node, "nodeShell");
+  await dialogButton("Open shell").waitForExist({ timeout: TIMEOUT });
 }

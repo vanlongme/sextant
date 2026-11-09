@@ -21,6 +21,7 @@ import {
   restartAction,
   scaleAction,
 } from "./rollouts";
+import { podAttachAction, podShellAction } from "./sessionActions";
 
 registerKind("", "pods", {
   columns: (info) =>
@@ -37,6 +38,8 @@ registerKind("", "pods", {
     ),
   actions: [
     podLogsAction,
+    podShellAction,
+    podAttachAction,
     {
       id: "evict",
       label: "Evict",

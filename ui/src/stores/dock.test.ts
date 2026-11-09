@@ -1,17 +1,26 @@
 import { afterEach, expect, test, vi } from "vitest";
 import type { ResourceRef } from "../ipc/generated/ResourceRef";
+import type { KubeObject } from "../kinds/objects";
 import { JOBS } from "../kinds/refs";
 import {
+  attachTab,
   type DockLayout,
   type DockTab,
+  defaultContainer,
   editTab,
   isPodTab,
+  isSessionTab,
   type LogsDockTab,
   logsTab,
   newCreateTab,
+  nodeShellTab,
+  nodeShellTabFor,
+  podSessionTab,
   readDraft,
   resetDockForTest,
+  shellTab,
   tabsForCluster,
+  terminalTab,
   useDock,
   writeDraft,
 } from "./dock";
@@ -277,5 +286,179 @@ test("move reorders a tab among its cluster's tabs, and other clusters keep thei
   expect(ids(dock().tabs)).toEqual([A.id, OTHER.id, B.id, C.id]);
   const before = dock().tabs;
   dock().move(C.id, 99);
+  expect(dock().tabs).toBe(before);
+});
+
+const WEB_1: KubeObject = {
+  metadata: { name: "web-1", namespace: "shop" },
+  spec: {
+    initContainers: [{ name: "setup" }],
+    containers: [{ name: "app" }, { name: "sidecar" }],
+    ephemeralContainers: [{ name: "debugger" }],
+  },
+  status: {
+    initContainerStatuses: [{ name: "setup", state: { running: {} } }],
+    containerStatuses: [
+      { name: "app", state: { waiting: { reason: "CrashLoopBackOff" } } },
+      {
+        name: "sidecar",
+        state: { running: { startedAt: "2026-11-09T10:00:00Z" } },
+      },
+    ],
+  },
+};
+
+test("each session kind has its fixed id and its title", () => {
+  expect(terminalTab("c1", "kind-dev")).toEqual({
+    id: "terminal:c1",
+    kind: "terminal",
+    clusterId: "c1",
+    title: "Terminal · kind-dev",
+    dirty: false,
+  });
+  expect(terminalTab("c1", null).title).toBe("Terminal");
+  expect(shellTab("c1", WEB_1)).toEqual({
+    id: "shell:c1:shop/web-1",
+    kind: "shell",
+    clusterId: "c1",
+    title: "Shell · web-1",
+    namespace: "shop",
+    pod: "web-1",
+    container: "sidecar",
+    dirty: false,
+  });
+  expect(attachTab("c1", WEB_1)).toEqual({
+    id: "attach:c1:shop/web-1",
+    kind: "attach",
+    clusterId: "c1",
+    title: "Attach · web-1",
+    namespace: "shop",
+    pod: "web-1",
+    container: "sidecar",
+    dirty: false,
+  });
+  expect(nodeShellTab("c1", { metadata: { name: "worker-1" } })).toEqual({
+    id: "node-shell:c1:worker-1",
+    kind: "nodeShell",
+    clusterId: "c1",
+    title: "Shell · worker-1",
+    node: "worker-1",
+    dirty: false,
+  });
+  expect(nodeShellTabFor("c1", "worker-1")).toEqual(
+    nodeShellTab("c1", { metadata: { name: "worker-1" } }),
+  );
+  expect(podSessionTab("attach", "c1", "shop", "web-1", null)).toEqual({
+    ...attachTab("c1", WEB_1),
+    container: null,
+  });
+});
+
+test.each<[string, KubeObject, string | null]>([
+  ["the first running container", WEB_1, "sidecar"],
+  [
+    "the first container when none runs",
+    {
+      ...WEB_1,
+      status: {
+        containerStatuses: [
+          { name: "app", state: { waiting: { reason: "ErrImagePull" } } },
+          { name: "sidecar", state: { terminated: { exitCode: 1 } } },
+        ],
+      },
+    },
+    "app",
+  ],
+  [
+    "the first container when the object carries no container states",
+    {
+      metadata: { name: "web-1" },
+      spec: { containers: [{ name: "app" }, { name: "sidecar" }] },
+    },
+    "app",
+  ],
+  [
+    "the first container, never an init container, even a running one",
+    {
+      metadata: { name: "web-1" },
+      spec: {
+        initContainers: [{ name: "setup" }],
+        containers: [{ name: "app" }],
+      },
+      status: {
+        initContainerStatuses: [{ name: "setup", state: { running: {} } }],
+        containerStatuses: [],
+      },
+    },
+    "app",
+  ],
+  [
+    "no container when the Pod lists none",
+    { metadata: { name: "web-1" }, spec: {} },
+    null,
+  ],
+])("the default container is %s", (_name, pod, container) => {
+  expect(defaultContainer(pod)).toBe(container);
+});
+
+test("opening a session tab for the same target focuses it and keeps its container", () => {
+  dock().open(shellTab("c1", WEB_1));
+  dock().open(terminalTab("c1", "kind-dev"));
+  dock().setMinimized(true);
+  dock().open(shellTab("c1", { ...WEB_1, status: {} }));
+  expect(ids(dock().tabs)).toEqual(["shell:c1:shop/web-1", "terminal:c1"]);
+  expect(dock().activeId).toBe("shell:c1:shop/web-1");
+  expect(dock().minimized).toBe(false);
+  expect(dock().tabs[0]).toMatchObject({ container: "sidecar" });
+});
+
+test("Shell and Attach on one Pod are two tabs", () => {
+  dock().open(shellTab("c1", WEB_1));
+  dock().open(attachTab("c1", WEB_1));
+  expect(ids(dock().tabs)).toEqual([
+    "shell:c1:shop/web-1",
+    "attach:c1:shop/web-1",
+  ]);
+});
+
+test("setContainer changes a Shell or Attach tab's container and nothing else", () => {
+  const shell = shellTab("c1", WEB_1);
+  const terminal = terminalTab("c1", "kind-dev");
+  dock().open(shell);
+  dock().open(terminal);
+  dock().setContainer(shell.id, "app");
+  dock().setContainer(terminal.id, "app");
+  expect(dock().tabs).toEqual([{ ...shell, container: "app" }, terminal]);
+});
+
+test("setDirty leaves session tabs clean", () => {
+  const terminal = terminalTab("c1", "kind-dev");
+  dock().open(terminal);
+  const before = dock().tabs;
+  dock().setDirty(terminal.id, true);
+  expect(dock().tabs).toBe(before);
+});
+
+test("isSessionTab tells the four session kinds from the others", () => {
+  expect(isSessionTab(terminalTab("c1", null))).toBe(true);
+  expect(isSessionTab(shellTab("c1", WEB_1))).toBe(true);
+  expect(isSessionTab(attachTab("c1", WEB_1))).toBe(true);
+  expect(isSessionTab(nodeShellTabFor("c1", "worker-1"))).toBe(true);
+  expect(isSessionTab(editTab("c1", PODS, "shop", "web-1"))).toBe(false);
+  expect(isSessionTab(newCreateTab("c1"))).toBe(false);
+});
+
+test("renameTerminals names the terminal tabs of the clusters given and leaves the rest", () => {
+  dock().open(terminalTab("c1", null));
+  dock().open(terminalTab("c2", null));
+  dock().open(shellTab("c1", WEB_1));
+  dock().renameTerminals([{ id: "c1", name: "kind-dev" }]);
+  expect(dock().tabs.map((t) => t.title)).toEqual([
+    "Terminal · kind-dev",
+    "Terminal",
+    "Shell · web-1",
+  ]);
+  const before = dock().tabs;
+  dock().renameTerminals([{ id: "c1", name: "kind-dev" }]);
   expect(dock().tabs).toBe(before);
 });

@@ -5,6 +5,7 @@ import { api } from "../../ipc/api";
 import { baseColumns, statusColumn, textColumn } from "../columns";
 import type { KindAction } from "../registry";
 import { registerKind } from "../registry";
+import { nodeShellAction } from "../workloads/sessionActions";
 import { DrainDialog } from "./DrainDialog";
 import { NodeDetail } from "./NodeDetail";
 import { internalIp, nodeRoles, nodeStatus, nodeTaints } from "./node";
@@ -69,6 +70,6 @@ registerKind("", "nodes", {
         render: (o) => String(nodeTaints(o).length),
       },
     ),
-  actions: [cordon, uncordon, drain],
+  actions: [nodeShellAction, cordon, uncordon, drain],
   detail: NodeDetail,
 });

@@ -112,6 +112,13 @@ const FIXTURES: Record<string, SpecFixture> = {
     start: startKindFixture,
   },
   "dock-restart-2-verify": { kubeconfigs: {}, envGroup: "dock-restart" },
+  terminal: { kubeconfigs: {}, start: startKindFixture },
+  "terminal-restart-1-save": {
+    kubeconfigs: {},
+    envGroup: "terminal-restart",
+    start: startKindFixture,
+  },
+  "terminal-restart-2-verify": { kubeconfigs: {}, envGroup: "terminal-restart" },
   screens: { kubeconfigs: {}, start: startKindFixture },
 };
 

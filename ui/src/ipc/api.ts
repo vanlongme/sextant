@@ -19,8 +19,10 @@ import type { Propagation } from "./generated/Propagation";
 import type { ResourceRef } from "./generated/ResourceRef";
 import type { SavedKubeconfig } from "./generated/SavedKubeconfig";
 import type { SecretValue } from "./generated/SecretValue";
+import type { SessionEvent } from "./generated/SessionEvent";
 import type { SyncWarning } from "./generated/SyncWarning";
 import type { JsonValue } from "./generated/serde_json/JsonValue";
+import type { TerminalSize } from "./generated/TerminalSize";
 import type { WatchEvent } from "./generated/WatchEvent";
 
 export const api = {
@@ -269,6 +271,78 @@ export const api = {
   /** Tells the backend that `bytes` of a session's output are stored. */
   sessionAck: (sessionId: string, bytes: number) =>
     call<void>("session_ack", { sessionId, bytes }),
+  /** Starts the local shell. Output goes to `onData`, everything else to `onEvent`. */
+  terminalStart: (
+    clusterId: string,
+    size: TerminalSize,
+    onData: (chunk: ArrayBuffer) => void,
+    onEvent: (event: SessionEvent) => void,
+  ) =>
+    call<string>("terminal_start", {
+      clusterId,
+      size,
+      onData: new Channel<ArrayBuffer>(onData),
+      onEvent: new Channel<SessionEvent>(onEvent),
+    }),
+  /** A shell in a Pod's container; null lets the backend pick the container. */
+  podExecStart: (
+    clusterId: string,
+    namespace: string,
+    pod: string,
+    container: string | null,
+    size: TerminalSize,
+    onData: (chunk: ArrayBuffer) => void,
+    onEvent: (event: SessionEvent) => void,
+  ) =>
+    call<string>("pod_exec_start", {
+      clusterId,
+      namespace,
+      pod,
+      container,
+      size,
+      onData: new Channel<ArrayBuffer>(onData),
+      onEvent: new Channel<SessionEvent>(onEvent),
+    }),
+  /** Attaches to a container's PID 1. */
+  podAttachStart: (
+    clusterId: string,
+    namespace: string,
+    pod: string,
+    container: string | null,
+    size: TerminalSize,
+    onData: (chunk: ArrayBuffer) => void,
+    onEvent: (event: SessionEvent) => void,
+  ) =>
+    call<string>("pod_attach_start", {
+      clusterId,
+      namespace,
+      pod,
+      container,
+      size,
+      onData: new Channel<ArrayBuffer>(onData),
+      onEvent: new Channel<SessionEvent>(onEvent),
+    }),
+  /** A root shell on a node, through a privileged Pod the backend deletes when the session stops. */
+  nodeShellStart: (
+    clusterId: string,
+    node: string,
+    size: TerminalSize,
+    onData: (chunk: ArrayBuffer) => void,
+    onEvent: (event: SessionEvent) => void,
+  ) =>
+    call<string>("node_shell_start", {
+      clusterId,
+      node,
+      size,
+      onData: new Channel<ArrayBuffer>(onData),
+      onEvent: new Channel<SessionEvent>(onEvent),
+    }),
+  /** Input for the process, as UTF-8 bytes. */
+  sessionWrite: (sessionId: string, data: number[]) =>
+    call<void>("session_write", { sessionId, data }),
+  sessionResize: (sessionId: string, size: TerminalSize) =>
+    call<void>("session_resize", { sessionId, size }),
+  sessionStop: (sessionId: string) => call<void>("session_stop", { sessionId }),
   uiStateGet: (key: string) => call<JsonValue | null>("ui_state_get", { key }),
   uiStateSet: (key: string, value: JsonValue) =>
     call<void>("ui_state_set", { key, value }),

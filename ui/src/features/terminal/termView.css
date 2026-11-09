@@ -1,0 +1,13 @@
+/*
+ * The view's host, which the session registry moves between panels. Not a CSS module:
+ * the host carries a data attribute, and xterm's own classes are global.
+ */
+[data-terminal-host] {
+  position: absolute;
+  inset: var(--space-4) var(--space-5);
+}
+
+/* xterm paints its viewport black by default; the terminal area's surface shows instead. */
+[data-terminal-host] .xterm .xterm-viewport {
+  background-color: transparent;
+}
