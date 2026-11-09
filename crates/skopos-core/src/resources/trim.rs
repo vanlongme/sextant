@@ -37,8 +37,8 @@ const CONTAINER_STATUS: Keep = Fields(&[
     ),
 ]);
 
-/// The Pods table, its search and sort, and the pod lists of the Node, Job and Rollout
-/// drawers read these. `uid` and `resourceVersion` let an action or a fetch name the object.
+/// The Pods table, its search and sort, the pod lists of the Node, Job and Rollout
+/// drawers, and the Pods row-menu Port forward action (which reads the container ports) read these. `uid` and `resourceVersion` let an action or a fetch name the object.
 const POD_ROW: Keep = Fields(&[
     ("apiVersion", All),
     ("kind", All),
@@ -59,7 +59,20 @@ const POD_ROW: Keep = Fields(&[
         "spec",
         Fields(&[
             ("nodeName", All),
-            ("containers", Each(&Fields(&[("name", All)]))),
+            (
+                "containers",
+                Each(&Fields(&[
+                    ("name", All),
+                    (
+                        "ports",
+                        Each(&Fields(&[
+                            ("containerPort", All),
+                            ("name", All),
+                            ("protocol", All),
+                        ])),
+                    ),
+                ])),
+            ),
             (
                 "initContainers",
                 Each(&Fields(&[("name", All), ("restartPolicy", All)])),
@@ -179,7 +192,7 @@ mod tests {
                     "name": "app",
                     "image": "registry.example.com/app:1",
                     "env": [{ "name": "B", "value": "2" }],
-                    "ports": [{ "containerPort": 8080 }],
+                    "ports": [{ "name": "http", "containerPort": 8080, "protocol": "TCP", "hostPort": 18080 }],
                     "livenessProbe": { "httpGet": { "path": "/healthz", "port": 8080 } },
                 }],
             },
@@ -243,7 +256,7 @@ mod tests {
                 "spec": {
                     "nodeName": "node-1",
                     "initContainers": [{ "name": "setup", "restartPolicy": "Always" }],
-                    "containers": [{ "name": "app" }],
+                    "containers": [{ "name": "app", "ports": [{ "name": "http", "containerPort": 8080, "protocol": "TCP" }] }],
                 },
                 "status": {
                     "phase": "Running",
