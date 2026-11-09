@@ -370,7 +370,7 @@ async fn viewer_token(client: &Client, namespace: &str) -> String {
         .unwrap()
 }
 
-async fn repos(core: &AppCore, url: &str) {
+async fn repos(core: &AppCore, url: &str, root: &Path) {
     core.helm_repo_add(fixture_repo(url)).await.unwrap();
     assert_eq!(
         core.helm_repo_list().await.unwrap(),
@@ -391,6 +391,18 @@ async fn repos(core: &AppCore, url: &str) {
         .await
         .unwrap();
     core.helm_repo_update(None).await.unwrap();
+    // helm repo add refuses a dead URL, so a dead repo is written into helm's config.
+    let config = root.join("helm/config/repositories.yaml");
+    let mut text = std::fs::read_to_string(&config).unwrap();
+    text.push_str("- name: dead\n  url: http://127.0.0.1:9\n");
+    std::fs::write(&config, text).unwrap();
+    let error = core
+        .helm_repo_update(Some(vec!["dead".into()]))
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::Unreachable, "{error:?}");
+    assert!(error.message.contains("dead"), "{error:?}");
+    core.helm_repo_remove("dead").await.unwrap();
 }
 
 async fn charts(core: &AppCore) {
@@ -614,7 +626,7 @@ async fn whole_flow(version: Version) {
     let client = core.cluster_client(&id).unwrap();
     let namespace = version.namespace("");
     with_cleanup(&client, &namespace, async {
-        repos(&core, &url).await;
+        repos(&core, &url, root.path()).await;
         charts(&core).await;
         release_lifecycle(&core, &id, &client, &namespace).await;
         core.helm_repo_remove("fixture").await.unwrap();

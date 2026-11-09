@@ -314,6 +314,30 @@ async fn updating_with_no_repos_is_done() {
 }
 
 #[tokio::test]
+async fn updating_an_unreachable_repo_fails_even_when_helm_exits_zero() {
+    let helm = FakeHelm::new(
+        "v3.22.1",
+        r#"echo 'Hang tight'; echo '...Unable to get an update from the "dead" chart repository (http://127.0.0.1:9):'; echo '	connection refused'; echo 'Update Complete.'"#,
+    );
+    let core = helm.core().await;
+    let error = core
+        .helm_repo_update(Some(vec!["dead".into()]))
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::Unreachable, "{error:?}");
+    assert!(error.message.contains("dead"), "{error:?}");
+    assert!(
+        error
+            .details
+            .as_deref()
+            .unwrap_or("")
+            .contains("connection refused"),
+        "{error:?}"
+    );
+    core.shutdown().await;
+}
+
+#[tokio::test]
 async fn search_reads_the_cached_indexes_and_reports_repo_problems() {
     let helm = FakeHelm::new("v4.3.1", ENV_BODY);
     write_repos(&helm);

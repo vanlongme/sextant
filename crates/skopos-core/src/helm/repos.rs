@@ -143,8 +143,32 @@ impl AppCore {
         {
             return Ok(());
         }
+        // helm 3 prints this and exits 0 unless asked to fail; helm 4 exits 1 with a
+        // message that is not about unreachability. Both say it on stdout.
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let unreachable = unreachable_repos(&stdout);
+        if !unreachable.is_empty() {
+            return Err(IpcError::new(
+                ErrorCode::Unreachable,
+                format!("could not update the repos: {}", unreachable.join(", ")),
+            )
+            .with_details(stdout.trim_end()));
+        }
         succeeded(output).map(drop)
     }
+}
+
+const UPDATE_FAILED: &str = "Unable to get an update from the \"";
+
+/// The repos `helm repo update` could not reach, from its stdout.
+fn unreachable_repos(stdout: &str) -> Vec<String> {
+    stdout
+        .lines()
+        .filter_map(|line| {
+            let rest = line.split_once(UPDATE_FAILED)?.1;
+            Some(rest.split('"').next().unwrap_or_default().to_owned())
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -178,6 +202,13 @@ mod tests {
         assert!(parse_repo_list(old).unwrap().is_empty());
         let broken = parse_repo_list(output(0, "{", "")).unwrap_err();
         assert_eq!(broken.code, ErrorCode::Internal);
+    }
+
+    #[test]
+    fn unreachable_repos_are_read_from_helm_update_output() {
+        let text = "Hang tight\n...Unable to get an update from the \"a\" chart repository (http://x):\n\tGet failed\n...Unable to get an update from the \"b\" chart repository (http://y):\nUpdate Complete.\n";
+        assert_eq!(unreachable_repos(text), ["a", "b"]);
+        assert!(unreachable_repos("Update Complete.\n").is_empty());
     }
 
     #[test]
