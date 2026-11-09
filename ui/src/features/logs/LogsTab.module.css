@@ -121,3 +121,38 @@
   color: var(--text-secondary);
   font: var(--type-body-sm);
 }
+
+.match {
+  background: var(--surface-accent-soft);
+}
+
+.current {
+  background: var(--status-warning);
+}
+
+.search {
+  position: relative;
+  flex: 0 1 200px;
+  min-width: 140px;
+}
+
+.search .searchInput {
+  width: 100%;
+  padding-left: 28px;
+}
+
+.searchIcon {
+  position: absolute;
+  top: 50%;
+  left: var(--space-5);
+  color: var(--text-tertiary);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.hits {
+  flex: none;
+  color: var(--text-secondary);
+  font: var(--type-caption);
+  white-space: nowrap;
+}
