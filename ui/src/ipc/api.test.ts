@@ -2,6 +2,7 @@ import { Channel } from "@tauri-apps/api/core";
 import { expect, test } from "vitest";
 import { mockBackend } from "../test/ipc";
 import { api } from "./api";
+import type { PortForwardSpec } from "./generated/PortForwardSpec";
 
 const SIZE = { cols: 120, rows: 32 };
 const noop = () => {};
@@ -77,4 +78,28 @@ test("write, resize and stop name the session", async () => {
     ["session_resize", { sessionId: "s1", size: SIZE }],
     ["session_stop", { sessionId: "s1" }],
   ]);
+});
+
+const SPEC: PortForwardSpec = {
+  clusterId: "c1",
+  target: { kind: "service", namespace: "shop", name: "web" },
+  targetPort: 80,
+  localPort: null,
+};
+
+test.each<[string, () => Promise<unknown>, Record<string, unknown>]>([
+  ["portforward_list", () => api.portforwardList(), {}],
+  ["portforward_add", () => api.portforwardAdd(SPEC), { spec: SPEC }],
+  ["portforward_start", () => api.portforwardStart("pf-1"), { id: "pf-1" }],
+  ["portforward_stop", () => api.portforwardStop("pf-1"), { id: "pf-1" }],
+  ["portforward_remove", () => api.portforwardRemove("pf-1"), { id: "pf-1" }],
+  [
+    "open_external",
+    () => api.openExternal("http://127.0.0.1:50123/"),
+    { url: "http://127.0.0.1:50123/" },
+  ],
+])("%s gets exactly its arguments", async (cmd, run, args) => {
+  const backend = mockBackend({ [cmd]: () => null });
+  await run();
+  expect(backend.calls).toEqual([{ cmd, args }]);
 });

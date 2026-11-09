@@ -2,11 +2,17 @@ import { beforeEach, expect, test, vi } from "vitest";
 import { toast } from "../design";
 import { resetDockForTest, useDock } from "../stores/dock";
 import { resetDockLayoutForTest } from "../stores/dockLayout";
+import {
+  resetPortForwardsForTest,
+  usePortForwards,
+} from "../stores/portForwards";
 import { resetPrefsForTest } from "../stores/prefs";
 import { emitEvent, mockBackend } from "../test/ipc";
+import { forward } from "../test/portForwards";
 import { bootstrap } from "./bootstrap";
 
 beforeEach(() => {
+  resetPortForwardsForTest();
   resetPrefsForTest();
   resetDockLayoutForTest();
   resetDockForTest();
@@ -77,4 +83,23 @@ test("the saved dock layout is applied on start", async () => {
       { id: "create-3", kind: "create", clusterId: "c1", title: "Create" },
     ],
   });
+});
+
+test("the port forwards are read after the preferences, and kept", async () => {
+  const backend = mockBackend({
+    prefs_get: () => ({ theme: "dark", syncSources: [] }),
+    portforward_list: () => [
+      forward({ id: "pf-1", state: "running", boundPort: 50123 }),
+    ],
+  });
+
+  await bootstrap();
+
+  const order = backend.calls
+    .map((c) => c.cmd)
+    .filter((cmd) => cmd === "prefs_get" || cmd === "portforward_list");
+  expect(order).toEqual(["prefs_get", "portforward_list"]);
+  expect(usePortForwards.getState().forwards.map((f) => f.id)).toEqual([
+    "pf-1",
+  ]);
 });

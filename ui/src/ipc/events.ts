@@ -1,5 +1,6 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ConnectionState } from "./generated/ConnectionState";
+import type { PortForward } from "./generated/PortForward";
 import type { StoreWarning } from "./generated/StoreWarning";
 import type { SyncWarning } from "./generated/SyncWarning";
 
@@ -20,4 +21,7 @@ export const events = {
     on("kubeconfig://warnings", handler),
   onStoreWarning: (handler: (warning: StoreWarning) => void) =>
     on("store://warning", handler),
+  /** Carries the whole list after every change. */
+  onPortForwardsChanged: (handler: (forwards: PortForward[]) => void) =>
+    on("portforward://changed", handler),
 };

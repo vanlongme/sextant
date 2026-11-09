@@ -14,6 +14,8 @@ import type { LogDownload } from "./generated/LogDownload";
 import type { LogEvent } from "./generated/LogEvent";
 import type { LogOptions } from "./generated/LogOptions";
 import type { LogTarget } from "./generated/LogTarget";
+import type { PortForward } from "./generated/PortForward";
+import type { PortForwardSpec } from "./generated/PortForwardSpec";
 import type { Prefs } from "./generated/Prefs";
 import type { Propagation } from "./generated/Propagation";
 import type { ResourceRef } from "./generated/ResourceRef";
@@ -343,6 +345,19 @@ export const api = {
   sessionResize: (sessionId: string, size: TerminalSize) =>
     call<void>("session_resize", { sessionId, size }),
   sessionStop: (sessionId: string) => call<void>("session_stop", { sessionId }),
+  portforwardList: () => call<PortForward[]>("portforward_list"),
+  /** Saves the definition; it does not start it. */
+  portforwardAdd: (spec: PortForwardSpec) =>
+    call<PortForward>("portforward_add", { spec }),
+  /** Answers once the listener is bound. */
+  portforwardStart: (id: string) =>
+    call<PortForward>("portforward_start", { id }),
+  /** Safe to repeat. */
+  portforwardStop: (id: string) => call<void>("portforward_stop", { id }),
+  /** Stops the forward first. */
+  portforwardRemove: (id: string) => call<void>("portforward_remove", { id }),
+  /** The backend opens https URLs, and http ones on localhost or 127.0.0.1. */
+  openExternal: (url: string) => call<void>("open_external", { url }),
   uiStateGet: (key: string) => call<JsonValue | null>("ui_state_get", { key }),
   uiStateSet: (key: string, value: JsonValue) =>
     call<void>("ui_state_set", { key, value }),
