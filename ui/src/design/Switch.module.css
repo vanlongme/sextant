@@ -1,0 +1,92 @@
+.switch {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-4);
+  color: var(--text-primary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.sm {
+  font: var(--type-caption);
+}
+
+.md {
+  font: var(--type-label);
+}
+
+.switch[data-disabled="true"] {
+  color: var(--text-tertiary);
+  cursor: not-allowed;
+}
+
+/* The native checkbox carries the state and the focus; the track draws them. */
+.input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  appearance: none;
+}
+
+.track {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  padding: 2px;
+  border-radius: var(--radius-full);
+  background: var(--border-strong-color);
+  transition: var(--transition-control);
+}
+
+.sm .track {
+  width: 28px;
+  height: 16px;
+}
+
+.md .track {
+  width: 32px;
+  height: 18px;
+}
+
+.thumb {
+  border-radius: 50%;
+  background: var(--surface-card);
+  box-shadow: var(--shadow-1);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.sm .thumb {
+  width: 12px;
+  height: 12px;
+}
+
+.md .thumb {
+  width: 14px;
+  height: 14px;
+}
+
+.input:checked + .track {
+  background: var(--surface-accent);
+}
+
+.sm .input:checked + .track .thumb {
+  transform: translateX(12px);
+}
+
+.md .input:checked + .track .thumb {
+  transform: translateX(14px);
+}
+
+.input:disabled + .track {
+  background: var(--surface-inset);
+}
+
+.input:focus-visible + .track {
+  box-shadow: var(--focus-ring);
+}

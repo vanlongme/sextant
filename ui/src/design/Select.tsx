@@ -8,18 +8,32 @@ export function Select<T extends string>(props: {
   value: T;
   options: { value: T; label: string }[];
   onChange(v: T): void;
+  /** Keeps the label for assistive technology only, as in a toolbar. */
+  hideLabel?: boolean;
+  /** The trigger's width in px. */
+  width?: number;
+  /** Set on the trigger, the part a pointer clicks. */
+  testId?: string;
 }) {
   const labelId = useId();
   return (
     <div className={styles.field}>
-      <span id={labelId} className={styles.label}>
+      <span
+        id={labelId}
+        className={props.hideLabel ? styles.hidden : styles.label}
+      >
         {props.label}
       </span>
       <RS.Root
         value={props.value}
         onValueChange={(v) => props.onChange(v as T)}
       >
-        <RS.Trigger className={styles.trigger} aria-labelledby={labelId}>
+        <RS.Trigger
+          className={styles.trigger}
+          aria-labelledby={labelId}
+          style={props.width === undefined ? undefined : { width: props.width }}
+          data-testid={props.testId}
+        >
           <RS.Value />
           <RS.Icon aria-hidden="true" className={styles.icon}>
             <ChevronDown size={16} />

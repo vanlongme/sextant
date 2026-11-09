@@ -141,3 +141,18 @@ test("tables have hairline rows, no outer border and an inset focus ring", () =>
     "inset 0 0 0 2px var(--focus-ring-color)",
   );
 });
+
+test("switches show the accent when on and the focus ring on the track", () => {
+  const decl = (selector: string, prop: string) =>
+    cssRules(CSS_FILES["/src/design/Switch.module.css"] ?? "")
+      .find((r) => r.selector === selector)
+      ?.decls.find(([p]) => p === prop)?.[1];
+  expect(decl(".input:checked + .track", "background")).toBe(
+    "var(--surface-accent)",
+  );
+  expect(decl(".input:focus-visible + .track", "box-shadow")).toBe(
+    "var(--focus-ring)",
+  );
+  expect(decl(".sm .track", "height")).toBe("16px");
+  expect(decl(".md .track", "height")).toBe("18px");
+});

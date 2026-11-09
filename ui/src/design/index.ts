@@ -14,6 +14,7 @@ export { Segmented } from "./Segmented";
 export { Select } from "./Select";
 export { Spinner } from "./Spinner";
 export { StatusDot } from "./StatusDot";
+export { Switch } from "./Switch";
 export { Tabs } from "./Tabs";
 export { Toaster, toast } from "./Toast";
 export { Tooltip } from "./Tooltip";
