@@ -10,6 +10,10 @@ import type { DataChange } from "./generated/DataChange";
 import type { DrainEvent } from "./generated/DrainEvent";
 import type { DrainOptions } from "./generated/DrainOptions";
 import type { InvolvedRef } from "./generated/InvolvedRef";
+import type { LogDownload } from "./generated/LogDownload";
+import type { LogEvent } from "./generated/LogEvent";
+import type { LogOptions } from "./generated/LogOptions";
+import type { LogTarget } from "./generated/LogTarget";
 import type { Prefs } from "./generated/Prefs";
 import type { Propagation } from "./generated/Propagation";
 import type { ResourceRef } from "./generated/ResourceRef";
@@ -236,6 +240,35 @@ export const api = {
       resourceVersion,
       changes,
     }),
+  /** Returns the session id. Events go to `onEvent` until the session ends or is stopped. */
+  logsStart: (
+    clusterId: string,
+    target: LogTarget,
+    options: LogOptions,
+    onEvent: (event: LogEvent) => void,
+  ) =>
+    call<string>("logs_start", {
+      clusterId,
+      target,
+      options,
+      onEvent: new Channel<LogEvent>(onEvent),
+    }),
+  logsStop: (sessionId: string) => call<void>("logs_stop", { sessionId }),
+  logsDownload: (
+    clusterId: string,
+    target: LogTarget,
+    options: LogOptions,
+    destPath: string,
+  ) =>
+    call<LogDownload>("logs_download", {
+      clusterId,
+      target,
+      options,
+      destPath,
+    }),
+  /** Tells the backend that `bytes` of a session's output are stored. */
+  sessionAck: (sessionId: string, bytes: number) =>
+    call<void>("session_ack", { sessionId, bytes }),
   uiStateGet: (key: string) => call<JsonValue | null>("ui_state_get", { key }),
   uiStateSet: (key: string, value: JsonValue) =>
     call<void>("ui_state_set", { key, value }),
