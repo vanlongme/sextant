@@ -134,6 +134,8 @@ export function LogView(props: {
   const stick = useRef(true);
   /** Where a jump scrolled to, so its own scroll event does not resume autoscroll. */
   const jumpTarget = useRef<number | null>(null);
+  /** The offset last seen while shown: a hidden (display:none) panel loses its own. */
+  const savedTop = useRef(0);
   /** The buffer as last drawn, to tell dropped lines from a clear. */
   const shown = useRef({ firstSeq: buffer.firstSeq, epoch: buffer.epoch });
 
@@ -189,6 +191,23 @@ export function LogView(props: {
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [totalSize]);
 
+  // A dock panel is hidden with display:none, which drops the scroll offset. When
+  // the list shows again, go back to the bottom if stuck, else to where it was.
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    let wasShown = el.clientHeight > 0;
+    const observer = new ResizeObserver(() => {
+      const shown = el.clientHeight > 0;
+      if (shown && !wasShown) {
+        el.scrollTop = stick.current ? el.scrollHeight : savedTop.current;
+      }
+      wasShown = shown;
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   const jumpSeq = jump?.seq;
   const jumpNonce = jump?.nonce;
   // biome-ignore lint/correctness/useExhaustiveDependencies: a jump runs once per nonce.
@@ -215,6 +234,8 @@ export function LogView(props: {
   function onScroll(): void {
     const el = scroller.current;
     if (!el) return;
+    if (el.clientHeight === 0) return;
+    savedTop.current = el.scrollTop;
     if (
       jumpTarget.current !== null &&
       Math.abs(el.scrollTop - jumpTarget.current) <= 1

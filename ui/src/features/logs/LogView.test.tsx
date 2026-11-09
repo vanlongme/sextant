@@ -156,3 +156,36 @@ test("search marks draw the matches, the current one apart, over any ANSI backgr
   ]);
   expect(marked[2].style.background).toBe("");
 });
+
+test("a list shown again after display:none comes back where it was left", () => {
+  const callbacks: (() => void)[] = [];
+  const notify = () => {
+    for (const callback of callbacks) callback();
+  };
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      constructor(callback: () => void) {
+        callbacks.push(callback);
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const clientHeight = vi.spyOn(Element.prototype, "clientHeight", "get");
+  fill(numbered(100));
+  render(draw());
+  const el = view();
+  el.scrollTop = 300;
+  fireEvent.scroll(el);
+
+  clientHeight.mockReturnValue(0);
+  notify();
+  el.scrollTop = 0; // display:none drops the offset
+  clientHeight.mockReturnValue(VIEW_HEIGHT);
+  notify();
+
+  expect(el.scrollTop).toBe(300);
+  vi.unstubAllGlobals();
+});
