@@ -59,10 +59,11 @@ const UNREACHABLE: [&str; 8] = [
 ];
 const CONFLICT: [&str; 2] = ["already exists", "a name that is still in use"];
 /// helm's words for a missing repo or revision include more than "not found".
-const NOT_FOUND: [&str; 3] = [
+const NOT_FOUND: [&str; 4] = [
     "not found",
     "no repo named",
     "no repositories found matching",
+    "no repositories configured",
 ];
 
 /// What `helm_version` reports.
@@ -548,6 +549,7 @@ mod tests {
             ("uninstall: Release not loaded: nothere: release: not found", ErrorCode::NotFound),
             ("no repo named \"missing\" found", ErrorCode::NotFound),
             ("no repositories found matching 'missing'.  Nothing will be updated", ErrorCode::NotFound),
+            ("no repositories configured", ErrorCode::NotFound),
             ("release has no 99 version", ErrorCode::NotFound),
             ("UPGRADE FAILED: template: x/templates/a.yaml:3:9: executing \"x\" at <.Values.a.b>: nil pointer evaluating", ErrorCode::Internal),
         ];
