@@ -85,6 +85,10 @@
   color: var(--text-primary);
 }
 
+.tabIcon {
+  flex: none;
+}
+
 .dirty {
   color: var(--text-accent);
   font-size: 10px;

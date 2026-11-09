@@ -201,6 +201,7 @@ test("a Job offers only the one that applies, and both need patch", () => {
     "patch",
   ]);
   expect(kindSpec("batch", "jobs")?.actions?.map((a) => a.id)).toEqual([
+    "logs",
     "suspend",
     "resume",
   ]);

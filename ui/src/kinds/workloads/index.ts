@@ -10,6 +10,7 @@ import {
 import type { KubeObject } from "../objects";
 import { registerKind } from "../registry";
 import "./jobs";
+import { podLogsAction, workloadLogsAction } from "./logsAction";
 import { PodDetail } from "./PodDetail";
 import { podStatus, podSummary } from "./pod";
 import { forceDeleteAction } from "./podActions";
@@ -35,6 +36,7 @@ registerKind("", "pods", {
       }),
     ),
   actions: [
+    podLogsAction,
     {
       id: "evict",
       label: "Evict",
@@ -78,7 +80,7 @@ registerKind("apps", "deployments", {
         count(o.status?.availableReplicas),
       ),
     ),
-  actions: [scaleAction, restartAction],
+  actions: [workloadLogsAction, scaleAction, restartAction],
   detail: RolloutDetail,
 });
 
@@ -89,7 +91,7 @@ registerKind("apps", "statefulsets", {
       textColumn("ready", "Ready", readyOver, { width: 72 }),
       statusColumn(replicaSetStatus),
     ),
-  actions: [scaleAction, restartAction],
+  actions: [workloadLogsAction, scaleAction, restartAction],
   detail: RolloutDetail,
 });
 
@@ -128,7 +130,7 @@ registerKind("apps", "daemonsets", {
           .join(","),
       ),
     ),
-  actions: [restartAction],
+  actions: [workloadLogsAction, restartAction],
   detail: RolloutDetail,
 });
 
@@ -141,6 +143,6 @@ registerKind("apps", "replicasets", {
       numberColumn("ready", "Ready", (o) => count(o.status?.readyReplicas)),
       statusColumn(replicaSetStatus),
     ),
-  actions: [scaleAction],
+  actions: [workloadLogsAction, scaleAction],
   detail: RolloutDetail,
 });

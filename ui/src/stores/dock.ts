@@ -1,11 +1,41 @@
 import { create, type StoreApi, type UseBoundStore } from "zustand";
 import type { ResourceRef } from "../ipc/generated/ResourceRef";
+import type { KubeObject } from "../kinds/objects";
 
-const MIN_HEIGHT = 120;
+export const DOCK_MIN_HEIGHT = 120;
+export const DOCK_DEFAULT_HEIGHT = 320;
 const MAX_HEIGHT_SHARE = 0.8;
-const DEFAULT_HEIGHT = 320;
 
-// Phase 4 adds terminal and logs tab kinds and persistence.
+/** The tail a new Logs tab reads. */
+export const DEFAULT_LOG_TAIL = 1000;
+
+export function dockMaxHeight(): number {
+  return window.innerHeight * MAX_HEIGHT_SHARE;
+}
+
+/** `px` within [120, 80 % of the window]. */
+export function clampDockHeight(px: number): number {
+  return Math.max(DOCK_MIN_HEIGHT, Math.min(px, dockMaxHeight()));
+}
+
+/**
+ * What a Logs tab reads and how it shows it. A type alias rather than an interface,
+ * so the saved dock layout can hold it as JSON.
+ */
+export type LogTabOptions = {
+  /** "all", or one Pod's name. Used by workload tabs only. */
+  pod: string;
+  /** null: every container. */
+  container: string | null;
+  /** 100, 1000, or null for all lines. */
+  tail: number | null;
+  follow: boolean;
+  previous: boolean;
+  timestamps: boolean;
+  wrap: boolean;
+};
+
+// Terminal tab kinds come with B3.
 export type DockTab =
   | {
       id: string;
@@ -23,20 +53,57 @@ export type DockTab =
       clusterId: string;
       title: string;
       dirty: boolean;
+    }
+  | {
+      id: string;
+      kind: "logs";
+      clusterId: string;
+      title: string;
+      resource: ResourceRef;
+      namespace: string;
+      name: string;
+      options: LogTabOptions;
+      dirty: false;
     };
+
+export type LogsDockTab = Extract<DockTab, { kind: "logs" }>;
+
+/** What the dock keeps across restarts (spec §7.1). */
+export interface DockLayout {
+  height: number;
+  minimized: boolean;
+  activeId: string | null;
+  tabs: DockTab[];
+}
 
 export interface DockState {
   tabs: DockTab[];
   activeId: string | null;
   height: number;
   minimized: boolean;
-  /** Shows the dock on `tab`. An edit tab for the same object is focused instead. */
+  /** False until the saved layout was applied. The dock waits for it. */
+  restored: boolean;
+  /**
+   * Shows the dock on `tab`. A tab for the same object is focused instead, and a Logs
+   * tab keeps its options.
+   */
   open(tab: DockTab): void;
   close(id: string): void;
   activate(id: string): void;
   setHeight(px: number): void;
   setMinimized(v: boolean): void;
+  /** Logs tabs are never dirty, so they are left alone. */
   setDirty(id: string, dirty: boolean): void;
+  setLogOptions(id: string, patch: Partial<LogTabOptions>): void;
+  /**
+   * Applies the saved layout. Tabs opened before it arrived stay after the saved
+   * ones, and the one the user opened last stays active.
+   */
+  restore(layout: DockLayout): void;
+  /** Drops the tabs, and their drafts, of clusters not in `clusterIds`. */
+  keepClusters(clusterIds: readonly string[]): void;
+  /** Moves a tab to `toIndex` among its own cluster's tabs; the others keep their places. */
+  move(id: string, toIndex: number): void;
 }
 
 function sameTab(a: DockTab, b: DockTab): boolean {
@@ -71,12 +138,18 @@ export function clearDraft(id: string): void {
   drafts.delete(id);
 }
 
+/** The highest `create-<n>` handed out or restored. */
+let createTabs = 0;
+
+const CREATE_ID = /^create-(\d+)$/;
+
 export const useDock: UseBoundStore<StoreApi<DockState>> = create<DockState>(
-  (set) => ({
+  (set, get) => ({
     tabs: [],
     activeId: null,
-    height: DEFAULT_HEIGHT,
+    height: DOCK_DEFAULT_HEIGHT,
     minimized: false,
+    restored: false,
     open: (tab) =>
       set((state) => {
         const existing = state.tabs.find((t) => sameTab(t, tab));
@@ -99,22 +172,75 @@ export const useDock: UseBoundStore<StoreApi<DockState>> = create<DockState>(
       });
     },
     activate: (id) => set({ activeId: id }),
-    setHeight: (px) =>
-      set({
-        height: Math.max(
-          MIN_HEIGHT,
-          Math.min(px, window.innerHeight * MAX_HEIGHT_SHARE),
-        ),
-      }),
+    setHeight: (px) => set({ height: clampDockHeight(px) }),
     setMinimized: (v) => set({ minimized: v }),
     setDirty: (id, dirty) =>
       set((state) =>
-        state.tabs.some((t) => t.id === id && t.dirty !== dirty)
+        state.tabs.some(
+          (t) => t.id === id && t.kind !== "logs" && t.dirty !== dirty,
+        )
           ? {
-              tabs: state.tabs.map((t) => (t.id === id ? { ...t, dirty } : t)),
+              tabs: state.tabs.map((t) =>
+                t.id === id && t.kind !== "logs" ? { ...t, dirty } : t,
+              ),
             }
           : state,
       ),
+    setLogOptions: (id, patch) =>
+      set((state) => ({
+        tabs: state.tabs.map((t) =>
+          t.id === id && t.kind === "logs"
+            ? { ...t, options: { ...t.options, ...patch } }
+            : t,
+        ),
+      })),
+    restore: (layout) => {
+      for (const tab of layout.tabs) {
+        const n = CREATE_ID.exec(tab.id);
+        if (n) createTabs = Math.max(createTabs, Number(n[1]));
+      }
+      set((state) => {
+        const saved = new Set(layout.tabs.map((t) => t.id));
+        const early = state.tabs.filter((t) => !saved.has(t.id));
+        const openedEarly = state.activeId !== null;
+        return {
+          tabs: [...layout.tabs, ...early],
+          activeId: openedEarly ? state.activeId : layout.activeId,
+          minimized: openedEarly ? state.minimized : layout.minimized,
+          height: layout.height,
+          restored: true,
+        };
+      });
+    },
+    keepClusters: (clusterIds) => {
+      const keep = new Set(clusterIds);
+      const { tabs, activeId } = get();
+      const dropped = tabs.filter((t) => !keep.has(t.clusterId));
+      if (dropped.length === 0) return;
+      for (const tab of dropped) drafts.delete(tab.id);
+      set({
+        tabs: tabs.filter((t) => keep.has(t.clusterId)),
+        activeId: dropped.some((t) => t.id === activeId) ? null : activeId,
+      });
+    },
+    move: (id, toIndex) =>
+      set((state) => {
+        const tab = state.tabs.find((t) => t.id === id);
+        if (!tab) return state;
+        const own = state.tabs.filter((t) => t.clusterId === tab.clusterId);
+        const from = own.indexOf(tab);
+        const to = Math.max(0, Math.min(toIndex, own.length - 1));
+        if (from === to) return state;
+        const reordered = own.filter((t) => t !== tab);
+        reordered.splice(to, 0, tab);
+        // The cluster's slots in the whole list stay where they are.
+        const slots = reordered.values();
+        return {
+          tabs: state.tabs.map((t) =>
+            t.clusterId === tab.clusterId ? (slots.next().value ?? t) : t,
+          ),
+        };
+      }),
   }),
 );
 
@@ -141,7 +267,57 @@ export function editTab(
   };
 }
 
-let createTabs = 0;
+export function logsTabId(
+  clusterId: string,
+  resource: ResourceRef,
+  namespace: string,
+  name: string,
+): string {
+  return `logs:${clusterId}:${resource.group}/${resource.plural}:${namespace}/${name}`;
+}
+
+export function logsTitle(name: string): string {
+  return `Logs · ${name}`;
+}
+
+/** Whether a Logs tab reads one Pod, rather than the Pods of a workload. */
+export function isPodTab(tab: LogsDockTab): boolean {
+  return tab.resource.group === "" && tab.resource.plural === "pods";
+}
+
+/**
+ * The tab that reads an object's logs. A Pod starts on its first container, a
+ * workload on every container of all its Pods.
+ */
+export function logsTab(
+  clusterId: string,
+  resource: ResourceRef,
+  object: KubeObject,
+): LogsDockTab {
+  const namespace = object.metadata.namespace ?? "";
+  const name = object.metadata.name;
+  const pod = resource.group === "" && resource.plural === "pods";
+  const first: unknown = pod ? object.spec?.containers?.[0]?.name : undefined;
+  return {
+    id: logsTabId(clusterId, resource, namespace, name),
+    kind: "logs",
+    clusterId,
+    title: logsTitle(name),
+    resource,
+    namespace,
+    name,
+    options: {
+      pod: "all",
+      container: typeof first === "string" ? first : null,
+      tail: DEFAULT_LOG_TAIL,
+      follow: true,
+      previous: false,
+      timestamps: true,
+      wrap: false,
+    },
+    dirty: false,
+  };
+}
 
 /** A new tab for creating resources. */
 export function newCreateTab(clusterId: string): DockTab {
@@ -157,10 +333,12 @@ export function newCreateTab(clusterId: string): DockTab {
 
 export function resetDockForTest(): void {
   drafts.clear();
+  createTabs = 0;
   useDock.setState({
     tabs: [],
     activeId: null,
-    height: DEFAULT_HEIGHT,
+    height: DOCK_DEFAULT_HEIGHT,
     minimized: false,
+    restored: true,
   });
 }

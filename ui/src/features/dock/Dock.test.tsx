@@ -1,12 +1,15 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { FileCode, FilePlus, type LucideIcon, ScrollText } from "lucide-react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ResourceRef } from "../../ipc/generated/ResourceRef";
 import {
   editTab,
+  logsTab,
   newCreateTab,
   resetDockForTest,
   useDock,
 } from "../../stores/dock";
+import { resetResourcesForTest } from "../../stores/resources";
 import { flush, mockBackend } from "../../test/ipc";
 import { Dock } from "./Dock";
 
@@ -53,14 +56,21 @@ async function show(clusterId = "c1") {
 }
 
 beforeEach(() => {
+  resetDockForTest();
   vi.stubGlobal("innerHeight", 1000);
   mockBackend({
     resource_get_yaml: (a: { name: string }) => `kind: Pod\nname: ${a.name}\n`,
+    logs_start: () => "s1",
+    logs_stop: () => null,
+    session_ack: () => null,
+    resources_subscribe: () => "sub",
+    resources_unsubscribe: () => null,
   });
 });
 
 afterEach(() => {
   resetDockForTest();
+  resetResourcesForTest();
   vi.unstubAllGlobals();
 });
 
@@ -247,4 +257,126 @@ test("unsaved edits come back with their cluster", async () => {
   await show("c1");
   expect(editorOf(WEB.id).value).toBe("edited: true\n");
   expect(screen.getByTestId(`dock-tab-${WEB.id}`).dataset.dirty).toBe("true");
+});
+
+/** What an icon draws, to compare a tab's icon with the one it should be. */
+function iconMarkup(Icon: LucideIcon): string {
+  const { container, unmount } = render(<Icon size={14} aria-hidden="true" />);
+  const markup = container.querySelector("svg")?.innerHTML ?? "";
+  unmount();
+  return markup;
+}
+
+test("each tab shows its kind's 14 px icon before its title", async () => {
+  const create = newCreateTab("c1");
+  const logs = logsTab("c1", PODS, {
+    metadata: { name: "web", namespace: "team-a" },
+    spec: { containers: [{ name: "main" }] },
+  });
+  useDock.getState().open(WEB);
+  useDock.getState().open(create);
+  useDock.getState().open(logs);
+  await show();
+
+  for (const [tab, Icon] of [
+    [WEB, FileCode],
+    [create, FilePlus],
+    [logs, ScrollText],
+  ] as const) {
+    const button = screen.getByTestId(`dock-tab-${tab.id}`);
+    const svg = button.querySelector("svg");
+    expect(svg?.getAttribute("width")).toBe("14");
+    expect(svg?.innerHTML).toBe(iconMarkup(Icon));
+    expect(button.firstElementChild).toBe(svg);
+    expect(button.textContent).toBe(tab.title);
+  }
+  expect(
+    screen.getByTestId(`dock-close-${logs.id}`).getAttribute("aria-label"),
+  ).toBe("Close Logs · web");
+});
+
+test("a Logs tab's panel holds the Logs view, which starts its stream", async () => {
+  const logs = logsTab("c1", PODS, {
+    metadata: { name: "web", namespace: "team-a" },
+    spec: { containers: [{ name: "main" }] },
+  });
+  useDock.getState().open(logs);
+  await show();
+
+  const body = within(panel(logs.id));
+  expect(body.getByTestId("logs-tab")).toBeTruthy();
+  expect(body.getByTestId("logs-status").textContent).toBe("Connecting");
+});
+
+test("the dock waits for the saved layout before it shows", async () => {
+  useDock.setState({ restored: false });
+  await show();
+  expect(screen.queryByTestId("dock")).toBeNull();
+
+  act(() =>
+    useDock.getState().restore({
+      height: 400,
+      minimized: false,
+      activeId: WEB.id,
+      tabs: [WEB],
+    }),
+  );
+  expect(screen.getByTestId("dock").style.height).toBe("400px");
+  expect(
+    screen.getByTestId(`dock-tab-${WEB.id}`).getAttribute("aria-selected"),
+  ).toBe("true");
+});
+
+test("Ctrl+Shift+PageDown moves the focused tab right, keeps its focus, and stops at the end", async () => {
+  const B = editTab("c1", PODS, "team-a", "b");
+  const C = editTab("c1", PODS, "team-a", "c");
+  for (const tab of [WEB, B, C]) useDock.getState().open(tab);
+  await show();
+  const tab = (id: string) => screen.getByTestId(`dock-tab-${id}`);
+  const order = () =>
+    within(screen.getByRole("tablist", { name: "Open editors" }))
+      .getAllByRole("tab")
+      .map((t) => t.textContent);
+  const press = (key: string, chord = true) =>
+    fireEvent.keyDown(document.activeElement as Element, {
+      key,
+      ctrlKey: chord,
+      shiftKey: chord,
+    });
+
+  tab(WEB.id).focus();
+  press("PageDown");
+  expect(order()).toEqual([B.title, WEB.title, C.title]);
+  expect(document.activeElement).toBe(tab(WEB.id));
+  press("PageDown");
+  expect(order()).toEqual([B.title, C.title, WEB.title]);
+  expect(document.activeElement).toBe(tab(WEB.id));
+  press("PageDown");
+  expect(order()).toEqual([B.title, C.title, WEB.title]);
+  expect(document.activeElement).toBe(tab(WEB.id));
+
+  press("PageUp");
+  expect(order()).toEqual([B.title, WEB.title, C.title]);
+  press("PageDown", false);
+  expect(order()).toEqual([B.title, WEB.title, C.title]);
+  expect(useDock.getState().tabs.map((t) => t.id)).toEqual([
+    B.id,
+    WEB.id,
+    C.id,
+  ]);
+});
+
+test("the resize handle states its limits, and a double-click resets the height", async () => {
+  useDock.getState().open(WEB);
+  useDock.getState().setHeight(500);
+  await show();
+
+  const handle = screen.getByTestId("dock-resize");
+  expect(handle.getAttribute("aria-valuemin")).toBe("120");
+  expect(handle.getAttribute("aria-valuemax")).toBe("800");
+  expect(handle.getAttribute("aria-valuenow")).toBe("500");
+  expect(handle.title).toBe("Drag to resize, double-click to reset");
+  fireEvent.doubleClick(handle);
+  expect(handle.getAttribute("aria-valuenow")).toBe("320");
+  expect(useDock.getState().height).toBe(320);
 });

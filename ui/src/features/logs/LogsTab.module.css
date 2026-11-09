@@ -1,0 +1,158 @@
+.root {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.toolbar {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-4) 14px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.status {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-4);
+  color: var(--text-secondary);
+  font: var(--type-caption);
+}
+
+.note {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-3) 14px;
+  color: var(--text-secondary);
+  font: var(--type-caption);
+}
+
+.danger {
+  color: var(--text-danger);
+}
+
+.view {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--surface-sunken);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.view:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--focus-ring-color);
+}
+
+.sizer {
+  position: relative;
+  width: 100%;
+}
+
+/* Wrap off: one 20 px line each, and the list scrolls sideways. */
+.row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  width: max-content;
+  min-width: 100%;
+  height: 20px;
+  padding: 0 14px;
+  white-space: pre;
+}
+
+.marker {
+  background: var(--surface-selected);
+  color: var(--border-accent);
+}
+
+.time {
+  flex: none;
+  color: var(--text-tertiary);
+}
+
+.prefix {
+  flex: none;
+}
+
+.text {
+  white-space: pre;
+}
+
+.cut {
+  color: var(--text-tertiary);
+}
+
+.view[data-wrap="true"] .row {
+  align-items: flex-start;
+  width: 100%;
+  height: auto;
+  min-height: 20px;
+}
+
+.view[data-wrap="true"] .text {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.empty {
+  margin: 0;
+  padding: var(--space-7) 14px;
+  color: var(--text-secondary);
+  font: var(--type-body-sm);
+}
+
+.match {
+  background: var(--surface-accent-soft);
+}
+
+.current {
+  background: var(--status-warning);
+}
+
+.search {
+  position: relative;
+  flex: 0 1 200px;
+  min-width: 140px;
+}
+
+.search .searchInput {
+  width: 100%;
+  padding-left: 28px;
+}
+
+.searchIcon {
+  position: absolute;
+  top: 50%;
+  left: var(--space-5);
+  color: var(--text-tertiary);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.hits {
+  flex: none;
+  color: var(--text-secondary);
+  font: var(--type-caption);
+  white-space: nowrap;
+}

@@ -105,6 +105,13 @@ const FIXTURES: Record<string, SpecFixture> = {
   "config-kinds": { kubeconfigs: {}, start: startKindFixture },
   drain: { kubeconfigs: {}, start: startKindFixture },
   actions: { kubeconfigs: {}, start: startKindFixture },
+  logs: { kubeconfigs: {}, start: startKindFixture },
+  "dock-restart-1-save": {
+    kubeconfigs: {},
+    envGroup: "dock-restart",
+    start: startKindFixture,
+  },
+  "dock-restart-2-verify": { kubeconfigs: {}, envGroup: "dock-restart" },
   screens: { kubeconfigs: {}, start: startKindFixture },
 };
 
