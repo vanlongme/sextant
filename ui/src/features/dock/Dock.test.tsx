@@ -1,8 +1,10 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { FileCode, FilePlus, type LucideIcon, ScrollText } from "lucide-react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ResourceRef } from "../../ipc/generated/ResourceRef";
 import {
   editTab,
+  logsTab,
   newCreateTab,
   resetDockForTest,
   useDock,
@@ -247,4 +249,40 @@ test("unsaved edits come back with their cluster", async () => {
   await show("c1");
   expect(editorOf(WEB.id).value).toBe("edited: true\n");
   expect(screen.getByTestId(`dock-tab-${WEB.id}`).dataset.dirty).toBe("true");
+});
+
+/** What an icon draws, to compare a tab's icon with the one it should be. */
+function iconMarkup(Icon: LucideIcon): string {
+  const { container, unmount } = render(<Icon size={14} aria-hidden="true" />);
+  const markup = container.querySelector("svg")?.innerHTML ?? "";
+  unmount();
+  return markup;
+}
+
+test("each tab shows its kind's 14 px icon before its title", async () => {
+  const create = newCreateTab("c1");
+  const logs = logsTab("c1", PODS, {
+    metadata: { name: "web", namespace: "team-a" },
+    spec: { containers: [{ name: "main" }] },
+  });
+  useDock.getState().open(WEB);
+  useDock.getState().open(create);
+  useDock.getState().open(logs);
+  await show();
+
+  for (const [tab, Icon] of [
+    [WEB, FileCode],
+    [create, FilePlus],
+    [logs, ScrollText],
+  ] as const) {
+    const button = screen.getByTestId(`dock-tab-${tab.id}`);
+    const svg = button.querySelector("svg");
+    expect(svg?.getAttribute("width")).toBe("14");
+    expect(svg?.innerHTML).toBe(iconMarkup(Icon));
+    expect(button.firstElementChild).toBe(svg);
+    expect(button.textContent).toBe(tab.title);
+  }
+  expect(
+    screen.getByTestId(`dock-close-${logs.id}`).getAttribute("aria-label"),
+  ).toBe("Close Logs · web");
 });

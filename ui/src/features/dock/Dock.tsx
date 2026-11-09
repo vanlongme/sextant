@@ -1,4 +1,13 @@
-import { ChevronDown, ChevronUp, Plus, X } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  FileCode,
+  FilePlus,
+  type LucideIcon,
+  Plus,
+  ScrollText,
+  X,
+} from "lucide-react";
 import { type KeyboardEvent, type PointerEvent, useRef, useState } from "react";
 import { Button, ConfirmDialog, IconButton } from "../../design";
 import {
@@ -13,12 +22,22 @@ import styles from "./Dock.module.css";
 
 const KEYBOARD_RESIZE_STEP = 24;
 
+const TAB_ICONS: Record<DockTab["kind"], LucideIcon> = {
+  edit: FileCode,
+  create: FilePlus,
+  logs: ScrollText,
+};
+
 function TabBody({ tab }: { tab: DockTab }) {
-  return tab.kind === "edit" ? (
-    <EditResourceTab tab={tab} />
-  ) : (
-    <CreateResourceTab tab={tab} />
-  );
+  switch (tab.kind) {
+    case "edit":
+      return <EditResourceTab tab={tab} />;
+    case "create":
+      return <CreateResourceTab tab={tab} />;
+    case "logs":
+      // The Logs view arrives with the next part of this plan.
+      return null;
+  }
 }
 
 /** The drag handle on the dock's top edge. Up makes the dock taller. */
@@ -100,44 +119,52 @@ export function Dock(props: { clusterId: string }) {
       {expanded ? <ResizeHandle /> : null}
       <div className={styles.bar}>
         <div className={styles.tabs} role="tablist" aria-label="Open editors">
-          {tabs.map((tab) => (
-            <div
-              key={tab.id}
-              className={styles.tab}
-              data-active={expanded && tab.id === active?.id}
-              role="presentation"
-            >
-              <button
-                type="button"
-                role="tab"
-                id={`dock-tab-${tab.id}`}
-                className={styles.tabLabel}
-                aria-selected={tab.id === active?.id}
-                aria-controls={`dock-panel-${tab.id}`}
-                title={tab.title}
-                onClick={() => select(tab)}
-                data-testid={`dock-tab-${tab.id}`}
-                data-dirty={tab.dirty}
+          {tabs.map((tab) => {
+            const Icon = TAB_ICONS[tab.kind];
+            return (
+              <div
+                key={tab.id}
+                className={styles.tab}
+                data-active={expanded && tab.id === active?.id}
+                role="presentation"
               >
-                {tab.dirty ? (
-                  <span className={styles.dirty} title="Unsaved changes">
-                    ●
-                  </span>
-                ) : null}
-                {tab.title}
-              </button>
-              <button
-                type="button"
-                className={styles.tabClose}
-                aria-label={`Close ${tab.title}`}
-                title="Close"
-                onClick={() => requestClose(tab)}
-                data-testid={`dock-close-${tab.id}`}
-              >
-                <X size={14} aria-hidden="true" />
-              </button>
-            </div>
-          ))}
+                <button
+                  type="button"
+                  role="tab"
+                  id={`dock-tab-${tab.id}`}
+                  className={styles.tabLabel}
+                  aria-selected={tab.id === active?.id}
+                  aria-controls={`dock-panel-${tab.id}`}
+                  title={tab.title}
+                  onClick={() => select(tab)}
+                  data-testid={`dock-tab-${tab.id}`}
+                  data-dirty={tab.dirty}
+                >
+                  <Icon
+                    size={14}
+                    aria-hidden="true"
+                    className={styles.tabIcon}
+                  />
+                  {tab.dirty ? (
+                    <span className={styles.dirty} title="Unsaved changes">
+                      ●
+                    </span>
+                  ) : null}
+                  {tab.title}
+                </button>
+                <button
+                  type="button"
+                  className={styles.tabClose}
+                  aria-label={`Close ${tab.title}`}
+                  title="Close"
+                  onClick={() => requestClose(tab)}
+                  data-testid={`dock-close-${tab.id}`}
+                >
+                  <X size={14} aria-hidden="true" />
+                </button>
+              </div>
+            );
+          })}
         </div>
         <Button
           variant="ghost"
@@ -165,7 +192,8 @@ export function Dock(props: { clusterId: string }) {
         ) : null}
       </div>
       {tabs.map((tab) => (
-        // Hidden, not unmounted: another tab or minimizing must keep the editor.
+        // Hidden, not unmounted: another tab or minimizing must keep the editor,
+        // and a Logs tab keeps streaming.
         <div
           key={tab.id}
           id={`dock-panel-${tab.id}`}

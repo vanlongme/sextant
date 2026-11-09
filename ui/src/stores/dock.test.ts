@@ -1,8 +1,12 @@
 import { afterEach, expect, test, vi } from "vitest";
 import type { ResourceRef } from "../ipc/generated/ResourceRef";
+import { JOBS } from "../kinds/refs";
 import {
   type DockTab,
   editTab,
+  isPodTab,
+  type LogsDockTab,
+  logsTab,
   newCreateTab,
   readDraft,
   resetDockForTest,
@@ -154,4 +158,55 @@ test("a draft lasts until its tab closes", () => {
 
   writeDraft(tab.id, "too late");
   expect(readDraft<string>(tab.id)).toBeUndefined();
+});
+
+test("a Logs tab on a Pod reads its first container; one on a workload reads them all", () => {
+  const pod = logsTab("c1", PODS, {
+    metadata: { name: "web-1", namespace: "shop" },
+    spec: { containers: [{ name: "app" }, { name: "proxy" }] },
+  });
+  expect(pod).toEqual({
+    id: "logs:c1:/pods:shop/web-1",
+    kind: "logs",
+    clusterId: "c1",
+    title: "Logs · web-1",
+    resource: PODS,
+    namespace: "shop",
+    name: "web-1",
+    options: {
+      pod: "all",
+      container: "app",
+      tail: 1000,
+      follow: true,
+      previous: false,
+      timestamps: true,
+      wrap: false,
+    },
+    dirty: false,
+  });
+  expect(isPodTab(pod)).toBe(true);
+  const job = logsTab("c1", JOBS, {
+    metadata: { name: "nightly", namespace: "ops" },
+  });
+  expect(job.id).toBe("logs:c1:batch/jobs:ops/nightly");
+  expect(job.options.container).toBeNull();
+  expect(isPodTab(job)).toBe(false);
+});
+
+test("setLogOptions changes one Logs tab's options and keeps the rest", () => {
+  const a = logsTab("c1", JOBS, { metadata: { name: "a", namespace: "n" } });
+  const b = logsTab("c1", JOBS, { metadata: { name: "b", namespace: "n" } });
+  dock().open(a);
+  dock().open(b);
+  dock().setLogOptions(a.id, { tail: 100, wrap: true });
+  const [first, second] = dock().tabs as LogsDockTab[];
+  expect(first?.options).toEqual({ ...a.options, tail: 100, wrap: true });
+  expect(second?.options).toEqual(b.options);
+});
+
+test("setDirty leaves a Logs tab clean", () => {
+  const tab = logsTab("c1", JOBS, { metadata: { name: "a", namespace: "n" } });
+  dock().open(tab);
+  dock().setDirty(tab.id, true);
+  expect(dock().tabs[0]?.dirty).toBe(false);
 });

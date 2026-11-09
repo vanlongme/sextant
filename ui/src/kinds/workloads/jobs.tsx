@@ -17,6 +17,7 @@ import {
   registerKind,
 } from "../registry";
 import { matchesSelector, selectorText } from "../selectors";
+import { workloadLogsAction } from "./logsAction";
 import { PodList } from "./PodList";
 
 const holds = (o: KubeObject, type: string) =>
@@ -218,7 +219,7 @@ registerKind("batch", "jobs", {
         render: (o) => <Duration object={o} />,
       },
     ),
-  actions: [jobSuspendAction, jobResumeAction],
+  actions: [workloadLogsAction, jobSuspendAction, jobResumeAction],
   detail: JobDetail,
 });
 

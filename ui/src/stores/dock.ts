@@ -1,11 +1,32 @@
 import { create, type StoreApi, type UseBoundStore } from "zustand";
 import type { ResourceRef } from "../ipc/generated/ResourceRef";
+import type { KubeObject } from "../kinds/objects";
 
 const MIN_HEIGHT = 120;
 const MAX_HEIGHT_SHARE = 0.8;
 const DEFAULT_HEIGHT = 320;
 
-// Phase 4 adds terminal and logs tab kinds and persistence.
+/** The tail a new Logs tab reads. */
+export const DEFAULT_LOG_TAIL = 1000;
+
+/**
+ * What a Logs tab reads and how it shows it. A type alias rather than an interface,
+ * so the saved dock layout can hold it as JSON.
+ */
+export type LogTabOptions = {
+  /** "all", or one Pod's name. Used by workload tabs only. */
+  pod: string;
+  /** null: every container. */
+  container: string | null;
+  /** 100, 1000, or null for all lines. */
+  tail: number | null;
+  follow: boolean;
+  previous: boolean;
+  timestamps: boolean;
+  wrap: boolean;
+};
+
+// Terminal tab kinds come with B3.
 export type DockTab =
   | {
       id: string;
@@ -23,20 +44,38 @@ export type DockTab =
       clusterId: string;
       title: string;
       dirty: boolean;
+    }
+  | {
+      id: string;
+      kind: "logs";
+      clusterId: string;
+      title: string;
+      resource: ResourceRef;
+      namespace: string;
+      name: string;
+      options: LogTabOptions;
+      dirty: false;
     };
+
+export type LogsDockTab = Extract<DockTab, { kind: "logs" }>;
 
 export interface DockState {
   tabs: DockTab[];
   activeId: string | null;
   height: number;
   minimized: boolean;
-  /** Shows the dock on `tab`. An edit tab for the same object is focused instead. */
+  /**
+   * Shows the dock on `tab`. A tab for the same object is focused instead, and a Logs
+   * tab keeps its options.
+   */
   open(tab: DockTab): void;
   close(id: string): void;
   activate(id: string): void;
   setHeight(px: number): void;
   setMinimized(v: boolean): void;
+  /** Logs tabs are never dirty, so they are left alone. */
   setDirty(id: string, dirty: boolean): void;
+  setLogOptions(id: string, patch: Partial<LogTabOptions>): void;
 }
 
 function sameTab(a: DockTab, b: DockTab): boolean {
@@ -109,12 +148,24 @@ export const useDock: UseBoundStore<StoreApi<DockState>> = create<DockState>(
     setMinimized: (v) => set({ minimized: v }),
     setDirty: (id, dirty) =>
       set((state) =>
-        state.tabs.some((t) => t.id === id && t.dirty !== dirty)
+        state.tabs.some(
+          (t) => t.id === id && t.kind !== "logs" && t.dirty !== dirty,
+        )
           ? {
-              tabs: state.tabs.map((t) => (t.id === id ? { ...t, dirty } : t)),
+              tabs: state.tabs.map((t) =>
+                t.id === id && t.kind !== "logs" ? { ...t, dirty } : t,
+              ),
             }
           : state,
       ),
+    setLogOptions: (id, patch) =>
+      set((state) => ({
+        tabs: state.tabs.map((t) =>
+          t.id === id && t.kind === "logs"
+            ? { ...t, options: { ...t.options, ...patch } }
+            : t,
+        ),
+      })),
   }),
 );
 
@@ -137,6 +188,58 @@ export function editTab(
     resource,
     namespace,
     name,
+    dirty: false,
+  };
+}
+
+export function logsTabId(
+  clusterId: string,
+  resource: ResourceRef,
+  namespace: string,
+  name: string,
+): string {
+  return `logs:${clusterId}:${resource.group}/${resource.plural}:${namespace}/${name}`;
+}
+
+export function logsTitle(name: string): string {
+  return `Logs · ${name}`;
+}
+
+/** Whether a Logs tab reads one Pod, rather than the Pods of a workload. */
+export function isPodTab(tab: LogsDockTab): boolean {
+  return tab.resource.group === "" && tab.resource.plural === "pods";
+}
+
+/**
+ * The tab that reads an object's logs. A Pod starts on its first container, a
+ * workload on every container of all its Pods.
+ */
+export function logsTab(
+  clusterId: string,
+  resource: ResourceRef,
+  object: KubeObject,
+): LogsDockTab {
+  const namespace = object.metadata.namespace ?? "";
+  const name = object.metadata.name;
+  const pod = resource.group === "" && resource.plural === "pods";
+  const first: unknown = pod ? object.spec?.containers?.[0]?.name : undefined;
+  return {
+    id: logsTabId(clusterId, resource, namespace, name),
+    kind: "logs",
+    clusterId,
+    title: logsTitle(name),
+    resource,
+    namespace,
+    name,
+    options: {
+      pod: "all",
+      container: typeof first === "string" ? first : null,
+      tail: DEFAULT_LOG_TAIL,
+      follow: true,
+      previous: false,
+      timestamps: true,
+      wrap: false,
+    },
     dirty: false,
   };
 }
