@@ -391,6 +391,9 @@ test("containersOf joins spec and status for init and regular containers", () =>
     restarts: 2,
   });
   expect(a.ports).toEqual(["http 80/TCP"]);
+  expect(a.portSpecs).toEqual([
+    { containerPort: 80, name: "http", protocol: "TCP" },
+  ]);
   expect(a.env).toEqual([
     "A=1",
     "all of secret s",
@@ -401,4 +404,26 @@ test("containersOf joins spec and status for init and regular containers", () =>
   expect(a.requests).toEqual(["cpu 1"]);
   expect(a.limits).toEqual(["memory 1Gi"]);
   expect(rows[0].state).toBe("Not started");
+});
+
+test("container ports are data too, with null for what is not declared", () => {
+  const rows = containersOf({
+    metadata: { name: "p" },
+    spec: {
+      containers: [
+        {
+          name: "a",
+          ports: [
+            { containerPort: 9090 },
+            { name: "dns", containerPort: 53, protocol: "UDP" },
+          ],
+        },
+      ],
+    },
+  });
+  expect(rows[0]?.ports).toEqual(["9090/TCP", "dns 53/UDP"]);
+  expect(rows[0]?.portSpecs).toEqual([
+    { containerPort: 9090, name: null, protocol: null },
+    { containerPort: 53, name: "dns", protocol: "UDP" },
+  ]);
 });

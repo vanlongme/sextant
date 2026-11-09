@@ -1,4 +1,4 @@
-import { act, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import type { ApiResourceInfo } from "../../ipc/generated/ApiResourceInfo";
@@ -289,4 +289,47 @@ test("an ingress class shows controller, parameters and default", () => {
   expect(screen.getByText("k8s.io/ingress-nginx")).toBeTruthy();
   expect(screen.getByText("Params/p1")).toBeTruthy();
   expect(screen.getByText("Yes")).toBeTruthy();
+});
+
+test("each TCP port of a Service has a Forward button that opens the dialog on that port", async () => {
+  mockBackend({
+    resources_subscribe: () => "sub",
+    resources_unsubscribe: () => null,
+  });
+  show(
+    ServiceDetail,
+    {
+      metadata: { name: "web", namespace: "shop" },
+      spec: {
+        ports: [
+          { name: "http", port: 80, targetPort: 8080, protocol: "TCP" },
+          { name: "dns", port: 53, protocol: "UDP" },
+          { name: "admin", port: 8443 },
+        ],
+      },
+    },
+    SERVICES,
+  );
+  await act(flush);
+  const table = screen.getByTestId("detail-service-ports");
+  expect(
+    Array.from(table.querySelectorAll("th")).map((th) => th.textContent),
+  ).toEqual(["Name", "Port", "Target port", "Node port", "Protocol", ""]);
+  expect(screen.getByTestId("service-port-forward-80").textContent).toBe(
+    "Forward",
+  );
+  expect(screen.getByRole("button", { name: "Forward port 8443" })).toBe(
+    screen.getByTestId("service-port-forward-8443"),
+  );
+  expect(screen.queryByTestId("service-port-forward-53")).toBeNull();
+  expect(screen.queryByTestId("pf-dialog")).toBeNull();
+
+  fireEvent.click(screen.getByTestId("service-port-forward-8443"));
+  expect(screen.getByTestId("pf-dialog")).toBeTruthy();
+  expect(screen.getByTestId("pf-target-port").textContent).toBe(
+    "8443/TCP · admin",
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByTestId("pf-dialog")).toBeNull();
 });

@@ -7,6 +7,7 @@ import {
   statusColumn,
   textColumn,
 } from "../columns";
+import { portForwardAction } from "../network/portForwardAction";
 import type { KubeObject } from "../objects";
 import { registerKind } from "../registry";
 import "./jobs";
@@ -40,6 +41,7 @@ registerKind("", "pods", {
     podLogsAction,
     podShellAction,
     podAttachAction,
+    portForwardAction,
     {
       id: "evict",
       label: "Evict",

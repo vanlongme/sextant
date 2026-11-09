@@ -64,11 +64,12 @@ test("force delete does nothing when the answer is no", async () => {
   expect(backend.callsTo("pod_force_delete")).toHaveLength(0);
 });
 
-test("Pods offer Logs, Shell, Attach, Evict and Force delete", () => {
+test("Pods offer Logs, Shell, Attach, Port forward, Evict and Force delete", () => {
   expect(kindSpec("", "pods")?.actions?.map((a) => a.id)).toEqual([
     "logs",
     "shell",
     "attach",
+    "portForward",
     "evict",
     "force-delete",
   ]);

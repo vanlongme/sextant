@@ -1,3 +1,7 @@
+import { useState } from "react";
+import { ForwardButton } from "../../features/portForward/ForwardButton";
+import { PortForwardDialog } from "../../features/portForward/PortForwardDialog";
+import { isTcp } from "../../features/portForward/ports";
 import { Chips, Facts, ObjectLink, Part } from "../detail/parts";
 import type { DetailProps } from "../registry";
 import { type ContainerInfo, containersOf, podSummary } from "./pod";
@@ -18,7 +22,46 @@ function Lines(props: { title: string; values: string[] }) {
   );
 }
 
-function Container({ info }: { info: ContainerInfo }) {
+/** A regular container's ports, each TCP one with its Forward button (spec §5.2). */
+function PortLines(props: {
+  info: ContainerInfo;
+  onForward(port: number): void;
+}) {
+  const { info, onForward } = props;
+  return (
+    <div>
+      <div className={styles.muted}>Ports</div>
+      <ul className={styles.ports} data-testid={`pod-ports-${info.name}`}>
+        {info.ports.map((text, index) => {
+          const spec = info.portSpecs[index];
+          const port = spec?.containerPort ?? null;
+          return (
+            // biome-ignore lint/suspicious/noArrayIndexKey: ports may repeat
+            <li key={`${index}:${text}`} className={styles.portLine}>
+              <span className={styles.portText}>{text}</span>
+              {port !== null && isTcp(spec?.protocol) ? (
+                <ForwardButton
+                  port={port}
+                  testId={`pod-port-forward-${info.name}-${port}`}
+                  onClick={() => onForward(port)}
+                />
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/** Init containers get no `onForward`: they end once they have run. */
+function Container({
+  info,
+  onForward,
+}: {
+  info: ContainerInfo;
+  onForward?(port: number): void;
+}) {
   return (
     <div className={styles.container}>
       <Part title={info.name} testId={`detail-container-${info.name}`}>
@@ -30,7 +73,11 @@ function Container({ info }: { info: ContainerInfo }) {
             ["Restarts", String(info.restarts)],
           ]}
         />
-        {info.ports.length > 0 ? <Chips values={info.ports} /> : null}
+        {info.ports.length === 0 ? null : onForward ? (
+          <PortLines info={info} onForward={onForward} />
+        ) : (
+          <Chips values={info.ports} />
+        )}
         <Lines title="Environment" values={info.env} />
         <Lines title="Mounts" values={info.mounts} />
         <Lines title="Probes" values={info.probes} />
@@ -42,6 +89,8 @@ function Container({ info }: { info: ContainerInfo }) {
 }
 
 export function PodDetail({ clusterId, object, resources }: DetailProps) {
+  // The detail view has no ActionContext, so it keeps the dialog itself (spec §5.2).
+  const [forwarding, setForwarding] = useState<number | null>(null);
   const summary = podSummary(object);
   const node = object.spec?.nodeName;
   const containers = containersOf(object);
@@ -84,9 +133,18 @@ export function PodDetail({ clusterId, object, resources }: DetailProps) {
       {regular.length > 0 ? (
         <Part title="Containers">
           {regular.map((c) => (
-            <Container key={c.name} info={c} />
+            <Container key={c.name} info={c} onForward={setForwarding} />
           ))}
         </Part>
+      ) : null}
+      {forwarding !== null ? (
+        <PortForwardDialog
+          clusterId={clusterId}
+          kind="pod"
+          object={object}
+          port={forwarding}
+          close={() => setForwarding(null)}
+        />
       ) : null}
     </>
   );

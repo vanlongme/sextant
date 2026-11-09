@@ -109,11 +109,12 @@ function area(): HTMLElement {
   return element;
 }
 
-test("Pods offer Logs, Shell and Attach before Evict and Force delete; Nodes offer Shell first", () => {
+test("Pods offer Logs, Shell, Attach and Port forward before Evict and Force delete; Nodes offer Shell first", () => {
   expect(kindSpec("", "pods")?.actions?.map((a) => a.id)).toEqual([
     "logs",
     "shell",
     "attach",
+    "portForward",
     "evict",
     "force-delete",
   ]);

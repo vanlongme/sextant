@@ -19,6 +19,7 @@ import {
   sliceEndpoints,
   slicePorts,
 } from "./network";
+import { servicePortForwardAction } from "./portForwardAction";
 import { ServiceDetail } from "./ServiceDetail";
 
 registerKind("", "services", {
@@ -32,6 +33,7 @@ registerKind("", "services", {
       statusColumn(serviceStatus),
     ),
   detail: ServiceDetail,
+  actions: [servicePortForwardAction],
 });
 
 registerKind("discovery.k8s.io", "endpointslices", {

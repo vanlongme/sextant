@@ -129,6 +129,13 @@ export function podStatus(pod: KubeObject): StatusInfo {
   return { label, tone: podTone(label) };
 }
 
+/** A declared container port; what the spec leaves out is null. */
+export interface ContainerPort {
+  containerPort: number | null;
+  name: string | null;
+  protocol: string | null;
+}
+
 export interface ContainerInfo {
   name: string;
   init: boolean;
@@ -137,6 +144,8 @@ export interface ContainerInfo {
   ready: boolean;
   restarts: number;
   ports: string[];
+  /** The same ports as data, in the same order. */
+  portSpecs: ContainerPort[];
   env: string[];
   mounts: string[];
   probes: string[];
@@ -228,6 +237,14 @@ function describeContainer(
     ports: (spec.ports ?? []).map(
       (p: Json) =>
         `${p.name ? `${p.name} ` : ""}${p.containerPort}/${p.protocol ?? "TCP"}`,
+    ),
+    portSpecs: (spec.ports ?? []).map(
+      (p: Json): ContainerPort => ({
+        containerPort:
+          typeof p.containerPort === "number" ? p.containerPort : null,
+        name: typeof p.name === "string" ? p.name : null,
+        protocol: typeof p.protocol === "string" ? p.protocol : null,
+      }),
     ),
     env: [...(spec.env ?? []).map(envText), ...envFrom],
     mounts: (spec.volumeMounts ?? []).map(

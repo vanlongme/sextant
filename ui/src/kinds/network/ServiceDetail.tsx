@@ -1,4 +1,8 @@
+import { useState } from "react";
 import { ErrorNotice, Spinner } from "../../design";
+import { ForwardButton } from "../../features/portForward/ForwardButton";
+import { PortForwardDialog } from "../../features/portForward/PortForwardDialog";
+import { isTcp } from "../../features/portForward/ports";
 import { useResourceList } from "../../stores/resources";
 import { Chips, Facts, Part, SimpleTable } from "../detail/parts";
 import { ENDPOINT_SLICES } from "../refs";
@@ -44,6 +48,8 @@ function ServiceEndpoints(props: {
 }
 
 export function ServiceDetail({ clusterId, object, resources }: DetailProps) {
+  // The detail view has no ActionContext, so it keeps the dialog itself (spec §5.2).
+  const [forwarding, setForwarding] = useState<number | null>(null);
   const spec = object.spec ?? {};
   const selector = Object.entries(spec.selector ?? {}).map(
     ([k, v]) => `${k}=${v}`,
@@ -80,14 +86,26 @@ export function ServiceDetail({ clusterId, object, resources }: DetailProps) {
       <Part title="Ports">
         <SimpleTable
           testId="detail-service-ports"
-          headers={["Name", "Port", "Target port", "Node port", "Protocol"]}
-          rows={ports.map((p) => [
-            p.name ?? "-",
-            String(p.port ?? ""),
-            String(p.targetPort ?? p.port ?? ""),
-            p.nodePort ? String(p.nodePort) : "-",
-            p.protocol ?? "TCP",
-          ])}
+          headers={["Name", "Port", "Target port", "Node port", "Protocol", ""]}
+          rows={ports.map((p) => {
+            const port =
+              typeof p.port === "number" && isTcp(p.protocol) ? p.port : null;
+            return [
+              p.name ?? "-",
+              String(p.port ?? ""),
+              String(p.targetPort ?? p.port ?? ""),
+              p.nodePort ? String(p.nodePort) : "-",
+              p.protocol ?? "TCP",
+              port === null ? null : (
+                <ForwardButton
+                  key="forward"
+                  port={port}
+                  testId={`service-port-forward-${port}`}
+                  onClick={() => setForwarding(port)}
+                />
+              ),
+            ];
+          })}
           empty="No ports."
         />
       </Part>
@@ -99,6 +117,15 @@ export function ServiceDetail({ clusterId, object, resources }: DetailProps) {
           namespace={object.metadata.namespace}
         />
       </Part>
+      {forwarding !== null ? (
+        <PortForwardDialog
+          clusterId={clusterId}
+          kind="service"
+          object={object}
+          port={forwarding}
+          close={() => setForwarding(null)}
+        />
+      ) : null}
     </>
   );
 }
