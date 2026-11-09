@@ -540,7 +540,6 @@ impl AppCore {
     }
 
     /// What helm runs with on top of the app's environment (spec §5.1).
-    #[allow(dead_code)] // Plan 2's helm commands use it.
     pub(crate) fn tool_env(&self) -> Vec<(OsString, OsString)> {
         proxy_env(self.prefs_get().http_proxy.as_deref())
     }

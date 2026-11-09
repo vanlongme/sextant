@@ -297,6 +297,11 @@ impl ClusterManager {
         }
     }
 
+    /// `<data>/runtime`, emptied at every start.
+    pub(crate) fn runtime_dir(&self) -> &Path {
+        &self.runtime_dir
+    }
+
     fn handle(&self, id: &ClusterId) -> Option<Arc<ClusterHandle>> {
         self.handles.get(id).map(|handle| handle.value().clone())
     }
