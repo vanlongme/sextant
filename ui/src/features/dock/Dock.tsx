@@ -18,6 +18,7 @@ import {
 } from "../../stores/dock";
 import { CreateResourceTab } from "../editor/CreateResourceTab";
 import { EditResourceTab } from "../editor/EditResourceTab";
+import { LogsTab } from "../logs/LogsTab";
 import styles from "./Dock.module.css";
 
 const KEYBOARD_RESIZE_STEP = 24;
@@ -35,8 +36,7 @@ function TabBody({ tab }: { tab: DockTab }) {
     case "create":
       return <CreateResourceTab tab={tab} />;
     case "logs":
-      // The Logs view arrives with the next part of this plan.
-      return null;
+      return <LogsTab tab={tab} />;
   }
 }
 

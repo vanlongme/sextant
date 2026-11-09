@@ -9,6 +9,7 @@ import {
   resetDockForTest,
   useDock,
 } from "../../stores/dock";
+import { resetResourcesForTest } from "../../stores/resources";
 import { flush, mockBackend } from "../../test/ipc";
 import { Dock } from "./Dock";
 
@@ -58,11 +59,17 @@ beforeEach(() => {
   vi.stubGlobal("innerHeight", 1000);
   mockBackend({
     resource_get_yaml: (a: { name: string }) => `kind: Pod\nname: ${a.name}\n`,
+    logs_start: () => "s1",
+    logs_stop: () => null,
+    session_ack: () => null,
+    resources_subscribe: () => "sub",
+    resources_unsubscribe: () => null,
   });
 });
 
 afterEach(() => {
   resetDockForTest();
+  resetResourcesForTest();
   vi.unstubAllGlobals();
 });
 
@@ -285,4 +292,17 @@ test("each tab shows its kind's 14 px icon before its title", async () => {
   expect(
     screen.getByTestId(`dock-close-${logs.id}`).getAttribute("aria-label"),
   ).toBe("Close Logs · web");
+});
+
+test("a Logs tab's panel holds the Logs view, which starts its stream", async () => {
+  const logs = logsTab("c1", PODS, {
+    metadata: { name: "web", namespace: "team-a" },
+    spec: { containers: [{ name: "main" }] },
+  });
+  useDock.getState().open(logs);
+  await show();
+
+  const body = within(panel(logs.id));
+  expect(body.getByTestId("logs-tab")).toBeTruthy();
+  expect(body.getByTestId("logs-status").textContent).toBe("Connecting");
 });
