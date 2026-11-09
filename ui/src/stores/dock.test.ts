@@ -2,6 +2,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import type { ResourceRef } from "../ipc/generated/ResourceRef";
 import { JOBS } from "../kinds/refs";
 import {
+  type DockLayout,
   type DockTab,
   editTab,
   isPodTab,
@@ -209,4 +210,72 @@ test("setDirty leaves a Logs tab clean", () => {
   dock().open(tab);
   dock().setDirty(tab.id, true);
   expect(dock().tabs[0]?.dirty).toBe(false);
+});
+
+const A = editTab("c1", PODS, "n", "a");
+const B = editTab("c1", PODS, "n", "b");
+const C = editTab("c1", PODS, "n", "c");
+const OTHER = editTab("c2", PODS, "n", "o");
+
+function layout(tabs: DockTab[], over: Partial<DockLayout> = {}): DockLayout {
+  return { height: 400, minimized: true, activeId: null, tabs, ...over };
+}
+
+test("restore applies the saved layout", () => {
+  useDock.setState({ restored: false });
+  dock().restore(layout([A, B], { activeId: B.id }));
+  expect(ids(dock().tabs)).toEqual([A.id, B.id]);
+  expect(dock()).toMatchObject({
+    activeId: B.id,
+    minimized: true,
+    height: 400,
+    restored: true,
+  });
+});
+
+test("tabs opened before the layout arrived stay after the saved ones, and stay active", () => {
+  useDock.setState({ restored: false });
+  dock().open(C);
+  dock().restore(layout([A, C], { activeId: A.id }));
+  expect(ids(dock().tabs)).toEqual([A.id, C.id]);
+  expect(dock()).toMatchObject({ activeId: C.id, minimized: false });
+
+  resetDockForTest();
+  useDock.setState({ restored: false });
+  dock().open(C);
+  dock().restore(layout([A], { activeId: A.id }));
+  expect(ids(dock().tabs)).toEqual([A.id, C.id]);
+});
+
+test("the create counter starts above the highest restored create tab", () => {
+  const create = (n: number): DockTab => ({
+    id: `create-${n}`,
+    kind: "create",
+    clusterId: "c1",
+    title: "Create",
+    dirty: false,
+  });
+  dock().restore(layout([create(7), create(3)]));
+  expect(newCreateTab("c1").id).toBe("create-8");
+});
+
+test("keepClusters drops the tabs and drafts of other clusters", () => {
+  dock().open(A);
+  dock().open(OTHER);
+  writeDraft(OTHER.id, "kind: Pod");
+  dock().keepClusters(["c1"]);
+  expect(ids(dock().tabs)).toEqual([A.id]);
+  expect(dock().activeId).toBeNull();
+  expect(readDraft(OTHER.id)).toBeUndefined();
+});
+
+test("move reorders a tab among its cluster's tabs, and other clusters keep their places", () => {
+  for (const tab of [A, OTHER, B, C]) dock().open(tab);
+  dock().move(A.id, 2);
+  expect(ids(dock().tabs)).toEqual([B.id, OTHER.id, C.id, A.id]);
+  dock().move(A.id, -5);
+  expect(ids(dock().tabs)).toEqual([A.id, OTHER.id, B.id, C.id]);
+  const before = dock().tabs;
+  dock().move(C.id, 99);
+  expect(dock().tabs).toBe(before);
 });

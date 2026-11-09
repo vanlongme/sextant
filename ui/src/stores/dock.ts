@@ -2,12 +2,21 @@ import { create, type StoreApi, type UseBoundStore } from "zustand";
 import type { ResourceRef } from "../ipc/generated/ResourceRef";
 import type { KubeObject } from "../kinds/objects";
 
-const MIN_HEIGHT = 120;
+export const DOCK_MIN_HEIGHT = 120;
+export const DOCK_DEFAULT_HEIGHT = 320;
 const MAX_HEIGHT_SHARE = 0.8;
-const DEFAULT_HEIGHT = 320;
 
 /** The tail a new Logs tab reads. */
 export const DEFAULT_LOG_TAIL = 1000;
+
+export function dockMaxHeight(): number {
+  return window.innerHeight * MAX_HEIGHT_SHARE;
+}
+
+/** `px` within [120, 80 % of the window]. */
+export function clampDockHeight(px: number): number {
+  return Math.max(DOCK_MIN_HEIGHT, Math.min(px, dockMaxHeight()));
+}
 
 /**
  * What a Logs tab reads and how it shows it. A type alias rather than an interface,
@@ -59,11 +68,21 @@ export type DockTab =
 
 export type LogsDockTab = Extract<DockTab, { kind: "logs" }>;
 
+/** What the dock keeps across restarts (spec §7.1). */
+export interface DockLayout {
+  height: number;
+  minimized: boolean;
+  activeId: string | null;
+  tabs: DockTab[];
+}
+
 export interface DockState {
   tabs: DockTab[];
   activeId: string | null;
   height: number;
   minimized: boolean;
+  /** False until the saved layout was applied. The dock waits for it. */
+  restored: boolean;
   /**
    * Shows the dock on `tab`. A tab for the same object is focused instead, and a Logs
    * tab keeps its options.
@@ -76,6 +95,15 @@ export interface DockState {
   /** Logs tabs are never dirty, so they are left alone. */
   setDirty(id: string, dirty: boolean): void;
   setLogOptions(id: string, patch: Partial<LogTabOptions>): void;
+  /**
+   * Applies the saved layout. Tabs opened before it arrived stay after the saved
+   * ones, and the one the user opened last stays active.
+   */
+  restore(layout: DockLayout): void;
+  /** Drops the tabs, and their drafts, of clusters not in `clusterIds`. */
+  keepClusters(clusterIds: readonly string[]): void;
+  /** Moves a tab to `toIndex` among its own cluster's tabs; the others keep their places. */
+  move(id: string, toIndex: number): void;
 }
 
 function sameTab(a: DockTab, b: DockTab): boolean {
@@ -110,12 +138,18 @@ export function clearDraft(id: string): void {
   drafts.delete(id);
 }
 
+/** The highest `create-<n>` handed out or restored. */
+let createTabs = 0;
+
+const CREATE_ID = /^create-(\d+)$/;
+
 export const useDock: UseBoundStore<StoreApi<DockState>> = create<DockState>(
-  (set) => ({
+  (set, get) => ({
     tabs: [],
     activeId: null,
-    height: DEFAULT_HEIGHT,
+    height: DOCK_DEFAULT_HEIGHT,
     minimized: false,
+    restored: false,
     open: (tab) =>
       set((state) => {
         const existing = state.tabs.find((t) => sameTab(t, tab));
@@ -138,13 +172,7 @@ export const useDock: UseBoundStore<StoreApi<DockState>> = create<DockState>(
       });
     },
     activate: (id) => set({ activeId: id }),
-    setHeight: (px) =>
-      set({
-        height: Math.max(
-          MIN_HEIGHT,
-          Math.min(px, window.innerHeight * MAX_HEIGHT_SHARE),
-        ),
-      }),
+    setHeight: (px) => set({ height: clampDockHeight(px) }),
     setMinimized: (v) => set({ minimized: v }),
     setDirty: (id, dirty) =>
       set((state) =>
@@ -166,6 +194,53 @@ export const useDock: UseBoundStore<StoreApi<DockState>> = create<DockState>(
             : t,
         ),
       })),
+    restore: (layout) => {
+      for (const tab of layout.tabs) {
+        const n = CREATE_ID.exec(tab.id);
+        if (n) createTabs = Math.max(createTabs, Number(n[1]));
+      }
+      set((state) => {
+        const saved = new Set(layout.tabs.map((t) => t.id));
+        const early = state.tabs.filter((t) => !saved.has(t.id));
+        const openedEarly = state.activeId !== null;
+        return {
+          tabs: [...layout.tabs, ...early],
+          activeId: openedEarly ? state.activeId : layout.activeId,
+          minimized: openedEarly ? state.minimized : layout.minimized,
+          height: layout.height,
+          restored: true,
+        };
+      });
+    },
+    keepClusters: (clusterIds) => {
+      const keep = new Set(clusterIds);
+      const { tabs, activeId } = get();
+      const dropped = tabs.filter((t) => !keep.has(t.clusterId));
+      if (dropped.length === 0) return;
+      for (const tab of dropped) drafts.delete(tab.id);
+      set({
+        tabs: tabs.filter((t) => keep.has(t.clusterId)),
+        activeId: dropped.some((t) => t.id === activeId) ? null : activeId,
+      });
+    },
+    move: (id, toIndex) =>
+      set((state) => {
+        const tab = state.tabs.find((t) => t.id === id);
+        if (!tab) return state;
+        const own = state.tabs.filter((t) => t.clusterId === tab.clusterId);
+        const from = own.indexOf(tab);
+        const to = Math.max(0, Math.min(toIndex, own.length - 1));
+        if (from === to) return state;
+        const reordered = own.filter((t) => t !== tab);
+        reordered.splice(to, 0, tab);
+        // The cluster's slots in the whole list stay where they are.
+        const slots = reordered.values();
+        return {
+          tabs: state.tabs.map((t) =>
+            t.clusterId === tab.clusterId ? (slots.next().value ?? t) : t,
+          ),
+        };
+      }),
   }),
 );
 
@@ -244,8 +319,6 @@ export function logsTab(
   };
 }
 
-let createTabs = 0;
-
 /** A new tab for creating resources. */
 export function newCreateTab(clusterId: string): DockTab {
   createTabs += 1;
@@ -260,10 +333,12 @@ export function newCreateTab(clusterId: string): DockTab {
 
 export function resetDockForTest(): void {
   drafts.clear();
+  createTabs = 0;
   useDock.setState({
     tabs: [],
     activeId: null,
-    height: DEFAULT_HEIGHT,
+    height: DOCK_DEFAULT_HEIGHT,
     minimized: false,
+    restored: true,
   });
 }

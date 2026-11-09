@@ -1,4 +1,17 @@
 import {
+  closestCenter,
+  DndContext,
+  type DragEndEvent,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  horizontalListSortingStrategy,
+  SortableContext,
+  useSortable,
+} from "@dnd-kit/sortable";
+import {
   ChevronDown,
   ChevronUp,
   FileCode,
@@ -9,9 +22,13 @@ import {
   X,
 } from "lucide-react";
 import { type KeyboardEvent, type PointerEvent, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { Button, ConfirmDialog, IconButton } from "../../design";
 import {
+  DOCK_DEFAULT_HEIGHT,
+  DOCK_MIN_HEIGHT,
   type DockTab,
+  dockMaxHeight,
   newCreateTab,
   tabsForCluster,
   useDock,
@@ -22,6 +39,8 @@ import { LogsTab } from "../logs/LogsTab";
 import styles from "./Dock.module.css";
 
 const KEYBOARD_RESIZE_STEP = 24;
+/** A press that moves less than this is a click, so it still selects the tab. */
+const DRAG_DISTANCE = 4;
 
 const TAB_ICONS: Record<DockTab["kind"], LucideIcon> = {
   edit: FileCode,
@@ -73,25 +92,111 @@ function ResizeHandle() {
       aria-label="Resize dock"
       aria-orientation="horizontal"
       aria-valuenow={Math.round(height)}
+      aria-valuemin={DOCK_MIN_HEIGHT}
+      aria-valuemax={Math.round(dockMaxHeight())}
+      title="Drag to resize, double-click to reset"
       tabIndex={0}
       onPointerDown={start}
       onPointerMove={move}
       onPointerUp={stop}
       onPointerCancel={stop}
+      onDoubleClick={() => setHeight(DOCK_DEFAULT_HEIGHT)}
       onKeyDown={key}
       data-testid="dock-resize"
     />
   );
 }
 
-/** The panel under a cluster's content that holds its editors. */
+/** One tab on the dock bar. It is sortable, and Ctrl+Shift+PageUp/PageDown move it. */
+function DockTabItem(props: {
+  tab: DockTab;
+  /** Selected and shown. */
+  active: boolean;
+  selected: boolean;
+  onSelect(): void;
+  onClose(): void;
+  onMove(delta: -1 | 1): void;
+}) {
+  const { tab } = props;
+  const { listeners, setNodeRef, transform, transition } = useSortable({
+    id: tab.id,
+  });
+  const Icon = TAB_ICONS[tab.kind];
+
+  function key(event: KeyboardEvent<HTMLButtonElement>): void {
+    if (!event.ctrlKey || !event.shiftKey) return;
+    if (event.key !== "PageUp" && event.key !== "PageDown") return;
+    event.preventDefault();
+    props.onMove(event.key === "PageUp" ? -1 : 1);
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={styles.tab}
+      data-active={props.active}
+      role="presentation"
+      style={{
+        // Along the bar only.
+        transform: transform
+          ? `translate3d(${Math.round(transform.x)}px, 0, 0)`
+          : undefined,
+        transition,
+      }}
+    >
+      <button
+        type="button"
+        role="tab"
+        id={`dock-tab-${tab.id}`}
+        className={styles.tabLabel}
+        aria-selected={props.selected}
+        aria-controls={`dock-panel-${tab.id}`}
+        title={tab.title}
+        {...listeners}
+        onClick={props.onSelect}
+        onKeyDown={key}
+        data-testid={`dock-tab-${tab.id}`}
+        data-dirty={tab.dirty}
+      >
+        <Icon size={14} aria-hidden="true" className={styles.tabIcon} />
+        {tab.dirty ? (
+          <span className={styles.dirty} title="Unsaved changes">
+            ●
+          </span>
+        ) : null}
+        {tab.title}
+      </button>
+      <button
+        type="button"
+        className={styles.tabClose}
+        aria-label={`Close ${tab.title}`}
+        title="Close"
+        onClick={props.onClose}
+        data-testid={`dock-close-${tab.id}`}
+      >
+        <X size={14} aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+
+/** The panel under a cluster's content that holds its editors and logs. */
 export function Dock(props: { clusterId: string }) {
   const { clusterId } = props;
+  const restored = useDock((s) => s.restored);
   const allTabs = useDock((s) => s.tabs);
   const activeId = useDock((s) => s.activeId);
   const height = useDock((s) => s.height);
   const minimized = useDock((s) => s.minimized);
   const [closing, setClosing] = useState<DockTab | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: DRAG_DISTANCE },
+    }),
+  );
+
+  // The saved layout comes first, so its tabs do not appear after a moment.
+  if (!restored) return null;
 
   const tabs = tabsForCluster(allTabs, clusterId);
   // The active tab may be another cluster's, which is not shown here.
@@ -109,6 +214,19 @@ export function Dock(props: { clusterId: string }) {
     else useDock.getState().close(tab.id);
   }
 
+  function moveBy(tab: DockTab, delta: -1 | 1): void {
+    const at = tabs.findIndex((t) => t.id === tab.id);
+    // Reordering moves the button in the DOM, which drops the focus: give it back.
+    flushSync(() => useDock.getState().move(tab.id, at + delta));
+    document.getElementById(`dock-tab-${tab.id}`)?.focus();
+  }
+
+  function onDragEnd({ active: dragged, over }: DragEndEvent): void {
+    if (!over || dragged.id === over.id) return;
+    const to = tabs.findIndex((t) => t.id === String(over.id));
+    if (to !== -1) useDock.getState().move(String(dragged.id), to);
+  }
+
   return (
     <section
       className={styles.dock}
@@ -118,54 +236,34 @@ export function Dock(props: { clusterId: string }) {
     >
       {expanded ? <ResizeHandle /> : null}
       <div className={styles.bar}>
-        <div className={styles.tabs} role="tablist" aria-label="Open editors">
-          {tabs.map((tab) => {
-            const Icon = TAB_ICONS[tab.kind];
-            return (
-              <div
-                key={tab.id}
-                className={styles.tab}
-                data-active={expanded && tab.id === active?.id}
-                role="presentation"
-              >
-                <button
-                  type="button"
-                  role="tab"
-                  id={`dock-tab-${tab.id}`}
-                  className={styles.tabLabel}
-                  aria-selected={tab.id === active?.id}
-                  aria-controls={`dock-panel-${tab.id}`}
-                  title={tab.title}
-                  onClick={() => select(tab)}
-                  data-testid={`dock-tab-${tab.id}`}
-                  data-dirty={tab.dirty}
-                >
-                  <Icon
-                    size={14}
-                    aria-hidden="true"
-                    className={styles.tabIcon}
-                  />
-                  {tab.dirty ? (
-                    <span className={styles.dirty} title="Unsaved changes">
-                      ●
-                    </span>
-                  ) : null}
-                  {tab.title}
-                </button>
-                <button
-                  type="button"
-                  className={styles.tabClose}
-                  aria-label={`Close ${tab.title}`}
-                  title="Close"
-                  onClick={() => requestClose(tab)}
-                  data-testid={`dock-close-${tab.id}`}
-                >
-                  <X size={14} aria-hidden="true" />
-                </button>
-              </div>
-            );
-          })}
-        </div>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={onDragEnd}
+        >
+          <SortableContext
+            items={tabs.map((t) => t.id)}
+            strategy={horizontalListSortingStrategy}
+          >
+            <div
+              className={styles.tabs}
+              role="tablist"
+              aria-label="Open editors"
+            >
+              {tabs.map((tab) => (
+                <DockTabItem
+                  key={tab.id}
+                  tab={tab}
+                  active={expanded && tab.id === active?.id}
+                  selected={tab.id === active?.id}
+                  onSelect={() => select(tab)}
+                  onClose={() => requestClose(tab)}
+                  onMove={(delta) => moveBy(tab, delta)}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
         <Button
           variant="ghost"
           size="sm"
