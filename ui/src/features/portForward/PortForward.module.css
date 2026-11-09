@@ -1,0 +1,35 @@
+.intro {
+  margin: 0 0 var(--space-7);
+  color: var(--text-secondary);
+}
+
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-7);
+}
+
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-5);
+}
+
+.checkText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.checkText label {
+  cursor: pointer;
+}
+
+.hint {
+  font: var(--type-caption);
+  color: var(--text-secondary);
+}
+
+.error {
+  margin-top: var(--space-7);
+}

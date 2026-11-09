@@ -8,12 +8,17 @@ export function Dialog(props: {
   title: string;
   children: ReactNode;
   footer?: ReactNode;
+  testId?: string;
 }) {
   return (
     <RD.Root open={props.open} onOpenChange={props.onOpenChange}>
       <RD.Portal>
         <RD.Overlay className={styles.overlay} />
-        <RD.Content className={styles.content} aria-describedby={undefined}>
+        <RD.Content
+          className={styles.content}
+          aria-describedby={undefined}
+          data-testid={props.testId}
+        >
           <RD.Title className={styles.title}>{props.title}</RD.Title>
           <div className={styles.body}>{props.children}</div>
           {props.footer ? (

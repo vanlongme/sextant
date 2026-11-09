@@ -65,3 +65,13 @@ test("an error with one line of details goes away by itself", () => {
   });
   expect(screen.queryByText("Could not delete")).toBeNull();
 });
+
+test("a success toast can carry a body", () => {
+  render(<Toaster />);
+  act(() =>
+    toast.success("Forwarding 127.0.0.1:50123", "to service/web:80 in shop"),
+  );
+  expect(screen.getByText("Forwarding 127.0.0.1:50123")).toBeTruthy();
+  expect(screen.getByText("to service/web:80 in shop")).toBeTruthy();
+  dismiss();
+});

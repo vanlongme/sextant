@@ -3,6 +3,7 @@ import { expect, test, vi } from "vitest";
 import {
   Button,
   ConfirmDialog,
+  Dialog,
   ErrorNotice,
   IconButton,
   StatusDot,
@@ -57,4 +58,15 @@ test("ErrorNotice shows message and retry", () => {
   expect(screen.getByText("connection refused")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: /retry/i }));
   expect(onRetry).toHaveBeenCalledOnce();
+});
+
+test("Dialog puts its test id on the dialog", () => {
+  render(
+    <Dialog open onOpenChange={() => {}} title="Hello" testId="hello-dialog">
+      Body
+    </Dialog>,
+  );
+  const dialog = screen.getByTestId("hello-dialog");
+  expect(dialog.getAttribute("role")).toBe("dialog");
+  expect(dialog.textContent).toContain("Body");
 });
