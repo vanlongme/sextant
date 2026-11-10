@@ -29,6 +29,14 @@ export function isToolMissing(error: unknown): boolean {
   return error instanceof IpcFailure && error.code === "ToolMissing";
 }
 
+/** Whether helm can run: found somewhere, and not a preferences path that is broken. */
+export function toolUsable(status: ToolStatus): boolean {
+  return (
+    status.source !== "missing" &&
+    !(status.source === "preferences" && status.problem)
+  );
+}
+
 /** "1 chart", "2 charts". */
 export function counted(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
@@ -189,6 +197,12 @@ export const useHelm = create<HelmState>((set, get) => {
           const status = await api.toolsStatus();
           if (mine === toolsSeq) {
             set((s) => ({ tools: { ...s.tools, status, error: null } }));
+            // Helm may have just been downloaded: screens stuck on ToolMissing load again.
+            const helmStatus = status.find((t) => t.tool === "helm");
+            if (helmStatus && toolUsable(helmStatus)) {
+              if (isToolMissing(get().repos.error)) void get().loadRepos();
+              if (isToolMissing(get().charts.error)) void get().loadCharts();
+            }
           }
         } catch (error) {
           if (mine === toolsSeq) {

@@ -85,6 +85,7 @@ function startsBlock(lines: string[], i: number): boolean {
 function readList(
   lines: string[],
   start: number,
+  depth: number,
 ): { block: Block; next: number } {
   const first = ITEM.exec(lines[start] ?? "") as RegExpExecArray;
   const base = first[1].length;
@@ -152,13 +153,16 @@ function readList(
       type: "list",
       ordered,
       start: ordered ? Number.parseInt(first[2], 10) : 1,
-      items: items.map((body) => parseBlocks(body)),
+      items: items.map((body) => parseBlocks(body, depth + 1)),
     },
     next: i,
   };
 }
 
-function parseBlocks(lines: string[]): Block[] {
+/** Quotes and lists nest at most this deep; deeper markers stay as text. */
+const MAX_DEPTH = 32;
+
+function parseBlocks(lines: string[], depth = 0): Block[] {
   const blocks: Block[] = [];
   let i = 0;
   while (i < lines.length) {
@@ -199,7 +203,7 @@ function parseBlocks(lines: string[]): Block[] {
       i += 1;
       continue;
     }
-    if (QUOTE.test(line)) {
+    if (depth < MAX_DEPTH && QUOTE.test(line)) {
       const body: string[] = [];
       while (i < lines.length) {
         const quoted = QUOTE.exec(lines[i] as string);
@@ -207,11 +211,11 @@ function parseBlocks(lines: string[]): Block[] {
         body.push(quoted[1]);
         i += 1;
       }
-      blocks.push({ type: "quote", children: parseBlocks(body) });
+      blocks.push({ type: "quote", children: parseBlocks(body, depth + 1) });
       continue;
     }
-    if (ITEM.test(line)) {
-      const { block, next } = readList(lines, i);
+    if (depth < MAX_DEPTH && ITEM.test(line)) {
+      const { block, next } = readList(lines, i, depth);
       blocks.push(block);
       i = next;
       continue;
@@ -464,7 +468,12 @@ export function parseInline(text: string): Inline[] {
 }
 
 export function parseMarkdown(text: string): Block[] {
-  return parseBlocks(
-    text.replace(/\r\n?/g, "\n").replace(/\t/g, "    ").split("\n"),
-  );
+  try {
+    return parseBlocks(
+      text.replace(/\r\n?/g, "\n").replace(/\t/g, "    ").split("\n"),
+    );
+  } catch {
+    // READMEs are untrusted: never let a parser failure unmount the app.
+    return [{ type: "paragraph", children: [{ type: "text", text }] }];
+  }
 }

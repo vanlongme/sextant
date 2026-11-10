@@ -1,6 +1,7 @@
 import { render } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { Markdown } from "./Markdown";
+import { parseMarkdown } from "./markdown";
 
 function show(text: string): HTMLElement {
   const { container } = render(<Markdown text={text} testId="md" />);
@@ -197,4 +198,15 @@ test("anything else is a paragraph", () => {
     ["p", "Title\n====="],
     ["p", "indented"],
   ]);
+});
+
+test("deeply nested quotes and lists do not throw", () => {
+  expect(() => parseMarkdown(">".repeat(10000))).not.toThrow();
+  const nested = Array.from(
+    { length: 5000 },
+    (_, i) => `${" ".repeat(i * 2)}- x`,
+  ).join("\n");
+  expect(() => parseMarkdown(nested)).not.toThrow();
+  const root = show(">".repeat(10000));
+  expect(root.textContent).toContain(">");
 });

@@ -239,3 +239,35 @@ test("updating one repository names it", async () => {
   expect(info).toHaveBeenCalledWith("Updating 1 repository", "a");
   expect(success).toHaveBeenCalledWith("Updated a");
 });
+
+test("a finished helm download reloads repos and charts stuck on ToolMissing", async () => {
+  let installed = false;
+  mockBackend({
+    tools_status: () => [
+      toolStatus({
+        tool: "helm",
+        source: installed ? "managed" : "missing",
+      }),
+    ],
+    helm_chart_search: () => {
+      if (!installed) throw HELM_MISSING;
+      return { charts: [], errors: [] };
+    },
+    helm_repo_list: () => {
+      if (!installed) throw HELM_MISSING;
+      return [];
+    },
+  });
+  await helm().loadTools();
+  await helm().loadRepos();
+  await helm().ensureCharts();
+  expect(isToolMissing(helm().charts.error)).toBe(true);
+  expect(isToolMissing(helm().repos.error)).toBe(true);
+  installed = true;
+  await helm().loadTools();
+  await flush();
+  expect(helm().charts.error).toBeNull();
+  expect(helm().charts.search).not.toBeNull();
+  expect(helm().repos.error).toBeNull();
+  expect(helm().repos.list).toEqual([]);
+});

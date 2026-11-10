@@ -1,17 +1,9 @@
 import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
 import { Button } from "../../design";
-import type { ToolStatus } from "../../ipc/generated/ToolStatus";
-import { useHelm } from "../../stores/helm";
+import { toolUsable as usable, useHelm } from "../../stores/helm";
 import styles from "./Helm.module.css";
 import { ToolDownload } from "./ToolDownload";
-
-function usable(status: ToolStatus): boolean {
-  return (
-    status.source !== "missing" &&
-    !(status.source === "preferences" && status.problem)
-  );
-}
 
 /**
  * What a Helm screen shows when a call rejects with ToolMissing (spec §5.5). It calls
