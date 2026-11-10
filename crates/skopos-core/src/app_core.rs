@@ -305,7 +305,8 @@ impl AppCore {
             .unwrap_or_default()
     }
 
-    pub fn cluster_settings_set(&self, id: &ClusterId, s: ClusterSettings) -> CoreResult<()> {
+    pub fn cluster_settings_set(&self, id: &ClusterId, mut s: ClusterSettings) -> CoreResult<()> {
+        s.metrics_provider = s.metrics_provider.normalized()?;
         self.inner.clusters.update(|all| {
             all.insert(id.clone(), s);
         })?;

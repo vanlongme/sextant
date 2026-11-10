@@ -5,6 +5,7 @@ use ts_rs::TS;
 
 use crate::error::{CoreResult, ErrorCode, IpcError};
 use crate::kubeconfig::SyncSource;
+use crate::metrics::MetricsProviderSetting;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
@@ -18,6 +19,8 @@ pub struct ClusterSettings {
     pub terminal_cwd: Option<String>,
     pub proxy_url: Option<String>,
     pub node_shell_image: Option<String>,
+    /// How metrics are read for this cluster (F16).
+    pub metrics_provider: MetricsProviderSetting,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, TS, PartialEq)]
