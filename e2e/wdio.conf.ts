@@ -26,6 +26,24 @@ function useEnv(env: AppEnv): void {
   process.env.SKOPOS_CONFIG_DIR = env.configDir;
 }
 
+/**
+ * Removes a temp folder of the run. On Windows a shell that a terminal spec started can hold
+ * the folder for a moment after the app is killed, so this retries, then warns instead of
+ * failing a run whose tests passed.
+ */
+function removeTempDir(dir: string): void {
+  try {
+    fs.rmSync(dir, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 500,
+    });
+  } catch (err) {
+    console.warn(`Could not remove ${dir}: ${err}`);
+  }
+}
+
 /** The temp env for a spec file: a new one, or the one its group already has. */
 async function envForSpec(spec: string): Promise<AppEnv> {
   const fixture = fixtureFor(spec);
@@ -88,8 +106,8 @@ export const config = {
   async onComplete() {
     for (const stop of stops) await stop();
     for (const env of envs) {
-      fs.rmSync(env.home, { recursive: true, force: true });
-      fs.rmSync(env.configDir, { recursive: true, force: true });
+      removeTempDir(env.home);
+      removeTempDir(env.configDir);
     }
   },
 };
