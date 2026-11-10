@@ -1,8 +1,10 @@
 import { Server } from "lucide-react";
 import { expect, test, vi } from "vitest";
 import type { CommandContext } from "../../app/commands";
+import { toast } from "../../design";
 import type { ApiResourceInfo } from "../../ipc/generated/ApiResourceInfo";
-import { clusterEntry } from "../../test/ipc";
+import type { ClusterInfo } from "../../ipc/generated/ClusterInfo";
+import { clusterEntry, mockBackend } from "../../test/ipc";
 import {
   buildSections,
   CAPS,
@@ -38,6 +40,15 @@ const BASE: PaletteInput = {
 function counts(sections: PaletteSection[]): Record<string, number> {
   return Object.fromEntries(sections.map((s) => [s.id, s.rows.length]));
 }
+
+const INFO: ClusterInfo = {
+  version: "v1.31.0",
+  distribution: "kind",
+  nodeCount: 1,
+  namespaces: ["default"],
+  namespacesRestricted: false,
+  isAdmin: true,
+};
 
 function context() {
   const navigate = vi.fn<(to: string | number) => void>();
@@ -183,6 +194,64 @@ test("cluster rows hint the connection state and open the cluster", () => {
   const ctx = context();
   row.run(ctx);
   expect(ctx.navigate).toHaveBeenCalledWith("/cluster/a%2Fb");
+});
+
+test("the open cluster's row connects it again after a disconnect", async () => {
+  const ipc = mockBackend({
+    cluster_connect: () => ({ status: "connecting" }),
+  });
+  const [row] = clusterEntries([
+    clusterEntry({ id: "c1", contextName: "alpha" }),
+  ]);
+  const ctx = context();
+  ctx.pathname = "/cluster/c1/pods";
+  ctx.cluster = { id: "c1", name: "alpha", state: { status: "disconnected" } };
+  row.run(ctx);
+  await vi.waitFor(() =>
+    expect(ipc.callsTo("cluster_connect")).toEqual([{ id: "c1" }]),
+  );
+  expect(ctx.navigate).not.toHaveBeenCalled();
+});
+
+test("the open cluster's row only opens it while it is connected or connecting", () => {
+  const ipc = mockBackend({});
+  const [row] = clusterEntries([
+    clusterEntry({ id: "c1", contextName: "alpha" }),
+  ]);
+  for (const state of [
+    { status: "connecting" },
+    { status: "connected", info: INFO },
+  ] as const) {
+    const ctx = context();
+    ctx.pathname = "/cluster/c1";
+    ctx.cluster = { id: "c1", name: "alpha", state };
+    row.run(ctx);
+    expect(ctx.navigate).toHaveBeenCalledWith("/cluster/c1");
+  }
+  expect(ipc.callsTo("cluster_connect")).toEqual([]);
+});
+
+test("a connect that fails from the palette toasts as the screen does", async () => {
+  mockBackend({
+    cluster_connect: () => {
+      throw { code: "Internal", message: "boom", details: null };
+    },
+  });
+  const failed = vi.spyOn(toast, "error");
+  const [row] = clusterEntries([
+    clusterEntry({ id: "c1", contextName: "alpha" }),
+  ]);
+  const ctx = context();
+  ctx.cluster = {
+    id: "c1",
+    name: "alpha",
+    state: { status: "failed", kind: "unreachable", message: "timed out" },
+  };
+  row.run(ctx);
+  await vi.waitFor(() =>
+    expect(failed).toHaveBeenCalledWith("Could not connect", "boom"),
+  );
+  failed.mockRestore();
 });
 
 test("pages follow the sidebar: the overviews, its items, then custom resources", () => {

@@ -11,6 +11,7 @@ import {
   resourcePath,
   visibleSections,
 } from "../../kinds/nav";
+import { connectCluster } from "../../stores/clusters";
 import { isBlank, matchEntry } from "./fuzzy";
 import {
   CUSTOM_ICON,
@@ -76,8 +77,16 @@ export function clusterEntries(clusters: ClusterEntry[]): PaletteEntry[] {
     label: c.name,
     hint: clusterStatus(c.state).label,
     icon: Server,
-    // The cluster screen connects a disconnected cluster.
-    run: (ctx) => ctx.navigate(`/cluster/${encodeURIComponent(c.id)}`),
+    run: (ctx) => {
+      // A newly opened cluster screen connects a disconnected cluster itself. The
+      // open screen does not connect again after a disconnect, so its row does.
+      const open = ctx.cluster?.id === c.id ? ctx.cluster.state.status : null;
+      if (open === "disconnected" || open === "failed") {
+        void connectCluster(c.id);
+      } else {
+        ctx.navigate(`/cluster/${encodeURIComponent(c.id)}`);
+      }
+    },
   }));
 }
 

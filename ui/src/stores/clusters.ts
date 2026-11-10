@@ -45,6 +45,15 @@ export function useConnect(id: string): {
   return { connect, disconnect, busy };
 }
 
+/** Connects from outside a cluster screen (the palette); a failure toasts as `useConnect` does. */
+export async function connectCluster(id: string): Promise<void> {
+  try {
+    await api.clusterConnect(id);
+  } catch (error) {
+    toast.error("Could not connect", failureMessage(error));
+  }
+}
+
 /** Disconnects from outside a cluster screen (the palette); a failure toasts as `useConnect` does. */
 export async function disconnectCluster(id: string): Promise<void> {
   try {
