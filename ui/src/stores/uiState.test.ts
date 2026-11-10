@@ -43,3 +43,29 @@ test("saves a pending change on unmount", async () => {
   unmount();
   expect(backend.callsTo("ui_state_set")).toEqual([{ key: "k", value: "b" }]);
 });
+
+test("reports loaded once the saved value was read, also when the read fails", async () => {
+  let answer: (value: unknown) => void = () => {};
+  mockBackend({
+    ui_state_get: () =>
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+  });
+  const { result } = renderHook(() => useUiState("k", 5));
+  expect(result.current[2]).toBe(false);
+  await act(async () => {
+    answer(7);
+    await flush();
+  });
+  expect(result.current).toEqual([7, expect.any(Function), true]);
+
+  mockBackend({
+    ui_state_get: () => {
+      throw new Error("no state");
+    },
+  });
+  const failed = renderHook(() => useUiState("other", 5));
+  await act(flush);
+  expect(failed.result.current[2]).toBe(true);
+});

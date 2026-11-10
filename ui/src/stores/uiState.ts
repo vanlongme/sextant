@@ -7,10 +7,16 @@ const SAVE_DELAY_MS = 300;
 /**
  * A value kept between runs. It shows `initial` until the saved one arrives, unless
  * it was changed by then. Writes are saved after 300 ms without another change,
- * and a pending write is saved when the component goes away.
+ * and a pending write is saved when the component goes away. The third value is
+ * true once the saved value was read, or found missing or unreadable.
  */
-export function useUiState<T>(key: string, initial: T): [T, (v: T) => void] {
+export function useUiState<T>(
+  key: string,
+  initial: T,
+): [T, (v: T) => void, boolean] {
   const [value, setValue] = useState<T>(initial);
+  // The key whose saved value was read (or found missing), so `loaded` resets with the key.
+  const [readKey, setReadKey] = useState<string | null>(null);
   const changed = useRef(false);
   const pending = useRef<{ value: T } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -35,7 +41,10 @@ export function useUiState<T>(key: string, initial: T): [T, (v: T) => void] {
           setValue(saved as T);
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        if (current) setReadKey(key);
+      });
     return () => {
       current = false;
       flush();
@@ -53,5 +62,5 @@ export function useUiState<T>(key: string, initial: T): [T, (v: T) => void] {
     [flush],
   );
 
-  return [value, set];
+  return [value, set, readKey === key];
 }
