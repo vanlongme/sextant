@@ -29,8 +29,14 @@ mod tests {
         assert!(["macOS", "Windows", "Linux"].contains(&info.platform.as_str()));
         assert_eq!(info.helm, HELM_VERSION);
         assert_eq!(info.kubectl, KUBECTL_VERSION);
-        // The tests build from a git checkout, so build.rs found the commit.
-        assert!(info.commit.as_deref().is_some_and(|c| c.len() >= 7));
-        assert!(info.commit_date.as_deref().is_some_and(|d| d.len() == 10));
+        // build.rs writes empty strings outside a git checkout (a source archive),
+        // and About then reads the build as unknown.
+        if env!("SKOPOS_COMMIT").is_empty() {
+            assert_eq!(info.commit, None);
+            assert_eq!(info.commit_date, None);
+        } else {
+            assert!(info.commit.as_deref().is_some_and(|c| c.len() >= 7));
+            assert!(info.commit_date.as_deref().is_some_and(|d| d.len() == 10));
+        }
     }
 }
