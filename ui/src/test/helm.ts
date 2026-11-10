@@ -1,9 +1,12 @@
+import type { Channel } from "@tauri-apps/api/core";
 import type { ChartSummary } from "../ipc/generated/ChartSummary";
 import type { ChartVersion } from "../ipc/generated/ChartVersion";
 import type { HelmRelease } from "../ipc/generated/HelmRelease";
 import type { HelmReleaseDetail } from "../ipc/generated/HelmReleaseDetail";
+import type { HelmReleaseList } from "../ipc/generated/HelmReleaseList";
 import type { HelmRevision } from "../ipc/generated/HelmRevision";
 import type { IpcError } from "../ipc/generated/IpcError";
+import type { SessionEvent } from "../ipc/generated/SessionEvent";
 import type { ToolName } from "../ipc/generated/ToolName";
 import type { ToolStatus } from "../ipc/generated/ToolStatus";
 
@@ -88,4 +91,57 @@ export function revision(
     description: "Upgrade complete",
     ...over,
   };
+}
+
+export function releaseList(
+  releases: HelmRelease[],
+  over: Partial<HelmReleaseList> = {},
+): HelmReleaseList {
+  return { releases, partial: false, failedNamespaces: [], ...over };
+}
+
+export interface StartedRun {
+  cmd: string;
+  args: Record<string, unknown>;
+  /** Sends helm output through the call's data channel. */
+  data(text: string): void;
+  /** Sends a session event through the call's event channel. */
+  send(event: SessionEvent): void;
+}
+
+const START_COMMANDS = [
+  "helm_install_start",
+  "helm_upgrade_start",
+  "helm_rollback_start",
+  "helm_uninstall_start",
+];
+
+/**
+ * Handlers for the four `*_start` commands, to spread into `mockBackend`. Each call is
+ * kept in `started` with its channels and answers with the session id `session-‹n›`.
+ */
+export function runHandlers(): {
+  started: StartedRun[];
+  handlers: Record<string, (args: Record<string, unknown>) => unknown>;
+} {
+  const started: StartedRun[] = [];
+  const handlers: Record<string, (args: Record<string, unknown>) => unknown> =
+    {};
+  for (const cmd of START_COMMANDS) {
+    handlers[cmd] = (args) => {
+      const onData = args.onData as Channel<ArrayBuffer>;
+      const onEvent = args.onEvent as Channel<SessionEvent>;
+      started.push({
+        cmd,
+        args,
+        data: (text) =>
+          onData.onmessage(
+            Uint8Array.from(new TextEncoder().encode(text)).buffer,
+          ),
+        send: (event) => onEvent.onmessage(event),
+      });
+      return `session-${started.length}`;
+    };
+  }
+  return { started, handlers };
 }
