@@ -90,3 +90,14 @@
 .input:focus-visible + .track {
   box-shadow: var(--focus-ring);
 }
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.description {
+  color: var(--text-secondary);
+  font: var(--type-caption);
+}

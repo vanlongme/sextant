@@ -4,12 +4,23 @@ import styles from "./Input.module.css";
 export type InputProps = {
   label?: string;
   error?: string;
+  /** A hint under the field, shown while there is no error. */
+  help?: string;
 } & InputHTMLAttributes<HTMLInputElement>;
 
-export function Input({ label, error, id, className, ...rest }: InputProps) {
+export function Input({
+  label,
+  error,
+  help,
+  id,
+  className,
+  ...rest
+}: InputProps) {
   const auto = useId();
   const inputId = id ?? auto;
   const errorId = `${inputId}-error`;
+  const helpId = `${inputId}-help`;
+  const showHelp = !error && help !== undefined;
   return (
     <div className={styles.field}>
       {label ? (
@@ -24,11 +35,16 @@ export function Input({ label, error, id, className, ...rest }: InputProps) {
           .filter(Boolean)
           .join(" ")}
         aria-invalid={error ? true : undefined}
-        aria-describedby={error ? errorId : undefined}
+        aria-describedby={error ? errorId : showHelp ? helpId : undefined}
       />
       {error ? (
         <span id={errorId} role="alert" className={styles.error}>
           {error}
+        </span>
+      ) : null}
+      {showHelp ? (
+        <span id={helpId} className={styles.help}>
+          {help}
         </span>
       ) : null}
     </div>

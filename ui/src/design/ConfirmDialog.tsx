@@ -9,6 +9,10 @@ export function ConfirmDialog(props: {
   body: ReactNode;
   confirmLabel: string;
   danger?: boolean;
+  /** "Cancel" unless given. */
+  cancelLabel?: string;
+  confirmDisabled?: boolean;
+  testId?: string;
   onConfirm(): void;
   onCancel(): void;
 }) {
@@ -19,13 +23,15 @@ export function ConfirmDialog(props: {
         if (!o) props.onCancel();
       }}
       title={props.title}
+      testId={props.testId}
       footer={
         <>
           <Button variant="ghost" onClick={props.onCancel}>
-            Cancel
+            {props.cancelLabel ?? "Cancel"}
           </Button>
           <Button
             variant={props.danger ? "danger" : "primary"}
+            disabled={props.confirmDisabled}
             onClick={props.onConfirm}
           >
             {props.confirmLabel}

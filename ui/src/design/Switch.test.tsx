@@ -56,3 +56,22 @@ test("md is the default size and sm is the toolbar one", () => {
   expect(screen.getByTestId("a").classList.contains("md")).toBe(true);
   expect(screen.getByTestId("b").classList.contains("sm")).toBe(true);
 });
+
+test("a description shows under the label and describes the switch", () => {
+  render(
+    <Switch
+      label="Create the namespace"
+      description="--create-namespace"
+      checked={false}
+      onChange={() => {}}
+      testId="create"
+    />,
+  );
+  const box = input("Create the namespace");
+  const description = screen.getByText("--create-namespace");
+  expect(box.getAttribute("aria-describedby")).toBe(description.id);
+  expect(description.classList.contains("description")).toBe(true);
+  expect(screen.getByTestId("create").textContent).toBe(
+    "Create the namespace--create-namespace",
+  );
+});

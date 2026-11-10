@@ -10,6 +10,7 @@ export { ErrorNotice } from "./ErrorNotice";
 export { IconButton } from "./IconButton";
 export { Input } from "./Input";
 export { CheckMenu, Menu } from "./Menu";
+export { ProgressBar } from "./ProgressBar";
 export { Segmented } from "./Segmented";
 export { Select } from "./Select";
 export { Spinner } from "./Spinner";

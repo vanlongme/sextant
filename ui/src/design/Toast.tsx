@@ -43,7 +43,7 @@ function durationOf(item: Item): number {
 export const toast = {
   success: (m: string, details?: string) => push("success", m, details),
   error: (m: string, details?: string) => push("error", m, details),
-  info: (m: string) => push("info", m),
+  info: (m: string, details?: string) => push("info", m, details),
 };
 
 export function Toaster() {

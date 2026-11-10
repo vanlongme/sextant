@@ -75,3 +75,11 @@ test("a success toast can carry a body", () => {
   expect(screen.getByText("to service/web:80 in shop")).toBeTruthy();
   dismiss();
 });
+
+test("an info toast can carry details too", () => {
+  render(<Toaster />);
+  act(() => toast.info("Updating 2 repositories", "bitnami, stable"));
+  expect(screen.getByText("Updating 2 repositories")).toBeTruthy();
+  expect(screen.getByText("bitnami, stable")).toBeTruthy();
+  dismiss();
+});

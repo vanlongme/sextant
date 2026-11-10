@@ -6,8 +6,10 @@ import {
   Dialog,
   ErrorNotice,
   IconButton,
+  Input,
   Menu,
   StatusDot,
+  Tabs,
 } from "./index";
 
 test("Button shows loading state and disables itself", () => {
@@ -88,4 +90,69 @@ test("a Menu item carries its own test id when it has one", () => {
   expect(screen.getByTestId("menu-item-a").textContent).toBe("A");
   expect(screen.getByTestId("own-b").textContent).toBe("B");
   expect(screen.queryByTestId("menu-item-b")).toBeNull();
+});
+
+test("ConfirmDialog takes a test id, its own Cancel label and a disabled confirm", () => {
+  const onCancel = vi.fn();
+  render(
+    <ConfirmDialog
+      open
+      title="Stop helm?"
+      body="helm stops where it is."
+      confirmLabel="Stop"
+      cancelLabel="Keep running"
+      confirmDisabled
+      danger
+      testId="stop-dialog"
+      onConfirm={() => {}}
+      onCancel={onCancel}
+    />,
+  );
+  expect(screen.getByTestId("stop-dialog").getAttribute("role")).toBe("dialog");
+  expect(
+    screen.getByRole("button", { name: "Stop" }).hasAttribute("disabled"),
+  ).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Keep running" }));
+  expect(onCancel).toHaveBeenCalledOnce();
+  expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+});
+
+test("a tab with a test id carries it on its trigger", () => {
+  render(
+    <Tabs
+      value="readme"
+      onChange={() => {}}
+      tabs={[
+        { value: "readme", label: "README", testId: "tab-readme" },
+        { value: "values", label: "Values" },
+      ]}
+    />,
+  );
+  expect(screen.getByTestId("tab-readme")).toBe(
+    screen.getByRole("tab", { name: "README" }),
+  );
+  expect(
+    screen.getByRole("tab", { name: "Values" }).hasAttribute("data-testid"),
+  ).toBe(false);
+});
+
+test("an Input's help shows under it and describes it until there is an error", () => {
+  const { rerender } = render(
+    <Input label="Username, optional" help="For basic auth" />,
+  );
+  const input = screen.getByLabelText("Username, optional");
+  const help = screen.getByText("For basic auth");
+  expect(input.getAttribute("aria-describedby")).toBe(help.id);
+
+  rerender(
+    <Input
+      label="Username, optional"
+      help="For basic auth"
+      error="A password needs a username"
+    />,
+  );
+  expect(screen.queryByText("For basic auth")).toBeNull();
+  expect(input.getAttribute("aria-describedby")).toBe(
+    screen.getByRole("alert").id,
+  );
 });

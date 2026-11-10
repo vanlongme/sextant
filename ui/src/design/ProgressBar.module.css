@@ -1,0 +1,39 @@
+.track {
+  position: relative;
+  width: 100%;
+  min-width: 120px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--surface-inset);
+}
+
+.fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: var(--surface-accent);
+  transition: width var(--dur-base) var(--ease-out);
+}
+
+/* Unknown progress: a short bar that keeps crossing the track. */
+.moving {
+  width: 40%;
+  animation: progress-cross calc(var(--dur-slow) * 4) var(--ease-in-out)
+    infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .moving {
+    animation: none;
+  }
+}
+
+@keyframes progress-cross {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
