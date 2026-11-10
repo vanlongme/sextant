@@ -1,6 +1,8 @@
 //! Metrics (F16): the provider setting, detection of Prometheus or metrics-server with a cache
 //! per cluster, and the queries the interface repeats on its own timer (spec §5.4).
 
+#[allow(dead_code)] // metrics_provider (Task 4) and metrics_query (Task 5) are the callers.
+pub(crate) mod prometheus;
 #[allow(dead_code)] // metrics_query (Task 5) is the first caller.
 pub(crate) mod templates;
 

@@ -13,11 +13,11 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use axum::body::{Body, Bytes};
-use axum::extract::{Query, Request, State};
+use axum::extract::{Form, Path as UrlPath, Query, Request, State};
 use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode, Uri};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{any, get, post};
 use axum::{Json, Router};
 use serde_json::{json, Value};
 use tokio::sync::broadcast;
@@ -101,6 +101,10 @@ struct State_ {
     log_failures: BTreeMap<LogKey, u16>,
     /// The query of every log request, oldest first.
     log_requests: Vec<BTreeMap<String, String>>,
+    /// The Services the proxy reaches.
+    proxies: BTreeMap<ProxyKey, ProxyHandler>,
+    /// Every request that passed the rights check, served or not, oldest first.
+    proxy_requests: BTreeMap<ProxyKey, Vec<ProxyRequest>>,
 }
 
 type LogKey = (String, String, String);
@@ -121,6 +125,49 @@ impl FakeLogLine {
         }
     }
 }
+
+/// A request that reached a Service through the API server's proxy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProxyRequest {
+    pub method: String,
+    /// What follows `/proxy`, such as `/api/v1/query`. Empty for the bare proxy path.
+    pub path: String,
+    /// The query string's parameters for a GET, the form body's otherwise.
+    pub params: BTreeMap<String, String>,
+    pub content_type: Option<String>,
+}
+
+/// What a served Service answers.
+#[derive(Debug, Clone)]
+pub struct ProxyReply {
+    pub status: u16,
+    pub body: String,
+    /// How long the Service waits before it answers.
+    pub delay: Duration,
+}
+
+impl ProxyReply {
+    pub fn json(status: u16, body: Value) -> Self {
+        Self::text(status, &body.to_string())
+    }
+
+    pub fn text(status: u16, body: &str) -> Self {
+        Self {
+            status,
+            body: body.to_owned(),
+            delay: Duration::ZERO,
+        }
+    }
+
+    pub fn after(mut self, delay: Duration) -> Self {
+        self.delay = delay;
+        self
+    }
+}
+
+type ProxyHandler = Arc<dyn Fn(&ProxyRequest) -> ProxyReply + Send + Sync>;
+/// (namespace, the Service segment of the proxy path, such as `prom:9090`).
+type ProxyKey = (String, String);
 
 #[derive(Clone)]
 enum LogFeed {
@@ -304,6 +351,8 @@ impl FakeKube {
                 logs: BTreeMap::new(),
                 log_failures: BTreeMap::new(),
                 log_requests: Vec::new(),
+                proxies: BTreeMap::new(),
+                proxy_requests: BTreeMap::new(),
             }),
             events,
             stop_watches,
@@ -574,6 +623,31 @@ impl FakeKube {
         self.inner.open_logs.load(Ordering::SeqCst)
     }
 
+    /// Serves `handler` behind `/api/v1/namespaces/{namespace}/services/{service}/proxy`.
+    /// `service` is the path segment as a client writes it: `name:port` or
+    /// `scheme:name:port`. Any other Service answers 404.
+    pub fn serve_proxy(
+        &self,
+        namespace: &str,
+        service: &str,
+        handler: impl Fn(&ProxyRequest) -> ProxyReply + Send + Sync + 'static,
+    ) {
+        self.inner.lock().proxies.insert(
+            (namespace.to_owned(), service.to_owned()),
+            Arc::new(handler),
+        );
+    }
+
+    /// The requests that reached `service` in `namespace`, oldest first.
+    pub fn proxy_requests(&self, namespace: &str, service: &str) -> Vec<ProxyRequest> {
+        self.inner
+            .lock()
+            .proxy_requests
+            .get(&(namespace.to_owned(), service.to_owned()))
+            .cloned()
+            .unwrap_or_default()
+    }
+
     pub async fn shutdown(self) {
         self.task.abort();
     }
@@ -675,6 +749,14 @@ fn router(inner: Shared) -> Router {
             "/apis/authorization.k8s.io/v1/selfsubjectaccessreviews",
             post(access_review),
         )
+        .route(
+            "/api/v1/namespaces/{namespace}/services/{service}/proxy",
+            any(service_proxy),
+        )
+        .route(
+            "/api/v1/namespaces/{namespace}/services/{service}/proxy/{*rest}",
+            any(service_proxy),
+        )
         .fallback(generic)
         .layer(middleware::from_fn_with_state(
             inner.clone(),
@@ -692,6 +774,71 @@ async fn count_and_auth(State(s): State<Shared>, req: Request, next: Next) -> Re
         return status(401, "Unauthorized", "Unauthorized");
     }
     next.run(req).await
+}
+
+/// The API server's service proxy: `get` on `services/proxy` for GET, `create` otherwise.
+/// `Form` reads the query string of a GET and the body of a form POST, so it comes last.
+async fn service_proxy(
+    State(s): State<Shared>,
+    UrlPath(path): UrlPath<BTreeMap<String, String>>,
+    method: Method,
+    headers: HeaderMap,
+    Form(params): Form<BTreeMap<String, String>>,
+) -> Response {
+    let namespace = path.get("namespace").cloned().unwrap_or_default();
+    let service = path.get("service").cloned().unwrap_or_default();
+    let verb = if method == Method::GET {
+        "get"
+    } else {
+        "create"
+    };
+    if s.denied(verb, "services/proxy", Some(&namespace)) {
+        return status(
+            403,
+            "Forbidden",
+            &format!(
+                "services \"{service}\" is forbidden: cannot {verb} resource \"services/proxy\" in the namespace \"{namespace}\""
+            ),
+        );
+    }
+    let request = ProxyRequest {
+        method: method.to_string(),
+        path: path
+            .get("rest")
+            .map(|rest| format!("/{rest}"))
+            .unwrap_or_default(),
+        params,
+        content_type: headers
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned),
+    };
+    let key = (namespace, service);
+    let handler = {
+        let mut st = s.lock();
+        st.proxy_requests
+            .entry(key.clone())
+            .or_default()
+            .push(request.clone());
+        st.proxies.get(&key).cloned()
+    };
+    let Some(handler) = handler else {
+        return status(
+            404,
+            "NotFound",
+            &format!("services \"{}\" not found", key.1),
+        );
+    };
+    let reply = handler(&request);
+    if !reply.delay.is_zero() {
+        tokio::time::sleep(reply.delay).await;
+    }
+    (
+        StatusCode::from_u16(reply.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+        [(header::CONTENT_TYPE, "application/json")],
+        reply.body,
+    )
+        .into_response()
 }
 
 async fn version(State(s): State<Shared>) -> Response {
