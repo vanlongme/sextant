@@ -1,0 +1,130 @@
+.inputRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-5) var(--space-8);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.searchIcon {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+/* The palette is the focus context, so its input draws no ring of its own. */
+.inputRow .query {
+  flex: 1;
+  min-width: 0;
+  height: var(--control-md);
+  padding: 0;
+  border: 0;
+  outline: none;
+  box-shadow: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: var(--type-body-lg);
+}
+
+.query::placeholder {
+  color: var(--text-tertiary);
+}
+
+.chip {
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  font: var(--type-mono);
+}
+
+.results {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-3) var(--space-4) var(--space-5);
+}
+
+.heading {
+  padding: var(--space-5) var(--space-6) var(--space-3);
+  color: var(--text-tertiary);
+  font: var(--type-overline);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  min-height: 34px;
+  padding: 0 var(--space-6);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.row[aria-selected="true"] {
+  background: var(--surface-selected);
+}
+
+.icon {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font: var(--type-body);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.match {
+  background: none;
+  color: var(--text-accent);
+  font-weight: var(--weight-semibold);
+}
+
+.hint {
+  flex-shrink: 0;
+  max-width: 45%;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font: var(--type-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 var(--space-6);
+  color: var(--text-secondary);
+  font: var(--type-body-sm);
+}
+
+.empty {
+  margin: 0;
+  padding: var(--space-11) var(--space-10);
+  color: var(--text-secondary);
+  font: var(--type-body);
+  text-align: center;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-5) var(--space-8);
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-tertiary);
+  font: var(--type-caption);
+}
+
+.count {
+  margin-left: auto;
+}

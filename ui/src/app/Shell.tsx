@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Outlet, useNavigate } from "react-router";
+import { CommandPalette } from "../features/palette/CommandPalette";
 import { useCatalog } from "../stores/catalog";
 import { useShell } from "../stores/shell";
 import { AppHeader } from "./AppHeader";
@@ -51,6 +52,7 @@ export function Shell() {
         </main>
       </div>
       <StatusBar />
+      <CommandPalette />
     </div>
   );
 }

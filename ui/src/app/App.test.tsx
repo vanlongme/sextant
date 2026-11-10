@@ -118,3 +118,24 @@ test("Ctrl+, opens Preferences from a text field", async () => {
 
   await waitFor(() => expect(window.location.hash).toBe("#/preferences"));
 });
+
+test("Ctrl+Shift+P opens the palette from a text field", async () => {
+  mockBackend({
+    catalog_list: () => [clusterEntry({ contextName: "alpha" })],
+    catalog_warnings: () => [],
+    hotbar_get: () => [],
+  });
+
+  render(<App />);
+  await screen.findByTestId("catalog-row-alpha");
+  fireEvent.keyDown(screen.getByTestId("catalog-search"), {
+    key: "P",
+    code: "KeyP",
+    ctrlKey: true,
+    shiftKey: true,
+  });
+
+  expect(
+    await screen.findByRole("dialog", { name: "Command palette" }),
+  ).toBeTruthy();
+});
