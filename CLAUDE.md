@@ -23,6 +23,7 @@ Spec: `docs/superpowers/specs/2026-11-05-skopos-milestone-a-design.md`. Later wo
 make check        # fmt, clippy, unit and fakekube tests, TS checks, provenance
 make test-kind    # core integration tests against the skopos-e2e kind cluster
 make test-argocd  # Argo CD actions against Argo CD Core on that cluster (network, minutes)
+make test-metrics # Prometheus and metrics-server on that cluster (network, minutes)
 make e2e          # full end-to-end suite on the running app (Linux)
 make dev          # run the app with hot reload
 ```
