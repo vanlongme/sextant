@@ -21,16 +21,51 @@ export type Block =
   | { type: "list"; ordered: boolean; start: number; items: Block[][] }
   | { type: "table"; head: Inline[][]; rows: Inline[][][] };
 
+// READMEs come from repositories someone else controls, so every pattern here runs in
+// linear time: no pattern can backtrack over a run of spaces, and the inline scans that
+// look ahead for a closing marker share one budget per README.
 const FENCE = /^( {0,3})(`{3,}|~{3,})(.*)$/;
-const HEADING = /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$/;
+const HEADING_MARK = /^ {0,3}(#{1,6})(?=[ \t]|$)/;
 const RULE = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
 const QUOTE = /^ {0,3}> ?(.*)$/;
 const ITEM = /^( *)([-*+]|\d{1,9}[.)])(?:([ \t]+)(.*))?$/;
-const DELIMITER =
-  /^ {0,3}\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$/;
+const DELIMITER_CELL = /^:?-+:?$/;
 const ESCAPABLE = /[!-/:-@[-`{-~]/;
+const BACKTICKS = /`+/y;
+const AUTOLINK = /<(https?:\/\/[^\s<>]+)>/y;
+
+/** A longer README shows as plain text. */
+const MAX_SOURCE = 500_000;
+/** Links, bold and italic nest at most this deep; deeper markers stay as text. */
+const MAX_INLINE_DEPTH = 16;
+/** How many characters the closing-marker scans may read per README; then markers stay text. */
+const SCAN_BUDGET = 2_000_000;
+let budget = SCAN_BUDGET;
 
 const blank = (line: string) => line.trim() === "";
+
+/** An ATX heading's level and text, without a closing run of `#`; null for any other line. */
+function heading(line: string): { level: number; text: string } | null {
+  const mark = HEADING_MARK.exec(line);
+  if (!mark) return null;
+  let text = line.slice(mark[0].length).trim();
+  let end = text.length;
+  while (end > 0 && text[end - 1] === "#") end -= 1;
+  if (end === 0) {
+    text = "";
+  } else if (end < text.length && /[ \t]/.test(text[end - 1] as string)) {
+    text = text.slice(0, end).trimEnd();
+  }
+  return { level: (mark[1] as string).length, text };
+}
+
+/** A table's delimiter row: cells of `-`, each with an optional `:` at either end. */
+function isDelimiter(line: string): boolean {
+  let text = line.trim();
+  if (text.startsWith("|")) text = text.slice(1);
+  if (text.endsWith("|")) text = text.slice(0, -1);
+  return text.split("|").every((cell) => DELIMITER_CELL.test(cell.trim()));
+}
 const indentOf = (line: string) => line.length - line.trimStart().length;
 
 function dedent(line: string, n: number): string {
@@ -65,7 +100,7 @@ function tableStarts(lines: string[], i: number): boolean {
   const head = lines[i];
   const delimiter = lines[i + 1];
   if (head === undefined || delimiter === undefined) return false;
-  if (!head.includes("|") || !DELIMITER.test(delimiter)) return false;
+  if (!head.includes("|") || !isDelimiter(delimiter)) return false;
   return cells(head).length === cells(delimiter).length;
 }
 
@@ -73,7 +108,7 @@ function startsBlock(lines: string[], i: number): boolean {
   const line = lines[i] ?? "";
   return (
     FENCE.test(line) ||
-    HEADING.test(line) ||
+    heading(line) !== null ||
     RULE.test(line) ||
     QUOTE.test(line) ||
     ITEM.test(line) ||
@@ -188,12 +223,12 @@ function parseBlocks(lines: string[], depth = 0): Block[] {
       blocks.push({ type: "code", lang, text: body.join("\n") });
       continue;
     }
-    const heading = HEADING.exec(line);
-    if (heading) {
+    const title = heading(line);
+    if (title) {
       blocks.push({
         type: "heading",
-        level: heading[1].length,
-        children: parseInline(heading[2] ?? ""),
+        level: title.level,
+        children: parseInline(title.text),
       });
       i += 1;
       continue;
@@ -230,10 +265,14 @@ function parseBlocks(lines: string[], depth = 0): Block[] {
         if (blank(row) || !row.includes("|")) break;
         const values = cells(row).slice(0, width);
         while (values.length < width) values.push("");
-        rows.push(values.map(parseInline));
+        rows.push(values.map((value) => parseInline(value)));
         i += 1;
       }
-      blocks.push({ type: "table", head: head.map(parseInline), rows });
+      blocks.push({
+        type: "table",
+        head: head.map((value) => parseInline(value)),
+        rows,
+      });
       continue;
     }
     const body = [line];
@@ -263,6 +302,8 @@ function parseBlocks(lines: string[], depth = 0): Block[] {
 function closingBracket(text: string, open: number): number {
   let depth = 0;
   for (let i = open; i < text.length; i += 1) {
+    budget -= 1;
+    if (budget < 0) return -1;
     if (text[i] === "\\") {
       i += 1;
     } else if (text[i] === "[") {
@@ -317,14 +358,33 @@ function destination(
 
 /** Where a run of backticks exactly as long as `run` starts, from `from`; -1 when none. */
 function closingRun(text: string, from: number, run: string): number {
+  if (budget < 0) return -1;
   let at = text.indexOf(run, from);
   while (at >= 0) {
     let end = at;
     while (text[end] === "`") end += 1;
-    if (end - at === run.length) return at;
+    if (end - at === run.length) {
+      budget -= at - from;
+      return at;
+    }
     at = text.indexOf(run, end);
   }
+  budget -= text.length - from;
   return -1;
+}
+
+/** The run of backticks that starts at `at`. */
+function backticks(text: string, at: number): string {
+  BACKTICKS.lastIndex = at;
+  return BACKTICKS.exec(text)?.[0] ?? "`";
+}
+
+/** The text before a hard line break (two or more spaces, or a backslash, at its end); null when there is none. */
+function beforeBreak(text: string): string | null {
+  if (text.endsWith("\\")) return text.slice(0, -1);
+  let end = text.length;
+  while (end > 0 && text[end - 1] === " ") end -= 1;
+  return text.length - end >= 2 ? text.slice(0, end) : null;
 }
 
 const wordChar = (ch: string | undefined) =>
@@ -338,12 +398,14 @@ function closingMarker(text: string, at: number, marker: string): number {
   if (space(text[from])) return -1;
   if (ch === "_" && wordChar(text[at - 1])) return -1;
   for (let i = from + 1; i < text.length; i += 1) {
+    budget -= 1;
+    if (budget < 0) return -1;
     if (text[i] === "\\") {
       i += 1;
       continue;
     }
     if (text[i] === "`") {
-      const run = /^`+/.exec(text.slice(i))?.[0] ?? "`";
+      const run = backticks(text, i);
       const end = closingRun(text, i + run.length, run);
       i = end < 0 ? i + run.length - 1 : end + run.length - 1;
       continue;
@@ -353,6 +415,7 @@ function closingMarker(text: string, at: number, marker: string): number {
     if (marker.length === 1 && text[i + 1] === ch) {
       const inner = text.indexOf(ch + ch, i + 2);
       if (inner < 0) return -1;
+      budget -= inner - i;
       i = inner + 1;
       continue;
     }
@@ -372,8 +435,9 @@ function push(out: Inline[], node: Inline): void {
   }
 }
 
-export function parseInline(text: string): Inline[] {
+function parseInline(text: string, depth = 0): Inline[] {
   const out: Inline[] = [];
+  const nests = depth < MAX_INLINE_DEPTH;
   let i = 0;
   const literal = (s: string) => push(out, { type: "text", text: s });
   while (i < text.length) {
@@ -385,8 +449,9 @@ export function parseInline(text: string): Inline[] {
     }
     if (ch === "\n") {
       const last = out[out.length - 1];
-      if (last?.type === "text" && /(?: {2,}|\\)$/.test(last.text)) {
-        last.text = last.text.replace(/(?: {2,}|\\)$/, "");
+      const kept = last?.type === "text" ? beforeBreak(last.text) : null;
+      if (last?.type === "text" && kept !== null) {
+        last.text = kept;
         out.push({ type: "break" });
       } else {
         literal("\n");
@@ -395,11 +460,19 @@ export function parseInline(text: string): Inline[] {
       continue;
     }
     if (ch === "`") {
-      const run = /^`+/.exec(text.slice(i))?.[0] as string;
+      const run = backticks(text, i);
       const end = closingRun(text, i + run.length, run);
       if (end > 0) {
         let code = text.slice(i + run.length, end).replace(/\n/g, " ");
-        if (/^ .*[^ ].* $/.test(code)) code = code.slice(1, -1);
+        // One space at each end is padding, unless the span is only spaces.
+        if (
+          code.length > 2 &&
+          code.startsWith(" ") &&
+          code.endsWith(" ") &&
+          /[^ ]/.test(code)
+        ) {
+          code = code.slice(1, -1);
+        }
         out.push({ type: "code", text: code });
         i = end + run.length;
       } else {
@@ -417,13 +490,13 @@ export function parseInline(text: string): Inline[] {
         continue;
       }
     }
-    if (ch === "[") {
+    if (ch === "[" && nests) {
       const close = closingBracket(text, i);
       const dest = close < 0 ? null : destination(text, close + 1);
       if (dest) {
         out.push({
           type: "link",
-          children: parseInline(text.slice(i + 1, close)),
+          children: parseInline(text.slice(i + 1, close), depth + 1),
           url: dest.url,
         });
         i = dest.end;
@@ -431,7 +504,8 @@ export function parseInline(text: string): Inline[] {
       }
     }
     if (ch === "<") {
-      const auto = /^<(https?:\/\/[^\s<>]+)>/.exec(text.slice(i));
+      AUTOLINK.lastIndex = i;
+      const auto = AUTOLINK.exec(text);
       if (auto) {
         literal(auto[1] as string);
         i += auto[0].length;
@@ -440,20 +514,23 @@ export function parseInline(text: string): Inline[] {
     }
     if (ch === "*" || ch === "_") {
       const double = text[i + 1] === ch ? ch + ch : null;
-      if (double) {
+      if (double && nests) {
         const end = closingMarker(text, i, double);
         if (end > 0) {
           out.push({
             type: "strong",
-            children: parseInline(text.slice(i + 2, end)),
+            children: parseInline(text.slice(i + 2, end), depth + 1),
           });
           i = end + 2;
           continue;
         }
       }
-      const end = closingMarker(text, i, ch);
+      const end = nests ? closingMarker(text, i, ch) : -1;
       if (end > 0) {
-        out.push({ type: "em", children: parseInline(text.slice(i + 1, end)) });
+        out.push({
+          type: "em",
+          children: parseInline(text.slice(i + 1, end), depth + 1),
+        });
         i = end + 1;
         continue;
       }
@@ -468,12 +545,17 @@ export function parseInline(text: string): Inline[] {
 }
 
 export function parseMarkdown(text: string): Block[] {
+  const plain: Block[] = [
+    { type: "paragraph", children: [{ type: "text", text }] },
+  ];
+  if (text.length > MAX_SOURCE) return plain;
+  budget = SCAN_BUDGET;
   try {
     return parseBlocks(
       text.replace(/\r\n?/g, "\n").replace(/\t/g, "    ").split("\n"),
     );
   } catch {
     // READMEs are untrusted: never let a parser failure unmount the app.
-    return [{ type: "paragraph", children: [{ type: "text", text }] }];
+    return plain;
   }
 }

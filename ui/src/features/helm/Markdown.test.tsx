@@ -1,7 +1,7 @@
 import { render } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { Markdown } from "./Markdown";
-import { parseMarkdown } from "./markdown";
+import { type Block, type Inline, parseMarkdown } from "./markdown";
 
 function show(text: string): HTMLElement {
   const { container } = render(<Markdown text={text} testId="md" />);
@@ -209,4 +209,58 @@ test("deeply nested quotes and lists do not throw", () => {
   expect(() => parseMarkdown(nested)).not.toThrow();
   const root = show(">".repeat(10000));
   expect(root.textContent).toContain(">");
+});
+
+test("links nest at most 16 deep; deeper brackets stay as text", () => {
+  const blocks = parseMarkdown(`${"[".repeat(40)}x${"](u)".repeat(40)}`);
+  const paragraph = blocks[0] as Extract<Block, { type: "paragraph" }>;
+  let node: Inline | undefined = paragraph.children[0];
+  let depth = 0;
+  while (node?.type === "link") {
+    depth += 1;
+    node = node.children[0];
+  }
+  expect(depth).toBe(16);
+  expect(node).toEqual({ type: "text", text: expect.stringContaining("[x]") });
+});
+
+test("a README over 500,000 characters shows as plain text", () => {
+  const text = `# Title\n${"x".repeat(500_000)}`;
+  expect(parseMarkdown(text)).toEqual([
+    { type: "paragraph", children: [{ type: "text", text }] },
+  ]);
+});
+
+test("a long ordinary README keeps its formatting to the end", () => {
+  const paragraph =
+    "Set **replicas** with `--set replicaCount=2`, see [the docs](https://charts.example/docs) and *mind* snake_case keys.";
+  const blocks = parseMarkdown(Array(3000).fill(paragraph).join("\n\n"));
+  expect(blocks).toHaveLength(3000);
+  const last = blocks[2999] as Extract<Block, { type: "paragraph" }>;
+  expect(last.children.map((node) => node.type)).toEqual([
+    "text",
+    "strong",
+    "text",
+    "code",
+    "text",
+    "link",
+    "text",
+    "em",
+    "text",
+  ]);
+});
+
+const n = 50_000;
+test.each([
+  ["spaces inside a heading", `# a${" ".repeat(n)}b`],
+  ["spaces after a table delimiter", `a|b\n-${" ".repeat(n)}x`],
+  ["spaces before a line break", `a${" ".repeat(n)}b\nc`],
+  ["a long code span with a leading space", `\` ${"a".repeat(n)}\``],
+  ["brackets that never close", "[".repeat(n)],
+  ["emphasis that never closes", "*a ".repeat(n / 3)],
+  ["a list of rules", `${"- ".repeat(n / 2)}x`],
+])("untrusted input stays fast: %s", (_name, text) => {
+  const started = performance.now();
+  parseMarkdown(text);
+  expect(performance.now() - started).toBeLessThan(1000);
 });
