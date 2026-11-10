@@ -105,6 +105,8 @@ struct State_ {
     proxies: BTreeMap<ProxyKey, ProxyHandler>,
     /// Every request that passed the rights check, served or not, oldest first.
     proxy_requests: BTreeMap<ProxyKey, Vec<ProxyRequest>>,
+    /// `None` until a test serves metrics.k8s.io: every request to it answers 404.
+    metrics_api: Option<MetricsApi>,
 }
 
 type LogKey = (String, String, String);
@@ -135,6 +137,15 @@ pub struct ProxyRequest {
     /// The query string's parameters for a GET, the form body's otherwise.
     pub params: BTreeMap<String, String>,
     pub content_type: Option<String>,
+}
+
+/// What the fake's metrics.k8s.io serves.
+#[derive(Default)]
+struct MetricsApi {
+    nodes: Vec<Value>,
+    pods: Vec<Value>,
+    /// Every metrics.k8s.io request answers this status instead.
+    failure: Option<u16>,
 }
 
 /// What a served Service answers.
@@ -353,6 +364,7 @@ impl FakeKube {
                 log_requests: Vec::new(),
                 proxies: BTreeMap::new(),
                 proxy_requests: BTreeMap::new(),
+                metrics_api: None,
             }),
             events,
             stop_watches,
@@ -638,6 +650,24 @@ impl FakeKube {
         );
     }
 
+    /// Serves metrics.k8s.io `v1beta1` with these NodeMetrics and PodMetrics objects.
+    pub fn serve_metrics_api(&self, nodes: Vec<Value>, pods: Vec<Value>) {
+        let mut st = self.inner.lock();
+        let api = st.metrics_api.get_or_insert_with(MetricsApi::default);
+        api.nodes = nodes;
+        api.pods = pods;
+    }
+
+    /// Every metrics.k8s.io request, the group's document included, answers `code`, as an
+    /// APIService that is registered but unavailable does (503).
+    pub fn fail_metrics_api_with(&self, code: u16) {
+        self.inner
+            .lock()
+            .metrics_api
+            .get_or_insert_with(MetricsApi::default)
+            .failure = Some(code);
+    }
+
     /// The requests that reached `service` in `namespace`, oldest first.
     pub fn proxy_requests(&self, namespace: &str, service: &str) -> Vec<ProxyRequest> {
         self.inner
@@ -757,12 +787,84 @@ fn router(inner: Shared) -> Router {
             "/api/v1/namespaces/{namespace}/services/{service}/proxy/{*rest}",
             any(service_proxy),
         )
+        .route("/apis/metrics.k8s.io/v1beta1", get(metrics_document))
+        .route("/apis/metrics.k8s.io/v1beta1/nodes", get(node_metrics))
+        .route("/apis/metrics.k8s.io/v1beta1/pods", get(pod_metrics))
+        .route(
+            "/apis/metrics.k8s.io/v1beta1/namespaces/{namespace}/pods",
+            get(namespaced_pod_metrics),
+        )
         .fallback(generic)
         .layer(middleware::from_fn_with_state(
             inner.clone(),
             count_and_auth,
         ))
         .with_state(inner)
+}
+
+async fn metrics_document(State(s): State<Shared>) -> Response {
+    metrics_answer(&s, None, None)
+}
+
+async fn node_metrics(State(s): State<Shared>) -> Response {
+    metrics_answer(&s, Some("nodes"), None)
+}
+
+async fn pod_metrics(State(s): State<Shared>) -> Response {
+    metrics_answer(&s, Some("pods"), None)
+}
+
+async fn namespaced_pod_metrics(
+    State(s): State<Shared>,
+    UrlPath(namespace): UrlPath<String>,
+) -> Response {
+    metrics_answer(&s, Some("pods"), Some(&namespace))
+}
+
+/// metrics.k8s.io: the group's document when `plural` is `None`, else a list.
+fn metrics_answer(s: &Shared, plural: Option<&str>, namespace: Option<&str>) -> Response {
+    let st = s.lock();
+    let Some(api) = st.metrics_api.as_ref() else {
+        return not_found();
+    };
+    if let Some(code) = api.failure {
+        return status_for_code(code);
+    }
+    let Some(plural) = plural else {
+        return json_ok(json!({
+            "kind": "APIResourceList",
+            "apiVersion": "v1",
+            "groupVersion": "metrics.k8s.io/v1beta1",
+            "resources": [
+                { "name": "nodes", "singularName": "", "namespaced": false, "kind": "NodeMetrics", "verbs": ["get", "list"] },
+                { "name": "pods", "singularName": "", "namespaced": true, "kind": "PodMetrics", "verbs": ["get", "list"] },
+            ],
+        }));
+    };
+    if s.denied("list", &format!("{plural}.metrics.k8s.io"), namespace) {
+        return status(
+            403,
+            "Forbidden",
+            &format!(
+                "{plural}.metrics.k8s.io is forbidden: cannot list resource \"{plural}\" in API group \"metrics.k8s.io\""
+            ),
+        );
+    }
+    let (kind, items) = if plural == "nodes" {
+        ("NodeMetricsList", &api.nodes)
+    } else {
+        ("PodMetricsList", &api.pods)
+    };
+    let items: Vec<&Value> = items
+        .iter()
+        .filter(|item| namespace.is_none_or(|ns| item["metadata"]["namespace"] == ns))
+        .collect();
+    json_ok(json!({
+        "kind": kind,
+        "apiVersion": "metrics.k8s.io/v1beta1",
+        "metadata": {},
+        "items": items,
+    }))
 }
 
 async fn count_and_auth(State(s): State<Shared>, req: Request, next: Next) -> Response {

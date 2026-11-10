@@ -5,6 +5,10 @@
 pub(crate) mod prometheus;
 #[allow(dead_code)] // metrics_query (Task 5) is the first caller.
 pub(crate) mod templates;
+mod usage;
+#[allow(unused_imports)] // detection (Task 4) is the first reader.
+pub(crate) use usage::METRICS_API;
+pub use usage::{UsageItem, UsageOf, UsageSnapshot};
 
 use std::collections::BTreeMap;
 
