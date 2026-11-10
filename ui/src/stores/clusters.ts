@@ -44,3 +44,12 @@ export function useConnect(id: string): {
   const disconnect = useCallback(() => run("disconnect"), [run]);
   return { connect, disconnect, busy };
 }
+
+/** Disconnects from outside a cluster screen (the palette); a failure toasts as `useConnect` does. */
+export async function disconnectCluster(id: string): Promise<void> {
+  try {
+    await api.clusterDisconnect(id);
+  } catch (error) {
+    toast.error("Could not disconnect", failureMessage(error));
+  }
+}

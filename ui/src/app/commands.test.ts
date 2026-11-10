@@ -1,0 +1,160 @@
+import { beforeEach, expect, test, vi } from "vitest";
+import { toast } from "../design";
+import { openTerminal } from "../features/dock/openTerminal";
+import type { ClusterInfo } from "../ipc/generated/ClusterInfo";
+import type { ConnectionState } from "../ipc/generated/ConnectionState";
+import { resetPrefsForTest } from "../stores/prefs";
+import { resetShellForTest, useShell } from "../stores/shell";
+import { mockBackend } from "../test/ipc";
+import {
+  COMMANDS,
+  type CommandContext,
+  runCommand,
+  runMenuCommand,
+} from "./commands";
+
+vi.mock("../features/dock/openTerminal", () => ({ openTerminal: vi.fn() }));
+
+const INFO: ClusterInfo = {
+  version: "v1.31.0",
+  distribution: "kind",
+  nodeCount: 1,
+  namespaces: ["default"],
+  namespacesRestricted: false,
+  isAdmin: true,
+};
+const CONNECTED: ConnectionState = { status: "connected", info: INFO };
+
+function context(over: Partial<Omit<CommandContext, "navigate">> = {}) {
+  const navigate = vi.fn<(to: string | number) => void>();
+  return { navigate, pathname: "/catalog", cluster: null, ...over };
+}
+
+function on(state: ConnectionState) {
+  return { id: "c1", name: "prod", state };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.restoreAllMocks();
+  resetShellForTest();
+  resetPrefsForTest();
+});
+
+test("the registry lists the spec's commands in order", () => {
+  const ctx = context({ cluster: on(CONNECTED) });
+  expect(COMMANDS.map((c) => [c.id, c.label(ctx), c.shortcut ?? null])).toEqual(
+    [
+      ["catalog", "Go to the catalog", null],
+      ["preferences", "Open Preferences", "preferences"],
+      ["add-cluster", "Add a cluster", null],
+      ["terminal", "Open a terminal in prod", "terminal"],
+      ["disconnect", "Disconnect prod", null],
+      ["shortcuts", "Show keyboard shortcuts", "shortcuts"],
+      ["about", "About SkoposIDE", null],
+      ["theme-dark", "Theme: Dark", null],
+      ["theme-light", "Theme: Light", null],
+      ["theme-system", "Theme: System", null],
+      ["back", "Go back", "back"],
+      ["forward", "Go forward", "forward"],
+    ],
+  );
+});
+
+test("terminal and disconnect need the current cluster connected", () => {
+  const available = (ctx: CommandContext) =>
+    COMMANDS.filter((c) => c.available(ctx)).map((c) => c.id);
+  const all = COMMANDS.map((c) => c.id);
+  const always = all.filter((id) => id !== "terminal" && id !== "disconnect");
+  expect(available(context())).toEqual(always);
+  expect(
+    available(context({ cluster: on({ status: "disconnected" }) })),
+  ).toEqual(always);
+  expect(available(context({ cluster: on({ status: "connecting" }) }))).toEqual(
+    always,
+  );
+  expect(available(context({ cluster: on(CONNECTED) }))).toEqual(all);
+});
+
+test("catalog, back and forward navigate", () => {
+  const ctx = context({ pathname: "/preferences" });
+  runCommand("catalog", ctx);
+  runCommand("back", ctx);
+  runCommand("forward", ctx);
+  expect(ctx.navigate.mock.calls).toEqual([["/catalog"], [-1], [1]]);
+});
+
+test("preferences closes a shell dialog and does not navigate where it is", () => {
+  useShell.getState().open("palette");
+  const ctx = context();
+  runCommand("preferences", ctx);
+  expect(useShell.getState().dialog).toBeNull();
+  expect(ctx.navigate).toHaveBeenCalledWith("/preferences");
+
+  const there = context({ pathname: "/preferences" });
+  runCommand("preferences", there);
+  expect(there.navigate).not.toHaveBeenCalled();
+});
+
+test("add a cluster goes to the catalog and opens the dialog", () => {
+  const ctx = context({ pathname: "/cluster/c1" });
+  runCommand("add-cluster", ctx);
+  expect(ctx.navigate).toHaveBeenCalledWith("/catalog");
+  expect(useShell.getState().addClusterOpen).toBe(true);
+});
+
+test("shortcuts and about open their dialogs", () => {
+  runCommand("shortcuts", context());
+  expect(useShell.getState().dialog).toBe("shortcuts");
+  runCommand("about", context());
+  expect(useShell.getState().dialog).toBe("about");
+});
+
+test("terminal opens the cluster's terminal, and only when it may", () => {
+  runCommand("terminal", context({ cluster: on({ status: "disconnected" }) }));
+  expect(openTerminal).not.toHaveBeenCalled();
+  runCommand("terminal", context({ cluster: on(CONNECTED) }));
+  expect(openTerminal).toHaveBeenCalledWith("c1");
+});
+
+test("disconnect calls the backend and toasts a failure", async () => {
+  const ipc = mockBackend({
+    cluster_disconnect: () => {
+      throw { code: "Internal", message: "boom", details: null };
+    },
+  });
+  const failed = vi.spyOn(toast, "error");
+  runCommand("disconnect", context({ cluster: on(CONNECTED) }));
+  await vi.waitFor(() =>
+    expect(failed).toHaveBeenCalledWith("Could not disconnect", "boom"),
+  );
+  expect(ipc.callsTo("cluster_disconnect")).toEqual([{ id: "c1" }]);
+});
+
+test("a theme command saves the theme, loading the preferences first if needed", async () => {
+  const ipc = mockBackend({
+    prefs_get: () => ({ theme: "system", syncSources: [] }),
+    prefs_set: () => null,
+  });
+  runCommand("theme-dark", context());
+  await vi.waitFor(() =>
+    expect(ipc.callsTo("prefs_set")).toEqual([
+      { prefs: { theme: "dark", syncSources: [] } },
+    ]),
+  );
+  expect(ipc.callsTo("prefs_get")).toHaveLength(1);
+});
+
+test("menu ids run their commands and others are ignored", () => {
+  const ctx = context();
+  runMenuCommand("palette", ctx);
+  expect(useShell.getState().dialog).toBe("palette");
+  runMenuCommand("shortcuts", ctx);
+  expect(useShell.getState().dialog).toBe("shortcuts");
+  runMenuCommand("about", ctx);
+  expect(useShell.getState().dialog).toBe("about");
+  runMenuCommand("preferences", ctx);
+  expect(useShell.getState().dialog).toBeNull();
+  runMenuCommand("quit", ctx);
+  expect(ctx.navigate.mock.calls).toEqual([["/preferences"]]);
+});

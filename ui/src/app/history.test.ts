@@ -15,14 +15,31 @@ function mouse(button: number): MouseEvent {
 
 test("each shortcut navigates by the right delta", () => {
   const navigate = vi.fn();
-  const remove = installHistoryShortcuts(navigate);
+  const remove = installHistoryShortcuts(navigate, false);
   key({ key: "ArrowLeft", altKey: true });
   key({ key: "ArrowRight", altKey: true });
-  key({ key: "[", metaKey: true });
-  key({ key: "]", metaKey: true });
   mouse(3);
   mouse(4);
-  expect(navigate.mock.calls).toEqual([[-1], [1], [-1], [1], [-1], [1]]);
+  expect(navigate.mock.calls).toEqual([[-1], [1], [-1], [1]]);
+  remove();
+});
+
+test("on macOS Cmd+[ and Cmd+] navigate as well", () => {
+  const navigate = vi.fn();
+  const remove = installHistoryShortcuts(navigate, true);
+  key({ key: "ArrowLeft", altKey: true });
+  key({ key: "[", metaKey: true });
+  key({ key: "]", metaKey: true });
+  expect(navigate.mock.calls).toEqual([[-1], [-1], [1]]);
+  remove();
+});
+
+test("off macOS the Meta key with [ and ] does nothing", () => {
+  const navigate = vi.fn();
+  const remove = installHistoryShortcuts(navigate, false);
+  key({ key: "[", metaKey: true });
+  key({ key: "]", metaKey: true });
+  expect(navigate).not.toHaveBeenCalled();
   remove();
 });
 

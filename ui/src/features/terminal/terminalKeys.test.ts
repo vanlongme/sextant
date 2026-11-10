@@ -198,3 +198,30 @@ test("a clipboard that cannot be read or written shows a toast with its message"
   expect(error).toHaveBeenCalledWith("Could not paste", "clipboard is locked");
   expect(error).toHaveBeenCalledWith("Could not copy", "no clipboard owner");
 });
+
+test("the palette and Preferences keys go to the app, not the process", () => {
+  const ctrlShiftP: Keys = {
+    code: "KeyP",
+    key: "P",
+    ctrlKey: true,
+    shiftKey: true,
+  };
+  const ctrlComma: Keys = { code: "Comma", key: ",", ctrlKey: true };
+  const cmdShiftP: Keys = {
+    code: "KeyP",
+    key: "p",
+    metaKey: true,
+    shiftKey: true,
+  };
+  const cmdComma: Keys = { code: "Comma", key: ",", metaKey: true };
+  expect([
+    terminalKeyAction(key(ctrlShiftP), false),
+    terminalKeyAction(key(ctrlComma), false),
+    terminalKeyAction(key(cmdShiftP), true),
+    terminalKeyAction(key(cmdComma), true),
+    // Off macOS, Cmd+Shift+P is not Mod+Shift+P, so the process gets it.
+    terminalKeyAction(key(cmdShiftP), false),
+  ]).toEqual(["app", "app", "app", "app", null]);
+  expect(handleTerminalKey(key(ctrlShiftP), target(), false)).toBe(false);
+  expect(handleTerminalKey(key(cmdComma), target(), true)).toBe(false);
+});

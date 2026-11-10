@@ -1,3 +1,4 @@
+import { matchesShortcut } from "../../app/shortcuts";
 import { toast } from "../../design";
 import { copyText, readClipboardText } from "../../design/clipboard";
 import { failureMessage } from "../../ipc/client";
@@ -13,25 +14,26 @@ export const IS_MAC = isMacUserAgent(navigator.userAgent);
 
 /** Ctrl+` with no other modifier: the app's key for the local terminal. */
 export function isTerminalShortcut(event: KeyboardEvent): boolean {
-  return (
-    event.code === "Backquote" &&
-    event.ctrlKey &&
-    !event.shiftKey &&
-    !event.altKey &&
-    !event.metaKey
-  );
+  return matchesShortcut("terminal", event, IS_MAC);
 }
 
 /**
  * What a key does in a terminal besides typing, or null when it goes to the process.
- * Copy and paste are Ctrl+Shift+C and Ctrl+Shift+V, or Cmd+C and Cmd+V on macOS; the
- * physical key decides, so they work on any layout.
+ * Ctrl+`, Mod+Shift+P and Mod+, belong to the app. Copy and paste are Ctrl+Shift+C
+ * and Ctrl+Shift+V, or Cmd+C and Cmd+V on macOS; the physical key decides, so they
+ * work on any layout.
  */
 export function terminalKeyAction(
   event: KeyboardEvent,
   mac: boolean,
 ): TerminalKeyAction | null {
-  if (isTerminalShortcut(event)) return "app";
+  if (
+    isTerminalShortcut(event) ||
+    matchesShortcut("palette", event, mac) ||
+    matchesShortcut("preferences", event, mac)
+  ) {
+    return "app";
+  }
   const modifiers = mac
     ? event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey
     : event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey;

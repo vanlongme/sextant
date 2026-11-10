@@ -1,11 +1,13 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, test } from "vitest";
 import { resetCatalogForTest } from "../stores/catalog";
+import { resetShellForTest } from "../stores/shell";
 import { clusterEntry, mockBackend } from "../test/ipc";
 import { App } from "./App";
 
 beforeEach(() => {
   resetCatalogForTest();
+  resetShellForTest();
   window.location.hash = "";
 });
 
@@ -96,4 +98,23 @@ test("the port forwards route shows its screen with the sidebar entry active", a
   expect(await screen.findByTestId("port-forwards-screen")).toBeTruthy();
   const link = await screen.findByTestId("nav-port-forwards");
   expect(link.getAttribute("aria-current")).toBe("page");
+});
+
+test("Ctrl+, opens Preferences from a text field", async () => {
+  mockBackend({
+    catalog_list: () => [clusterEntry({ contextName: "alpha" })],
+    catalog_warnings: () => [],
+    hotbar_get: () => [],
+    prefs_get: () => ({ theme: "system", syncSources: [] }),
+  });
+
+  render(<App />);
+  await screen.findByTestId("catalog-row-alpha");
+  fireEvent.keyDown(screen.getByTestId("catalog-search"), {
+    key: ",",
+    code: "Comma",
+    ctrlKey: true,
+  });
+
+  await waitFor(() => expect(window.location.hash).toBe("#/preferences"));
 });

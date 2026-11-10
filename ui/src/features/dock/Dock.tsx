@@ -33,7 +33,6 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import { Button, ConfirmDialog, IconButton } from "../../design";
-import { useCatalog } from "../../stores/catalog";
 import {
   DOCK_DEFAULT_HEIGHT,
   DOCK_MIN_HEIGHT,
@@ -41,7 +40,6 @@ import {
   dockMaxHeight,
   newCreateTab,
   tabsForCluster,
-  terminalTab,
   useDock,
 } from "../../stores/dock";
 import { CreateResourceTab } from "../editor/CreateResourceTab";
@@ -50,6 +48,7 @@ import { LogsTab } from "../logs/LogsTab";
 import { TerminalTab } from "../terminal/TerminalTab";
 import { isTerminalShortcut } from "../terminal/terminalKeys";
 import styles from "./Dock.module.css";
+import { openTerminal } from "./openTerminal";
 
 const KEYBOARD_RESIZE_STEP = 24;
 /** A press that moves less than this is a click, so it still selects the tab. */
@@ -79,14 +78,6 @@ function TabBody({ tab, shown }: { tab: DockTab; shown: boolean }) {
     case "nodeShell":
       return <TerminalTab tab={tab} shown={shown} />;
   }
-}
-
-/** Opens the cluster's local terminal, or brings it forward, and shows the dock. */
-function openTerminal(clusterId: string): void {
-  const name =
-    useCatalog.getState().clusters.find((c) => c.id === clusterId)?.name ??
-    null;
-  useDock.getState().open(terminalTab(clusterId, name));
 }
 
 /** The drag handle on the dock's top edge. Up makes the dock taller. */
