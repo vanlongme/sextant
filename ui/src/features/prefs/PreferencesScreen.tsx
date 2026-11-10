@@ -16,6 +16,7 @@ import { failureMessage } from "../../ipc/client";
 import type { SyncSource } from "../../ipc/generated/SyncSource";
 import type { Theme } from "../../ipc/generated/Theme";
 import { classifySourcePath, usePrefs } from "../../stores/prefs";
+import { HelmReposSection } from "./HelmReposSection";
 import styles from "./PreferencesScreen.module.css";
 import { ToolsSection } from "./ToolsSection";
 
@@ -145,6 +146,7 @@ export function PreferencesScreen() {
     <div className={styles.screen}>
       <Sources sources={prefs.syncSources} />
       <ToolsSection />
+      <HelmReposSection />
       <section className={styles.section}>
         <h3 className={styles.heading}>Appearance</h3>
         <div className={styles.themeRow}>

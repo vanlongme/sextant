@@ -5,6 +5,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import { beforeEach, expect, test } from "vitest";
 import { Toaster } from "../../design";
 import type { Prefs } from "../../ipc/generated/Prefs";
@@ -33,13 +34,17 @@ function show(
       toolStatus({ tool: "helm" }),
       toolStatus({ tool: "kubectl" }),
     ],
+    helm_repo_list: () => [
+      { name: "bitnami", url: "https://charts.example/bitnami" },
+    ],
+    helm_chart_search: () => ({ charts: [], repoProblems: [] }),
     ...over,
   });
   render(
-    <>
+    <MemoryRouter>
       <PreferencesScreen />
       <Toaster />
-    </>,
+    </MemoryRouter>,
   );
   return ipc;
 }
@@ -76,8 +81,14 @@ test("shows an error with a retry when prefs cannot be read", async () => {
       return saved;
     },
     tools_status: () => [],
+    helm_repo_list: () => [],
+    helm_chart_search: () => ({ charts: [], repoProblems: [] }),
   });
-  render(<PreferencesScreen />);
+  render(
+    <MemoryRouter>
+      <PreferencesScreen />
+    </MemoryRouter>,
+  );
 
   expect(await screen.findByText("cannot read")).toBeTruthy();
   fail = false;
@@ -252,10 +263,10 @@ test("the theme is a Segmented control, and Dark applies and saves the theme", a
   expect(usePrefs.getState().prefs?.theme).toBe("dark");
 });
 
-test("Tools sits between Kubeconfig sources and Appearance", async () => {
+test("Tools and Helm repositories sit between Kubeconfig sources and Appearance", async () => {
   show();
   await screen.findByTestId("pref-tool-helm");
   expect(
     screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent),
-  ).toEqual(["Kubeconfig sources", "Tools", "Appearance"]);
+  ).toEqual(["Kubeconfig sources", "Tools", "Helm repositories", "Appearance"]);
 });
