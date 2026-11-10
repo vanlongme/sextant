@@ -1,12 +1,14 @@
 //! Metrics (F16): the provider setting, detection of Prometheus or metrics-server with a cache
 //! per cluster, and the queries the interface repeats on its own timer (spec §5.4).
 
-#[allow(dead_code)] // metrics_provider (Task 4) and metrics_query (Task 5) are the callers.
+mod detect;
+#[allow(dead_code)] // metrics_query (Task 5) is the caller.
 pub(crate) mod prometheus;
 #[allow(dead_code)] // metrics_query (Task 5) is the first caller.
 pub(crate) mod templates;
+pub(crate) use detect::Metrics;
+pub use detect::MetricsLimits;
 mod usage;
-#[allow(unused_imports)] // detection (Task 4) is the first reader.
 pub(crate) use usage::METRICS_API;
 pub use usage::{UsageItem, UsageOf, UsageSnapshot};
 
@@ -221,6 +223,59 @@ pub struct MetricsResult {
     pub series: BTreeMap<MetricName, Vec<(f64, f64)>>,
     /// Asked for this target, but no data: the query failed or returned no samples.
     pub missing: Vec<MetricName>,
+}
+
+/// Where this cluster's metrics come from, and why.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+#[ts(export)]
+pub enum MetricsProvider {
+    Prometheus {
+        namespace: String,
+        service: String,
+        port: u16,
+        chosen_by: PrometheusChoice,
+    },
+    MetricsServer {
+        chosen_by: MetricsServerChoice,
+    },
+    #[serde(rename = "none")]
+    Off {
+        chosen_by: NoProviderChoice,
+    },
+}
+
+/// The setting, or the detection tier that found Prometheus, in probe order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum PrometheusChoice {
+    Setting,
+    KubePrometheusStack,
+    Operator,
+    CommunityChart,
+    Label,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum MetricsServerChoice {
+    Setting,
+    /// Detection found no Prometheus, and the cluster serves metrics.k8s.io.
+    Fallback,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum NoProviderChoice {
+    Setting,
+    NothingFound,
 }
 
 #[cfg(test)]

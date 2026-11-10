@@ -21,6 +21,7 @@ use crate::helm::Helm;
 use crate::kubeconfig::{
     default_sources, ClusterId, KubeconfigSync, SyncSnapshot, SyncSource, SyncWarning,
 };
+use crate::metrics::Metrics;
 use crate::paths::AppPaths;
 use crate::portforward::{PortForward, PortForwards};
 use crate::prefs::{ClusterSettings, Prefs};
@@ -86,6 +87,7 @@ struct Inner {
     portforwards: Arc<PortForwards>,
     tools: Tools,
     helm: Helm,
+    metrics: Metrics,
     /// Held across a preferences write and the matching source change, so
     /// concurrent calls cannot leave the sync on sources that were not saved last.
     sync: Mutex<Option<KubeconfigSync>>,
@@ -224,6 +226,7 @@ impl AppCore {
                 portforwards: Arc::new(PortForwards::new(portforward_definitions, events.clone())),
                 tools: Tools::new(&paths.data),
                 helm,
+                metrics: Metrics::default(),
                 sync: Mutex::new(Some(sync)),
                 snapshots,
                 sync_events: Mutex::new(Some(sync_events)),
@@ -307,9 +310,13 @@ impl AppCore {
 
     pub fn cluster_settings_set(&self, id: &ClusterId, mut s: ClusterSettings) -> CoreResult<()> {
         s.metrics_provider = s.metrics_provider.normalized()?;
+        let metrics_changed = self.cluster_settings_get(id).metrics_provider != s.metrics_provider;
         self.inner.clusters.update(|all| {
             all.insert(id.clone(), s);
         })?;
+        if metrics_changed {
+            self.metrics().forget(id);
+        }
         // Entries carry the display name and icon.
         let _ = self.inner.events.send(CoreEvent::CatalogChanged);
         Ok(())
@@ -439,6 +446,10 @@ impl AppCore {
 
     pub(crate) fn helm(&self) -> &Helm {
         &self.inner.helm
+    }
+
+    pub(crate) fn metrics(&self) -> &Metrics {
+        &self.inner.metrics
     }
 
     pub(crate) fn sessions(&self) -> &Arc<SessionRegistry> {
