@@ -46,7 +46,6 @@ impl Default for MetricsLimits {
 #[derive(Debug, Clone)]
 pub(crate) struct Chosen {
     pub(crate) provider: MetricsProvider,
-    #[allow(dead_code)] // metrics_query (Task 5) reads it.
     pub(crate) endpoint: Option<Endpoint>,
 }
 

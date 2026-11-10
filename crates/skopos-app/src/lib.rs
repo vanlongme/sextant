@@ -174,6 +174,7 @@ fn run_app(core: AppCore, mut log_guard: Option<WorkerGuard>, context: Context<W
             commands::helm::helm_rollback_start,
             commands::helm::helm_uninstall_start,
             commands::metrics::metrics_provider,
+            commands::metrics::metrics_query,
             commands::metrics::metrics_usage,
         ])
         .setup(move |app| {

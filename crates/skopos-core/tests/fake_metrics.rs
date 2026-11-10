@@ -11,8 +11,9 @@ use skopos_core::app_core::AppCore;
 use skopos_core::error::{CoreResult, ErrorCode};
 use skopos_core::kubeconfig::ClusterId;
 use skopos_core::metrics::{
-    MetricsLimits, MetricsProvider, MetricsProviderSetting, MetricsServerChoice, NoProviderChoice,
-    PrometheusChoice, PrometheusScheme, UsageItem, UsageOf,
+    MetricName, MetricsLimits, MetricsProvider, MetricsProviderSetting, MetricsRange,
+    MetricsServerChoice, MetricsTarget, NoProviderChoice, PrometheusChoice, PrometheusScheme,
+    UsageItem, UsageOf, WorkloadKind,
 };
 use skopos_fakekube::{DenyRule, FakeKube, FakeKubeConfig, ProxyReply, ProxyRequest};
 use support::connected_fake;
@@ -116,6 +117,101 @@ fn chart_provider() -> MetricsProvider {
         service: "prometheus-server".to_owned(),
         port: 80,
         chosen_by: PrometheusChoice::CommunityChart,
+    }
+}
+
+/// Prometheus: the probe answers `up`, and every range query answers `range`.
+fn prometheus(
+    range: impl Fn(&ProxyRequest) -> ProxyReply + Send + Sync + 'static,
+) -> impl Fn(&ProxyRequest) -> ProxyReply + Send + Sync + 'static {
+    move |request| {
+        if request.path.ends_with("/api/v1/query_range") {
+            range(request)
+        } else {
+            up(request)
+        }
+    }
+}
+
+/// A range answer: one series with `values` at `start`, `start + step`, and so on.
+fn matrix(request: &ProxyRequest, values: &[f64]) -> ProxyReply {
+    let start: i64 = request.params["start"].parse().unwrap();
+    let step: i64 = request.params["step"].parse().unwrap();
+    let points: Vec<Value> = values
+        .iter()
+        .zip(0_i64..)
+        .map(|(value, i)| json!([start + step * i, value.to_string()]))
+        .collect();
+    ProxyReply::json(
+        200,
+        json!({
+            "status": "success",
+            "data": { "resultType": "matrix", "result": [{ "metric": {}, "values": points }] },
+        }),
+    )
+}
+
+fn no_samples(_: &ProxyRequest) -> ProxyReply {
+    ProxyReply::json(
+        200,
+        json!({ "status": "success", "data": { "resultType": "matrix", "result": [] } }),
+    )
+}
+
+fn range_requests(fake: &FakeKube, namespace: &str, service: &str) -> Vec<ProxyRequest> {
+    fake.proxy_requests(namespace, service)
+        .into_iter()
+        .filter(|request| request.path.ends_with("/api/v1/query_range"))
+        .collect()
+}
+
+fn pinned_prometheus(
+    scheme: Option<PrometheusScheme>,
+    path_prefix: Option<&str>,
+) -> MetricsProviderSetting {
+    MetricsProviderSetting::Prometheus {
+        namespace: "monitoring".to_owned(),
+        service: "prom".to_owned(),
+        port: 9090,
+        scheme,
+        path_prefix: path_prefix.map(str::to_owned),
+    }
+}
+
+fn web_deployment() -> Value {
+    json!({
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": { "namespace": "default", "name": "web" },
+        "spec": {
+            "selector": { "matchLabels": { "app": "web" } },
+            "template": { "metadata": { "labels": { "app": "web" } }, "spec": { "containers": [] } },
+        },
+    })
+}
+
+fn labelled_pod(name: &str, app: &str) -> Value {
+    json!({
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "metadata": { "namespace": "default", "name": name, "labels": { "app": app } },
+        "spec": { "containers": [{ "name": "main", "image": "web" }] },
+        "status": { "phase": "Running" },
+    })
+}
+
+fn web_target() -> MetricsTarget {
+    MetricsTarget::Workload {
+        namespace: "default".to_owned(),
+        name: "web".to_owned(),
+        workload_kind: WorkloadKind::Deployment,
+    }
+}
+
+fn web_pod() -> MetricsTarget {
+    MetricsTarget::Pod {
+        namespace: "default".to_owned(),
+        name: "web-1".to_owned(),
     }
 }
 
@@ -505,4 +601,350 @@ async fn a_forbidden_service_list_falls_back_to_each_namespace() {
     assert_eq!(fake.request_count("/api/v1/namespaces/metrics/services"), 1);
     // Refused, and skipped.
     assert_eq!(fake.request_count("/api/v1/namespaces/shop/services"), 1);
+}
+
+#[tokio::test]
+async fn a_cluster_query_returns_each_series_and_lists_the_metrics_without_data() {
+    use MetricName::*;
+    let (core, fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
+    community_chart(
+        &fake,
+        prometheus(|request| {
+            let query = &request.params["query"];
+            if query.contains("node_cpu_seconds_total") {
+                matrix(request, &[0.5, 0.75])
+            } else if query.contains(r#"kube_node_status_capacity{resource="cpu"}"#) {
+                matrix(request, &[4.0])
+            } else {
+                no_samples(request)
+            }
+        }),
+    );
+
+    let result = core
+        .metrics_query(&id, &MetricsTarget::Cluster, MetricsRange::OneHour)
+        .await
+        .unwrap();
+    let now = Timestamp::now().as_second();
+    assert_eq!(result.step, 60);
+    assert_eq!(result.end - result.start, 3_600);
+    assert_eq!(result.end % 60, 0);
+    assert!(
+        result.end <= now && now - result.end < 120,
+        "{} {now}",
+        result.end
+    );
+    let start = result.start as f64;
+    assert_eq!(result.series.len(), 2);
+    assert_eq!(
+        result.series[&CpuUsage],
+        [(start, 0.5), (start + 60.0, 0.75)]
+    );
+    assert_eq!(result.series[&CpuCapacity], [(start, 4.0)]);
+    assert_eq!(
+        result.missing,
+        [
+            CpuRequests,
+            CpuLimits,
+            CpuAllocatable,
+            MemoryUsage,
+            MemoryRequests,
+            MemoryLimits,
+            MemoryAllocatable,
+            MemoryCapacity,
+            PodUsage,
+            PodAllocatable,
+            PodCapacity,
+            DiskUsage,
+            DiskCapacity,
+        ]
+    );
+
+    let ranges = range_requests(&fake, "metrics", "prometheus-server:80");
+    assert_eq!(ranges.len(), 15);
+    for request in &ranges {
+        assert_eq!(request.method, "GET");
+        assert_eq!(request.params["start"], result.start.to_string());
+        assert_eq!(request.params["end"], result.end.to_string());
+        assert_eq!(request.params["step"], "60");
+    }
+    assert!(ranges.iter().any(|request| request.params["query"]
+        == r#"sum(rate(node_cpu_seconds_total{mode!~"idle|iowait|steal"}[120s]))"#));
+}
+
+#[tokio::test]
+async fn a_pinned_prometheus_is_reached_with_its_scheme_and_path_prefix() {
+    let (core, fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
+    save_provider(
+        &core,
+        &id,
+        pinned_prometheus(Some(PrometheusScheme::Https), Some("/prom")),
+    )
+    .unwrap();
+    fake.serve_proxy("monitoring", "https:prom:9090", |request| {
+        matrix(request, &[1.0])
+    });
+
+    let node = MetricsTarget::Node {
+        name: "worker".to_owned(),
+    };
+    let result = core
+        .metrics_query(&id, &node, MetricsRange::SixHours)
+        .await
+        .unwrap();
+    assert_eq!(result.step, 300);
+    assert_eq!(result.series.len(), 15);
+    assert!(result.missing.is_empty());
+    // No probe for a pinned Service: every request is a range query.
+    let requests = fake.proxy_requests("monitoring", "https:prom:9090");
+    assert_eq!(requests.len(), 15);
+    assert!(requests
+        .iter()
+        .all(|request| request.path == "/prom/api/v1/query_range"));
+    assert!(requests
+        .iter()
+        .any(|request| request.params["query"].contains(r#"node_uname_info{nodename="worker"}"#)));
+}
+
+#[tokio::test]
+async fn a_workload_reads_the_pods_its_selector_matches_now() {
+    let (core, fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
+    community_chart(&fake, prometheus(|request| matrix(request, &[1.0])));
+    fake.upsert("deployments", web_deployment());
+    fake.upsert("pods", labelled_pod("web-1", "web"));
+    fake.upsert("pods", labelled_pod("web-2", "web"));
+    fake.upsert("pods", labelled_pod("api-1", "api"));
+
+    let result = core
+        .metrics_query(&id, &web_target(), MetricsRange::OneHour)
+        .await
+        .unwrap();
+    assert_eq!(result.series.len(), 11);
+    let ranges = range_requests(&fake, "metrics", "prometheus-server:80");
+    assert_eq!(ranges.len(), 11);
+    for request in &ranges {
+        let query = &request.params["query"];
+        assert!(
+            query.contains(r#"namespace="default", pod=~"^(?:web-1|web-2)$""#),
+            "{query}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_workload_without_pods_has_every_metric_missing_and_sends_no_query() {
+    let (core, fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
+    community_chart(&fake, prometheus(|request| matrix(request, &[1.0])));
+    fake.upsert("deployments", web_deployment());
+    fake.upsert("pods", labelled_pod("api-1", "api"));
+
+    let result = core
+        .metrics_query(&id, &web_target(), MetricsRange::OneHour)
+        .await
+        .unwrap();
+    assert!(result.series.is_empty());
+    assert_eq!(result.missing.len(), 11);
+    assert!(range_requests(&fake, "metrics", "prometheus-server:80").is_empty());
+}
+
+#[tokio::test]
+async fn a_workload_that_does_not_exist_is_not_found() {
+    let (core, fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
+    community_chart(&fake, prometheus(no_samples));
+    let err = core
+        .metrics_query(&id, &web_target(), MetricsRange::OneHour)
+        .await
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::NotFound);
+}
+
+#[tokio::test]
+async fn a_query_string_over_8_kib_goes_as_a_form_post() {
+    let (core, fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
+    community_chart(&fake, prometheus(|request| matrix(request, &[1.0])));
+    fake.upsert("deployments", web_deployment());
+    // 40 pods with names of 227 characters: the alternation alone passes 8 KiB.
+    let names: Vec<String> = (0..40)
+        .map(|i| format!("web-{i:02}-{}", "x".repeat(220)))
+        .collect();
+    for name in &names {
+        fake.upsert("pods", labelled_pod(name, "web"));
+    }
+
+    let result = core
+        .metrics_query(&id, &web_target(), MetricsRange::OneHour)
+        .await
+        .unwrap();
+    assert_eq!(result.series.len(), 11);
+    let ranges = range_requests(&fake, "metrics", "prometheus-server:80");
+    assert_eq!(ranges.len(), 11);
+    for request in &ranges {
+        assert_eq!(request.method, "POST");
+        assert_eq!(
+            request.content_type.as_deref(),
+            Some("application/x-www-form-urlencoded")
+        );
+        assert!(request.params["query"].contains(&names[39]));
+        assert_eq!(request.params["step"], "60");
+    }
+}
+
+#[tokio::test]
+async fn without_services_proxy_rights_the_query_is_forbidden_and_names_the_permission() {
+    let (core, fake, id, _root) = connected_fake(FakeKubeConfig {
+        deny: vec![DenyRule {
+            verb: "get".into(),
+            plural: "services/proxy".into(),
+            namespace: Some("monitoring".into()),
+        }],
+        ..Default::default()
+    })
+    .await;
+    save_provider(&core, &id, pinned_prometheus(None, None)).unwrap();
+    fake.serve_proxy("monitoring", "prom:9090", |request| matrix(request, &[1.0]));
+
+    let err = core
+        .metrics_query(&id, &MetricsTarget::Cluster, MetricsRange::OneHour)
+        .await
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::Forbidden);
+    assert!(
+        err.message
+            .contains("needs permission to get services/proxy in namespace monitoring"),
+        "{}",
+        err.message
+    );
+}
+
+#[tokio::test]
+async fn a_query_that_times_out_is_missing_and_when_all_do_the_call_is_unreachable() {
+    let (core, fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
+    core.set_metrics_limits_for_test(MetricsLimits {
+        query: Duration::from_millis(300),
+        ..MetricsLimits::default()
+    });
+    community_chart(
+        &fake,
+        prometheus(|request| {
+            let reply = matrix(request, &[1.0]);
+            if request.params["query"].contains("container_cpu_usage_seconds_total") {
+                reply.after(Duration::from_secs(2))
+            } else {
+                reply
+            }
+        }),
+    );
+
+    let result = core
+        .metrics_query(&id, &web_pod(), MetricsRange::OneHour)
+        .await
+        .unwrap();
+    assert_eq!(result.missing, [MetricName::CpuUsage]);
+    assert_eq!(result.series.len(), 10);
+
+    fake.serve_proxy(
+        "metrics",
+        "prometheus-server:80",
+        prometheus(|request| matrix(request, &[1.0]).after(Duration::from_secs(2))),
+    );
+    let err = core
+        .metrics_query(&id, &web_pod(), MetricsRange::OneHour)
+        .await
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::Unreachable);
+}
+
+#[tokio::test]
+async fn when_every_query_fails_the_first_failure_rejects_and_detection_runs_again() {
+    let (core, fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
+    community_chart(
+        &fake,
+        prometheus(|_| {
+            ProxyReply::json(
+                400,
+                json!({ "status": "error", "errorType": "bad_data", "error": "parse error" }),
+            )
+        }),
+    );
+
+    let err = core
+        .metrics_query(&id, &MetricsTarget::Cluster, MetricsRange::OneHour)
+        .await
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::Internal);
+    assert_eq!(err.message, "parse error");
+    assert_eq!(fake.request_count("/api/v1/services"), 1);
+    core.metrics_query(&id, &MetricsTarget::Cluster, MetricsRange::OneHour)
+        .await
+        .unwrap_err();
+    assert_eq!(fake.request_count("/api/v1/services"), 2);
+}
+
+#[tokio::test]
+async fn a_not_found_from_prometheus_keeps_the_answers_and_drops_the_detection() {
+    let (core, fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
+    community_chart(
+        &fake,
+        prometheus(|request| {
+            if request.params["query"].contains("node_cpu_seconds_total") {
+                ProxyReply::text(404, "404 page not found")
+            } else {
+                matrix(request, &[1.0])
+            }
+        }),
+    );
+
+    let result = core
+        .metrics_query(&id, &MetricsTarget::Cluster, MetricsRange::OneHour)
+        .await
+        .unwrap();
+    assert_eq!(result.missing, [MetricName::CpuUsage]);
+    assert_eq!(fake.request_count("/api/v1/services"), 1);
+    core.metrics_provider(&id, false).await.unwrap();
+    assert_eq!(fake.request_count("/api/v1/services"), 2);
+}
+
+#[tokio::test]
+async fn without_prometheus_the_query_is_not_found_with_no_prometheus() {
+    let (core, _fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
+    // Pinned to metrics-server, then detected as nothing.
+    for setting in [
+        MetricsProviderSetting::MetricsServer,
+        MetricsProviderSetting::Auto,
+    ] {
+        save_provider(&core, &id, setting).unwrap();
+        let err = core
+            .metrics_query(&id, &MetricsTarget::Cluster, MetricsRange::OneHour)
+            .await
+            .unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotFound);
+        assert_eq!(err.details.as_deref(), Some("noPrometheus"));
+    }
+}
+
+#[tokio::test]
+async fn an_unusable_target_is_refused_before_anything_is_read() {
+    let (core, fake, id, _root) = connected_fake(FakeKubeConfig::default()).await;
+    let targets = [
+        MetricsTarget::Node {
+            name: String::new(),
+        },
+        MetricsTarget::Workload {
+            namespace: "a/b".to_owned(),
+            name: "web".to_owned(),
+            workload_kind: WorkloadKind::Deployment,
+        },
+        MetricsTarget::Pvc {
+            namespace: "default".to_owned(),
+            name: "../data".to_owned(),
+        },
+    ];
+    for target in targets {
+        let err = core
+            .metrics_query(&id, &target, MetricsRange::OneHour)
+            .await
+            .unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput, "{target:?}");
+    }
+    assert_eq!(fake.request_count("/api/v1/services"), 0);
 }

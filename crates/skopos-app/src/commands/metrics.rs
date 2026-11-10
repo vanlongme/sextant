@@ -2,7 +2,9 @@
 
 use skopos_core::error::IpcError;
 use skopos_core::kubeconfig::ClusterId;
-use skopos_core::metrics::{MetricsProvider, UsageOf, UsageSnapshot};
+use skopos_core::metrics::{
+    MetricsProvider, MetricsRange, MetricsResult, MetricsTarget, UsageOf, UsageSnapshot,
+};
 use tauri::State;
 
 use crate::state::AppState;
@@ -14,6 +16,16 @@ pub async fn metrics_provider(
     refresh: bool,
 ) -> Result<MetricsProvider, IpcError> {
     state.core.metrics_provider(&cluster_id, refresh).await
+}
+
+#[tauri::command]
+pub async fn metrics_query(
+    state: State<'_, AppState>,
+    cluster_id: ClusterId,
+    target: MetricsTarget,
+    range: MetricsRange,
+) -> Result<MetricsResult, IpcError> {
+    state.core.metrics_query(&cluster_id, &target, range).await
 }
 
 #[tauri::command]

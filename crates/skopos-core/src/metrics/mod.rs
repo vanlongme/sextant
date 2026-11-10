@@ -2,9 +2,8 @@
 //! per cluster, and the queries the interface repeats on its own timer (spec §5.4).
 
 mod detect;
-#[allow(dead_code)] // metrics_query (Task 5) is the caller.
 pub(crate) mod prometheus;
-#[allow(dead_code)] // metrics_query (Task 5) is the first caller.
+mod query;
 pub(crate) mod templates;
 pub(crate) use detect::Metrics;
 pub use detect::MetricsLimits;
