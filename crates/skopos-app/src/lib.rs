@@ -1,5 +1,6 @@
 mod commands;
 mod events;
+mod menu;
 mod state;
 
 use skopos_core::app_core::AppCore;
@@ -87,6 +88,7 @@ fn run_app(core: AppCore, mut log_guard: Option<WorkerGuard>, context: Context<W
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(AppState { core: core.clone() })
         .invoke_handler(tauri::generate_handler![
+            commands::app::app_info,
             commands::catalog::catalog_list,
             commands::catalog::catalog_warnings,
             commands::catalog::catalog_add_pasted,
@@ -177,6 +179,8 @@ fn run_app(core: AppCore, mut log_guard: Option<WorkerGuard>, context: Context<W
         ])
         .setup(move |app| {
             events::spawn_forwarder(app.handle().clone(), forwarded);
+            #[cfg(target_os = "macos")]
+            menu::install(app.handle())?;
             Ok(())
         })
         .on_page_load(|webview, payload| {
@@ -244,5 +248,27 @@ mod capability_tests {
             !raw.contains("opener"),
             "the webview must not hold an opener permission (spec 5.5)"
         );
+    }
+}
+
+#[cfg(test)]
+mod bundle_tests {
+    use std::path::Path;
+
+    /// Spec C §8.4: the notices and the license are installed with the app.
+    #[test]
+    fn notices_and_license_are_installed_with_the_app() {
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let resources = &config["bundle"]["resources"];
+        assert_eq!(
+            resources["../../THIRD_PARTY_NOTICES.md"],
+            "THIRD_PARTY_NOTICES.md"
+        );
+        assert_eq!(resources["../../LICENSE"], "LICENSE");
+        let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        for source in ["../../THIRD_PARTY_NOTICES.md", "../../LICENSE"] {
+            assert!(crate_dir.join(source).is_file(), "{source} is missing");
+        }
     }
 }

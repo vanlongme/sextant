@@ -94,6 +94,7 @@ test.each<[string, () => Promise<unknown>, Record<string, unknown>]>([
   ["portforward_start", () => api.portforwardStart("pf-1"), { id: "pf-1" }],
   ["portforward_stop", () => api.portforwardStop("pf-1"), { id: "pf-1" }],
   ["portforward_remove", () => api.portforwardRemove("pf-1"), { id: "pf-1" }],
+  ["app_info", () => api.appInfo(), {}],
   [
     "open_external",
     () => api.openExternal("http://127.0.0.1:50123/"),

@@ -24,4 +24,7 @@ export const events = {
   /** Carries the whole list after every change. */
   onPortForwardsChanged: (handler: (forwards: PortForward[]) => void) =>
     on("portforward://changed", handler),
+  /** The macOS menu's app items: `about`, `preferences`, `palette`, `shortcuts`. */
+  onMenuCommand: (handler: (command: { id: string }) => void) =>
+    on("menu://command", handler),
 };

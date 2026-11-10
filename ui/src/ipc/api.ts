@@ -1,6 +1,7 @@
 import { Channel } from "@tauri-apps/api/core";
 import { call } from "./client";
 import type { ApiResourceInfo } from "./generated/ApiResourceInfo";
+import type { AppInfo } from "./generated/AppInfo";
 import type { ApplyResult } from "./generated/ApplyResult";
 import type { ClusterEntry } from "./generated/ClusterEntry";
 import type { ClusterSettings } from "./generated/ClusterSettings";
@@ -29,6 +30,8 @@ import type { TerminalSize } from "./generated/TerminalSize";
 import type { WatchEvent } from "./generated/WatchEvent";
 
 export const api = {
+  /** Version facts for About (spec C §8.2). */
+  appInfo: () => call<AppInfo>("app_info"),
   catalogList: () => call<ClusterEntry[]>("catalog_list"),
   catalogWarnings: () => call<SyncWarning[]>("catalog_warnings"),
   catalogAddPasted: (yaml: string) =>
