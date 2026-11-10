@@ -6,12 +6,6 @@
   padding: var(--space-7);
 }
 
-.title {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-}
-
 .section {
   display: flex;
   flex-direction: column;

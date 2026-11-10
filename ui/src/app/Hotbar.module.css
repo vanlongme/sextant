@@ -103,6 +103,26 @@
   box-shadow: var(--focus-ring);
 }
 
+/* The Help trigger is an IconButton sized like the rail links. */
+.rail .help {
+  width: 40px;
+  height: var(--control-md);
+  flex-shrink: 0;
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+}
+
+.rail .help:hover,
+.rail .help[data-state="open"] {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.rail .help:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 .spacer {
   flex: 1;
 }

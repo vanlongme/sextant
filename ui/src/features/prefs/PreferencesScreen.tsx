@@ -142,7 +142,6 @@ export function PreferencesScreen() {
 
   return (
     <div className={styles.screen}>
-      <h2 className={styles.title}>Preferences</h2>
       <Sources sources={prefs.syncSources} />
       <section className={styles.section}>
         <h3 className={styles.heading}>Appearance</h3>

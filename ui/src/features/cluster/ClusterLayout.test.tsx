@@ -71,16 +71,7 @@ async function renderWithDiscovery(answers: ApiResourceInfo[][]) {
   render(
     <MemoryRouter initialEntries={["/cluster/c1"]}>
       <Routes>
-        <Route
-          path="/cluster/:id"
-          element={
-            <ClusterLayout
-              clusterId="c1"
-              busy={false}
-              onDisconnect={() => {}}
-            />
-          }
-        />
+        <Route path="/cluster/:id" element={<ClusterLayout clusterId="c1" />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -194,16 +185,7 @@ test("a change in the set of CRDs re-discovers the resources", async () => {
   render(
     <MemoryRouter initialEntries={["/cluster/c1/r/core/pods"]}>
       <Routes>
-        <Route
-          path="/cluster/:id"
-          element={
-            <ClusterLayout
-              clusterId="c1"
-              busy={false}
-              onDisconnect={() => {}}
-            />
-          }
-        >
+        <Route path="/cluster/:id" element={<ClusterLayout clusterId="c1" />}>
           <Route path="r/:group/:plural" element={<ResourceRoute />} />
         </Route>
       </Routes>

@@ -138,7 +138,7 @@ describe("catalog", () => {
 
   it("opens a cluster from the hotbar", async () => {
     await (await hotbarItem("alpha")).click();
-    const heading = browser.$("h2=alpha");
+    const heading = browser.$("h1=alpha");
     await heading.waitForDisplayed({ timeout: 15000 });
 
     await clickWhenShown("nav-catalog");

@@ -105,7 +105,6 @@ test("connected state renders cluster home", async () => {
   expect(screen.getByTestId("cluster-info-distribution").textContent).toBe(
     "kind",
   );
-  expect(screen.getByTestId("connection-status").textContent).toBe("Connected");
 });
 
 test("unknown cluster id shows a not-found state with a link to the catalog", async () => {
@@ -115,20 +114,14 @@ test("unknown cluster id shows a not-found state with a link to the catalog", as
   expect(await screen.findByText("catalog page")).toBeTruthy();
 });
 
-test("disconnect returns to disconnected state without reconnecting automatically", async () => {
-  const ipc = await show(
-    { status: "connected", info: INFO },
-    {
-      cluster_disconnect: () => {
-        queueMicrotask(() => void setState({ status: "disconnected" }));
-        return null;
-      },
-    },
-  );
-  fireEvent.click(await screen.findByTestId("cluster-disconnect"));
-  await waitFor(() =>
-    expect(ipc.callsTo("cluster_disconnect")).toHaveLength(1),
-  );
+test("a disconnect from outside the screen shows Reconnect and does not connect again", async () => {
+  // The cluster was connected when the screen opened (from the hotbar), so the
+  // screen made no automatic connect; the header's Disconnect is outside it.
+  const ipc = await show({ status: "connected", info: INFO });
+  await screen.findByTestId("cluster-info-version");
+
+  await setState({ status: "disconnected" });
+
   await screen.findByTestId("cluster-reconnect");
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 50));

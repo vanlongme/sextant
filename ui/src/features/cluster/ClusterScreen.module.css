@@ -7,18 +7,6 @@
   padding: var(--space-8);
 }
 
-.header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-7);
-}
-
-.name {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-}
-
 .panel {
   display: flex;
   flex-direction: column;

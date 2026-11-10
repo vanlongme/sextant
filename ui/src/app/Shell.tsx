@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Outlet, useNavigate } from "react-router";
 import { useCatalog } from "../stores/catalog";
 import { useShell } from "../stores/shell";
+import { AppHeader } from "./AppHeader";
 import { runCommand, useCommandContext } from "./commands";
 import { Hotbar } from "./Hotbar";
 import { installHistoryShortcuts } from "./history";
@@ -43,9 +44,12 @@ export function Shell() {
   return (
     <div className={styles.shell}>
       <Hotbar />
-      <main className={styles.content}>
-        <Outlet />
-      </main>
+      <div className={styles.column}>
+        <AppHeader />
+        <main className={styles.content}>
+          <Outlet />
+        </main>
+      </div>
       <StatusBar />
     </div>
   );

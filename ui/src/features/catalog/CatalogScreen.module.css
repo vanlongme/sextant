@@ -11,16 +11,6 @@
   gap: var(--space-7);
 }
 
-.heading {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.spacer {
-  flex: 1;
-}
-
 .warnings {
   margin: 0;
   padding: var(--space-5) var(--space-7);

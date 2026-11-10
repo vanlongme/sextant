@@ -14,8 +14,6 @@ import { Sidebar } from "./Sidebar";
 /** What the layout hands to the routes below it. */
 export interface ClusterOutletContext {
   clusterId: string;
-  busy: boolean;
-  onDisconnect(): void;
   resources: ApiResourceInfo[];
   resourcesLoading: boolean;
   resourcesError: string | null;
@@ -114,18 +112,12 @@ function useRefreshOnCrdChange(
 }
 
 /** The sidebar and the routed content of a connected cluster. */
-export function ClusterLayout(props: {
-  clusterId: string;
-  busy: boolean;
-  onDisconnect(): void;
-}) {
-  const { clusterId, busy, onDisconnect } = props;
+export function ClusterLayout(props: { clusterId: string }) {
+  const { clusterId } = props;
   const { resources, loading, error, refresh } = useApiResources(clusterId);
   useRefreshOnCrdChange(clusterId, resources, error, refresh);
   const context: ClusterOutletContext = {
     clusterId,
-    busy,
-    onDisconnect,
     resources,
     resourcesLoading: loading,
     resourcesError: error,

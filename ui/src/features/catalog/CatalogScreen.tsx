@@ -1,4 +1,4 @@
-import { Ellipsis, Plus } from "lucide-react";
+import { Ellipsis } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { clusterStatus } from "../../app/clusterStatus";
@@ -20,6 +20,7 @@ import { api } from "../../ipc/api";
 import { failureMessage } from "../../ipc/client";
 import type { ClusterEntry } from "../../ipc/generated/ClusterEntry";
 import { useCatalog } from "../../stores/catalog";
+import { useShell } from "../../stores/shell";
 import { AddClusterDialog } from "./AddClusterDialog";
 import styles from "./CatalogScreen.module.css";
 
@@ -138,7 +139,8 @@ export function CatalogScreen() {
   const reload = useCatalog((s) => s.reload);
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
-  const [adding, setAdding] = useState(false);
+  const addClusterOpen = useShell((s) => s.addClusterOpen);
+  const closeAddCluster = useShell((s) => s.closeAddCluster);
   const [removing, setRemoving] = useState<ClusterEntry | null>(null);
 
   const rows = useMemo(
@@ -274,7 +276,6 @@ export function CatalogScreen() {
   return (
     <div className={styles.screen}>
       <header className={styles.toolbar}>
-        <h2 className={styles.heading}>Catalog</h2>
         <Input
           aria-label="Search clusters"
           placeholder="Search"
@@ -282,15 +283,6 @@ export function CatalogScreen() {
           onChange={(e) => setQuery(e.target.value)}
           data-testid="catalog-search"
         />
-        <div className={styles.spacer} />
-        <Button
-          variant="primary"
-          onClick={() => setAdding(true)}
-          data-testid="catalog-add"
-        >
-          <Plus size={14} aria-hidden="true" />
-          Add cluster
-        </Button>
       </header>
       {warnings.length > 0 ? (
         <ul className={styles.warnings} data-testid="catalog-warnings">
@@ -302,7 +294,7 @@ export function CatalogScreen() {
         </ul>
       ) : null}
       {body}
-      <AddClusterDialog open={adding} onClose={() => setAdding(false)} />
+      <AddClusterDialog open={addClusterOpen} onClose={closeAddCluster} />
       <ConfirmDialog
         open={removing !== null}
         title="Remove pasted cluster"

@@ -15,11 +15,28 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { LayoutGrid, Pin, Settings, TriangleAlert } from "lucide-react";
+import {
+  CircleHelp,
+  Command,
+  Info,
+  Keyboard,
+  LayoutGrid,
+  Pin,
+  Settings,
+  TriangleAlert,
+} from "lucide-react";
 import { NavLink, useMatch, useNavigate } from "react-router";
-import { ContextMenu, Spinner, StatusDot, Tooltip } from "../design";
+import {
+  ContextMenu,
+  IconButton,
+  Menu,
+  Spinner,
+  StatusDot,
+  Tooltip,
+} from "../design";
 import type { ClusterEntry } from "../ipc/generated/ClusterEntry";
 import { useCatalog } from "../stores/catalog";
+import { useShell } from "../stores/shell";
 import { clusterStatus } from "./clusterStatus";
 import { clusterColor, clusterInitials } from "./clusterVisual";
 import styles from "./Hotbar.module.css";
@@ -117,6 +134,47 @@ function RailNotice(props: { label: string; icon: React.ReactNode }) {
   );
 }
 
+/** Spec C §9.1: the shell dialogs from the rail, without key chips. */
+function HelpMenu() {
+  const open = useShell((s) => s.open);
+  return (
+    <Menu
+      trigger={
+        <IconButton
+          label="Help"
+          tooltip={false}
+          icon={<CircleHelp size={18} aria-hidden="true" />}
+          className={styles.help}
+          data-testid="hotbar-help"
+        />
+      }
+      items={[
+        {
+          id: "palette",
+          label: "Command palette",
+          icon: <Command size={14} aria-hidden="true" />,
+          testId: "help-palette",
+          onSelect: () => open("palette"),
+        },
+        {
+          id: "shortcuts",
+          label: "Keyboard shortcuts",
+          icon: <Keyboard size={14} aria-hidden="true" />,
+          testId: "help-shortcuts",
+          onSelect: () => open("shortcuts"),
+        },
+        {
+          id: "about",
+          label: "About SkoposIDE",
+          icon: <Info size={14} aria-hidden="true" />,
+          testId: "help-about",
+          onSelect: () => open("about"),
+        },
+      ]}
+    />
+  );
+}
+
 export function Hotbar() {
   const clusters = useCatalog((s) => s.clusters);
   const hotbar = useCatalog((s) => s.hotbar);
@@ -189,6 +247,7 @@ export function Hotbar() {
         />
       ) : null}
       <div className={styles.spacer} />
+      <HelpMenu />
       <RailLink
         to="/preferences"
         label="Preferences"

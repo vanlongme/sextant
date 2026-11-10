@@ -1,20 +1,31 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
-import { clusterStatus } from "../../app/clusterStatus";
-import { Badge, EmptyState, Spinner } from "../../design";
+import { EmptyState, Spinner } from "../../design";
 import { useCatalog } from "../../stores/catalog";
 import { useClusterState, useConnect } from "../../stores/clusters";
 import { ClusterLayout } from "./ClusterLayout";
 import styles from "./ClusterScreen.module.css";
 import { ConnectionPanel } from "./ConnectionPanel";
 
-function ClusterView({ id, name }: { id: string; name: string }) {
+function ClusterView({ id }: { id: string }) {
   const state = useClusterState(id);
   const { connect, disconnect, busy } = useConnect(id);
-  const status = clusterStatus(state);
   // One automatic connect per mount, and none after the user disconnects.
   const autoDone = useRef(false);
   const [userDisconnected, setUserDisconnected] = useState(false);
+
+  // Disconnect lives in the header and the palette, outside this screen, so a change
+  // from connected to disconnected is how the screen learns that the user
+  // disconnected. Declared first, so it runs before the automatic connect below.
+  const previous = useRef(state.status);
+  useEffect(() => {
+    const was = previous.current;
+    previous.current = state.status;
+    if (was === "connected" && state.status === "disconnected") {
+      autoDone.current = true;
+      setUserDisconnected(true);
+    }
+  }, [state.status]);
 
   useEffect(() => {
     if (autoDone.current || state.status !== "disconnected") return;
@@ -22,6 +33,7 @@ function ClusterView({ id, name }: { id: string; name: string }) {
     void connect();
   }, [state.status, connect]);
 
+  // Cancel while connecting, in the connection panel.
   function userDisconnect(): void {
     autoDone.current = true;
     setUserDisconnected(true);
@@ -30,18 +42,8 @@ function ClusterView({ id, name }: { id: string; name: string }) {
 
   return (
     <div className={styles.screen}>
-      <div className={styles.header}>
-        <h2 className={styles.name}>{name}</h2>
-        <span data-testid="connection-status">
-          <Badge tone={status.tone}>{status.label}</Badge>
-        </span>
-      </div>
       {state.status === "connected" ? (
-        <ClusterLayout
-          clusterId={id}
-          busy={busy}
-          onDisconnect={userDisconnect}
-        />
+        <ClusterLayout clusterId={id} />
       ) : (
         <ConnectionPanel
           id={id}
@@ -77,5 +79,5 @@ export function ClusterScreen() {
       />
     );
   }
-  return <ClusterView key={id} id={id} name={cluster.name} />;
+  return <ClusterView key={id} id={id} />;
 }

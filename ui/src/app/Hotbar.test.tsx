@@ -10,6 +10,7 @@ import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ClusterEntry } from "../ipc/generated/ClusterEntry";
 import { resetCatalogForTest, useCatalog } from "../stores/catalog";
+import { resetShellForTest, useShell } from "../stores/shell";
 import { clusterEntry, flush, mockBackend } from "../test/ipc";
 import { Hotbar } from "./Hotbar";
 
@@ -48,7 +49,10 @@ function shownOrder(): (string | null)[] {
     .filter((id) => id?.startsWith("hotbar-item-")) as string[];
 }
 
-beforeEach(() => resetCatalogForTest());
+beforeEach(() => {
+  resetCatalogForTest();
+  resetShellForTest();
+});
 afterEach(() => vi.restoreAllMocks());
 
 test("renders pinned clusters with initials and status dot", async () => {
@@ -170,4 +174,36 @@ test("a long non-ASCII name stays on one line in the tooltip, in full", async ()
   const style = getComputedStyle(label as Element);
   expect(style.textOverflow).toBe("ellipsis");
   expect(style.whiteSpace).toBe("nowrap");
+});
+
+test("the Help menu sits directly above Preferences and lists three items", async () => {
+  await show([alpha], []);
+
+  const help = screen.getByTestId("hotbar-help");
+  expect(help.getAttribute("aria-label")).toBe("Help");
+  expect(help.nextElementSibling?.getAttribute("data-testid")).toBe(
+    "nav-preferences",
+  );
+  fireEvent.keyDown(help, { key: "Enter" });
+  const items = await screen.findAllByRole("menuitem");
+  expect(
+    items.map((item) => [item.getAttribute("data-testid"), item.textContent]),
+  ).toEqual([
+    ["help-palette", "Command palette"],
+    ["help-shortcuts", "Keyboard shortcuts"],
+    ["help-about", "About SkoposIDE"],
+  ]);
+});
+
+test("the Help menu's items open the three shell dialogs", async () => {
+  await show([alpha], []);
+
+  const opened: (string | null)[] = [];
+  for (const item of ["help-palette", "help-shortcuts", "help-about"]) {
+    fireEvent.keyDown(screen.getByTestId("hotbar-help"), { key: "Enter" });
+    fireEvent.click(await screen.findByTestId(item));
+    opened.push(useShell.getState().dialog);
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+  }
+  expect(opened).toEqual(["palette", "shortcuts", "about"]);
 });

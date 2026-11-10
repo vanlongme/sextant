@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -9,6 +10,7 @@ import { MemoryRouter, useLocation } from "react-router";
 import { beforeEach, expect, test } from "vitest";
 import type { ClusterEntry } from "../../ipc/generated/ClusterEntry";
 import { resetCatalogForTest, useCatalog } from "../../stores/catalog";
+import { resetShellForTest, useShell } from "../../stores/shell";
 import { clusterEntry, emitEvent, mockBackend } from "../../test/ipc";
 import { CatalogScreen } from "./CatalogScreen";
 
@@ -43,13 +45,16 @@ function openRowMenu(context: string) {
   });
 }
 
-beforeEach(() => resetCatalogForTest());
+beforeEach(() => {
+  resetCatalogForTest();
+  resetShellForTest();
+});
 
 test("empty catalog explains how to add a cluster", async () => {
   await show([]);
 
   expect(screen.getByText(/~\/\.kube/)).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Add cluster" })).toBeTruthy();
+  expect(screen.queryByTestId("catalog-add")).toBeNull();
   expect(screen.queryByRole("table")).toBeNull();
 });
 
@@ -255,7 +260,7 @@ test("add cluster dialog pastes YAML and reports invalid input", async () => {
     },
   });
 
-  fireEvent.click(screen.getByTestId("catalog-add"));
+  act(() => useShell.getState().openAddCluster());
   const dialog = within(await screen.findByRole("dialog"));
   fireEvent.change(dialog.getByTestId("catalog-add-yaml"), {
     target: { value: "not: a kubeconfig" },
@@ -276,7 +281,7 @@ test("add cluster dialog pastes YAML and reports invalid input", async () => {
 test("add cluster needs some text first", async () => {
   await show([]);
 
-  fireEvent.click(screen.getByTestId("catalog-add"));
+  act(() => useShell.getState().openAddCluster());
   const dialog = within(await screen.findByRole("dialog"));
 
   const submit = dialog.getByTestId("catalog-add-submit") as HTMLButtonElement;
