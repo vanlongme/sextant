@@ -81,6 +81,7 @@ const EXPECTED: [string, string[]][] = [
   ],
   ["namespaces", ["/namespaces"]],
   ["events", ["/events"]],
+  ["helm", ["route:helm/charts", "route:helm/releases"]],
   [
     "access",
     [
@@ -110,6 +111,7 @@ test("NAV_SECTIONS covers every F4 resource", () => {
     "Storage",
     "Namespaces",
     "Events",
+    "Helm",
     "Access Control",
     "Custom Resources",
   ]);
@@ -132,16 +134,38 @@ test("items the user cannot list are hidden", () => {
   expect(config?.items.map(navItemKey)).toContain("/configmaps");
 });
 
-test("sections with no visible items disappear; Port Forwarding needs no listable resource", () => {
+test("sections with no visible items disappear; routes need no listable resource", () => {
   const shape = (resources: ApiResourceInfo[]) =>
     visibleSections(resources).map((s) => [s.id, s.items.map(navItemKey)]);
+  const helm: [string, string[]] = [
+    "helm",
+    ["route:helm/charts", "route:helm/releases"],
+  ];
   expect(
     shape([info("", "pods"), info("", "nodes", { canList: false })]),
   ).toEqual([
     ["workloads", ["/pods"]],
     ["network", ["route:port-forwards"]],
+    helm,
   ]);
-  expect(shape([])).toEqual([["network", ["route:port-forwards"]]]);
+  expect(shape([])).toEqual([["network", ["route:port-forwards"]], helm]);
+});
+
+test("the Helm section sits between Events and Access Control with Charts and Releases", () => {
+  const ids = NAV_SECTIONS.map((s) => s.id);
+  expect(ids.slice(ids.indexOf("events"), ids.indexOf("events") + 3)).toEqual([
+    "events",
+    "helm",
+    "access",
+  ]);
+  expect(NAV_SECTIONS.find((s) => s.id === "helm")).toEqual({
+    id: "helm",
+    label: "Helm",
+    items: [
+      { type: "route", label: "Charts", path: "helm/charts" },
+      { type: "route", label: "Releases", path: "helm/releases" },
+    ],
+  });
 });
 
 test("the Network group ends with Port Forwarding, a route of the cluster screen", () => {

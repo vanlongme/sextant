@@ -39,9 +39,8 @@ function r(label: string, group: string, plural: string): NavResource {
 /**
  * The sidebar sections of F4, in order. Overview is the cluster home route and not
  * a resource. The Workloads Overview entry is in the sidebar, but its page is
- * a placeholder until the overview screens (F17). Helm (Charts, Releases) arrives in
- * Phase 4, so it is left out for now. Port Forwarding is a route of the cluster
- * screen, not a resource kind. Custom Resources starts with Definitions; the
+ * a placeholder until the overview screens (F17). Port Forwarding and Helm's
+ * Charts and Releases are routes of the cluster screen, not resource kinds. Custom Resources starts with Definitions; the
  * entries for each CRD are added by `customResourceGroups`.
  */
 export const NAV_SECTIONS: NavSection[] = [
@@ -112,6 +111,14 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [r("Namespaces", "", "namespaces")],
   },
   { id: "events", label: "Events", items: [r("Events", "", "events")] },
+  {
+    id: "helm",
+    label: "Helm",
+    items: [
+      { type: "route", label: "Charts", path: "helm/charts" },
+      { type: "route", label: "Releases", path: "helm/releases" },
+    ],
+  },
   {
     id: "access",
     label: "Access Control",

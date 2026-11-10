@@ -16,6 +16,8 @@ import {
   LayoutDashboard,
   type LucideIcon,
   Network,
+  Package,
+  PackageCheck,
   Puzzle,
   Rocket,
   ShieldCheck,
@@ -50,12 +52,15 @@ export const SECTION_ICONS: Partial<Record<string, LucideIcon>> = {
   storage: HardDrive,
   namespaces: FolderTree,
   events: Bell,
+  helm: Package,
   access: ShieldCheck,
   custom: Puzzle,
 };
 
 export const ROUTE_ICONS: Partial<Record<string, LucideIcon>> = {
   "port-forwards": ArrowRightLeft,
+  "helm/charts": Package,
+  "helm/releases": PackageCheck,
 };
 
 export const OVERVIEW_ICON: LucideIcon = LayoutDashboard;

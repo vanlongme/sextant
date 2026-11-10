@@ -48,6 +48,7 @@ test("the registry lists the spec's commands in order", () => {
       ["catalog", "Go to the catalog", null],
       ["preferences", "Open Preferences", "preferences"],
       ["add-cluster", "Add a cluster", null],
+      ["install-chart", "Install a Helm chart", null],
       ["terminal", "Open a terminal in prod", "terminal"],
       ["disconnect", "Disconnect prod", null],
       ["shortcuts", "Show keyboard shortcuts", "shortcuts"],
@@ -61,11 +62,13 @@ test("the registry lists the spec's commands in order", () => {
   );
 });
 
-test("terminal and disconnect need the current cluster connected", () => {
+test("terminal, disconnect and install-chart need the current cluster connected", () => {
   const available = (ctx: CommandContext) =>
     COMMANDS.filter((c) => c.available(ctx)).map((c) => c.id);
   const all = COMMANDS.map((c) => c.id);
-  const always = all.filter((id) => id !== "terminal" && id !== "disconnect");
+  const always = all.filter(
+    (id) => id !== "terminal" && id !== "disconnect" && id !== "install-chart",
+  );
   expect(available(context())).toEqual(always);
   expect(
     available(context({ cluster: on({ status: "disconnected" }) })),
@@ -74,6 +77,12 @@ test("terminal and disconnect need the current cluster connected", () => {
     always,
   );
   expect(available(context({ cluster: on(CONNECTED) }))).toEqual(all);
+});
+
+test("install-chart opens the cluster's Charts", () => {
+  const ctx = context({ cluster: on(CONNECTED) });
+  runCommand("install-chart", ctx);
+  expect(ctx.navigate.mock.calls).toEqual([["/cluster/c1/helm/charts"]]);
 });
 
 test("catalog, back and forward navigate", () => {

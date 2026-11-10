@@ -266,6 +266,8 @@ test("pages follow the sidebar: the overviews, its items, then custom resources"
     ["palette-page-r/core/pods", "Pods", "Page"],
     ["palette-page-r/core/configmaps", "ConfigMaps", "Page"],
     ["palette-page-port-forwards", "Port Forwarding", "Page"],
+    ["palette-page-helm/charts", "Charts", "Page"],
+    ["palette-page-helm/releases", "Releases", "Page"],
     ["palette-page-r/example.com/widgets", "Widget", "Page"],
   ]);
   const ctx = context();
@@ -276,6 +278,8 @@ test("pages follow the sidebar: the overviews, its items, then custom resources"
     ["/cluster/c1/r/core/pods"],
     ["/cluster/c1/r/core/configmaps"],
     ["/cluster/c1/port-forwards"],
+    ["/cluster/c1/helm/charts"],
+    ["/cluster/c1/helm/releases"],
     ["/cluster/c1/r/example.com/widgets"],
   ]);
 });
@@ -284,6 +288,8 @@ test("without discovery, Pages hold the overview and the routes", () => {
   expect(pageEntries("c1", []).map((p) => p.testId)).toEqual([
     "palette-page-overview",
     "palette-page-port-forwards",
+    "palette-page-helm/charts",
+    "palette-page-helm/releases",
   ]);
 });
 

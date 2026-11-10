@@ -7,6 +7,7 @@ import {
   type LucideIcon,
   Monitor,
   Moon,
+  Package,
   Plus,
   Power,
   Settings,
@@ -16,6 +17,7 @@ import {
 import { useMemo } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { openTerminal } from "../features/dock/openTerminal";
+import { chartsPath } from "../features/helm/helmText";
 import type { Theme } from "../ipc/generated/Theme";
 import { disconnectCluster } from "../stores/clusters";
 import { usePrefs } from "../stores/prefs";
@@ -35,6 +37,7 @@ export type CommandId =
   | "catalog"
   | "preferences"
   | "add-cluster"
+  | "install-chart"
   | "terminal"
   | "disconnect"
   | "shortcuts"
@@ -120,6 +123,15 @@ export const COMMANDS: readonly AppCommand[] = [
     run: (ctx) => {
       go(ctx, "/catalog");
       useShell.getState().openAddCluster();
+    },
+  },
+  {
+    id: "install-chart",
+    label: () => "Install a Helm chart",
+    icon: Package,
+    available: connected,
+    run: (ctx) => {
+      if (ctx.cluster) go(ctx, chartsPath(ctx.cluster.id));
     },
   },
   {
