@@ -158,3 +158,33 @@ test("menu ids run their commands and others are ignored", () => {
   runMenuCommand("quit", ctx);
   expect(ctx.navigate.mock.calls).toEqual([["/preferences"]]);
 });
+
+test("menu ids do nothing while another modal dialog is open", () => {
+  const ctx = context();
+  const scale = document.createElement("div");
+  scale.setAttribute("role", "dialog");
+  document.body.append(scale);
+  try {
+    for (const id of ["palette", "shortcuts", "about", "preferences"]) {
+      runMenuCommand(id, ctx);
+    }
+    expect(useShell.getState().dialog).toBeNull();
+    expect(ctx.navigate).not.toHaveBeenCalled();
+  } finally {
+    scale.remove();
+  }
+});
+
+test("an open shell dialog does not stop menu ids", () => {
+  const ctx = context();
+  const palette = document.createElement("div");
+  palette.setAttribute("role", "dialog");
+  palette.setAttribute("data-shell-dialog", "");
+  document.body.append(palette);
+  try {
+    runMenuCommand("about", ctx);
+    expect(useShell.getState().dialog).toBe("about");
+  } finally {
+    palette.remove();
+  }
+});

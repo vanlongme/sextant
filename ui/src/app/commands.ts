@@ -21,6 +21,7 @@ import { disconnectCluster } from "../stores/clusters";
 import { usePrefs } from "../stores/prefs";
 import { useShell } from "../stores/shell";
 import { type CurrentCluster, useCurrentCluster } from "./currentCluster";
+import { otherModalOpen } from "./shellKeys";
 import type { ShortcutId } from "./shortcuts";
 
 /** What a command sees when it is listed and when it runs. */
@@ -188,8 +189,13 @@ export function runCommand(id: CommandId, ctx: CommandContext): void {
   if (command.available(ctx)) command.run(ctx);
 }
 
-/** The macOS menu's app items (spec C §9.2): `palette` opens the palette. */
+/**
+ * The macOS menu's app items (spec C §9.2): `palette` opens the palette. Like the
+ * shell keys, they do nothing while another modal dialog is open, so a menu item
+ * cannot cover a Scale or Drain dialog or navigate away from what was typed in it.
+ */
 export function runMenuCommand(id: string, ctx: CommandContext): void {
+  if (otherModalOpen()) return;
   if (id === "palette") useShell.getState().open("palette");
   else if (id === "about" || id === "preferences" || id === "shortcuts") {
     runCommand(id, ctx);

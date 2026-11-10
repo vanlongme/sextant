@@ -10,6 +10,11 @@ export interface ShellKeyActions {
 const OTHER_MODAL =
   '[role="dialog"]:not([data-shell-dialog]), [role="alertdialog"]';
 
+/** True while such a dialog is open; shell keys and macOS menu items then do nothing. */
+export function otherModalOpen(): boolean {
+  return document.querySelector(OTHER_MODAL) !== null;
+}
+
 function inside(target: EventTarget | null, selector: string): boolean {
   return target instanceof Element && target.closest(selector) !== null;
 }
@@ -25,7 +30,7 @@ export function installShellKeys(
 ): () => void {
   function onKeyDown(event: KeyboardEvent): void {
     if (event.repeat || event.isComposing) return;
-    if (document.querySelector(OTHER_MODAL) !== null) return;
+    if (otherModalOpen()) return;
     let action: (() => void) | null = null;
     if (matchesShortcut("palette", event, mac)) {
       action = actions.palette;
