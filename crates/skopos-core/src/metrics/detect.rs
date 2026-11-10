@@ -178,34 +178,28 @@ fn from_setting(setting: &MetricsProviderSetting) -> Option<Chosen> {
     Some(chosen)
 }
 
-/// The first candidate that answers the probe, else metrics-server, else none.
+/// The first candidate that answers the probe; else the first one refused with 403 (so queries
+/// report `Forbidden`); else metrics-server, else none.
 async fn detect(
     client: &Client,
     namespaces: &[String],
     limits: MetricsLimits,
 ) -> CoreResult<Chosen> {
     let services = list_services(client, namespaces).await?;
+    let mut refused: Option<Candidate> = None;
     for candidate in candidates(&services) {
-        if prometheus::probe(client, &candidate.endpoint, limits.probe)
-            .await
-            .is_ok()
-        {
-            let Endpoint {
-                namespace,
-                service,
-                port,
-                ..
-            } = candidate.endpoint.clone();
-            return Ok(Chosen {
-                provider: MetricsProvider::Prometheus {
-                    namespace,
-                    service,
-                    port,
-                    chosen_by: candidate.tier,
-                },
-                endpoint: Some(candidate.endpoint),
-            });
+        match prometheus::probe(client, &candidate.endpoint, limits.probe).await {
+            Ok(()) => return Ok(prometheus_chosen(candidate)),
+            // Remember the first refusal: if nothing answers, the user must see
+            // `Forbidden` naming the permission, not "no Prometheus".
+            Err(e) if e.code == ErrorCode::Forbidden && refused.is_none() => {
+                refused = Some(candidate);
+            }
+            Err(_) => {}
         }
+    }
+    if let Some(candidate) = refused {
+        return Ok(prometheus_chosen(candidate));
     }
     let provider = if serves_metrics_api(client).await? {
         MetricsProvider::MetricsServer {
@@ -220,6 +214,24 @@ async fn detect(
         provider,
         endpoint: None,
     })
+}
+
+fn prometheus_chosen(candidate: Candidate) -> Chosen {
+    let Endpoint {
+        namespace,
+        service,
+        port,
+        ..
+    } = candidate.endpoint.clone();
+    Chosen {
+        provider: MetricsProvider::Prometheus {
+            namespace,
+            service,
+            port,
+            chosen_by: candidate.tier,
+        },
+        endpoint: Some(candidate.endpoint),
+    }
 }
 
 /// Every Service the user may list: one list across namespaces or, when that is forbidden,

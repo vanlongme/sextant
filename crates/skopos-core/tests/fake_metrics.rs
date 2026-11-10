@@ -790,6 +790,33 @@ async fn a_query_string_over_8_kib_goes_as_a_form_post() {
 }
 
 #[tokio::test]
+async fn under_auto_a_prometheus_refused_with_403_and_no_other_answer_is_forbidden() {
+    let (core, fake, id, _root) = connected_fake(FakeKubeConfig {
+        deny: vec![DenyRule {
+            verb: "get".into(),
+            plural: "services/proxy".into(),
+            namespace: Some("monitoring".into()),
+        }],
+        ..Default::default()
+    })
+    .await;
+    kube_prometheus_stack(&fake);
+    fake.serve_proxy("monitoring", "kps-prometheus:9090", up);
+
+    let err = core
+        .metrics_query(&id, &MetricsTarget::Cluster, MetricsRange::OneHour)
+        .await
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::Forbidden);
+    assert!(
+        err.message
+            .contains("needs permission to get services/proxy in namespace monitoring"),
+        "{}",
+        err.message
+    );
+}
+
+#[tokio::test]
 async fn without_services_proxy_rights_the_query_is_forbidden_and_names_the_permission() {
     let (core, fake, id, _root) = connected_fake(FakeKubeConfig {
         deny: vec![DenyRule {
