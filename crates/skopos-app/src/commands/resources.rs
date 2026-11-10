@@ -2,7 +2,7 @@ use serde_json::Value;
 use skopos_core::error::IpcError;
 use skopos_core::kubeconfig::ClusterId;
 use skopos_core::resources::{
-    ApiResourceInfo, ApplyResult, InvolvedRef, Propagation, ResourceRef, WatchEvent,
+    ApiResourceInfo, ApplyResult, InvolvedRef, ObjectNames, Propagation, ResourceRef, WatchEvent,
 };
 use tauri::ipc::Channel;
 use tauri::State;
@@ -20,6 +20,15 @@ pub async fn resources_discover(
     refresh: bool,
 ) -> Result<Vec<ApiResourceInfo>, IpcError> {
     state.core.resources_discover(&cluster_id, refresh).await
+}
+
+/// The names of the palette's kinds (spec C §10.1).
+#[tauri::command]
+pub async fn resources_names(
+    state: State<'_, AppState>,
+    cluster_id: ClusterId,
+) -> Result<ObjectNames, IpcError> {
+    state.core.resources_names(&cluster_id).await
 }
 
 /// Streams the resource to `on_event` and returns the subscription id. When the

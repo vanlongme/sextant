@@ -448,6 +448,11 @@ impl AppCore {
         self.inner.connections.set_timeouts(t);
     }
 
+    /// Shortens the 30 s that `resources_names` keeps an answer.
+    pub fn set_names_ttl_for_test(&self, ttl: Duration) {
+        self.inner.connections.set_names_ttl(ttl);
+    }
+
     pub fn prefs_get(&self) -> Prefs {
         self.inner.prefs.get()
     }

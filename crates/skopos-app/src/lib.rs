@@ -134,6 +134,7 @@ fn run_app(core: AppCore, mut log_guard: Option<WorkerGuard>, context: Context<W
             commands::sessions::session_ack,
             commands::sessions::session_stop,
             commands::resources::resources_discover,
+            commands::resources::resources_names,
             commands::resources::resources_subscribe,
             commands::resources::resources_unsubscribe,
             commands::resources::resources_list,

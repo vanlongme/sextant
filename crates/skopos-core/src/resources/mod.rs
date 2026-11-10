@@ -7,6 +7,7 @@ mod argocd;
 mod discovery;
 mod drain;
 mod hub;
+mod names;
 mod ops;
 mod sanitize;
 mod service_account;
@@ -22,6 +23,8 @@ pub use argocd::{
 pub(crate) use drain::RunningDrain;
 pub use drain::{DrainEvent, DrainOptions, DrainOutcome, PodRef, SkipReason, SkippedPod};
 pub(crate) use hub::WatchHub;
+pub(crate) use names::NAMES_TTL;
+pub use names::{ObjectName, ObjectNames};
 pub(crate) use ops::{invalid, is_path_segment};
 pub use ops::{InvolvedRef, Propagation};
 pub use sanitize::strip_for_list;

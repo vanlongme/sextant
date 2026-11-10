@@ -4,7 +4,7 @@ use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use dashmap::DashMap;
 use kube::{Client, Discovery};
@@ -21,7 +21,7 @@ use crate::app_core::CoreEvent;
 use crate::error::{sanitize_text, CoreResult, ErrorCode, IpcError};
 use crate::kubeconfig::{ClusterId, ContextEntry};
 use crate::prefs::ClusterSettings;
-use crate::resources::ApiResourceInfo;
+use crate::resources::{ApiResourceInfo, ObjectNames, NAMES_TTL};
 
 const RUNTIME_DIR: &str = "runtime";
 const LOG_CAPACITY: usize = 500;
@@ -101,6 +101,8 @@ struct Live {
     epoch: u64,
     /// Dropped with the connection, so a reconnect starts without it.
     resources: Option<Arc<Vec<ApiResourceInfo>>>,
+    /// The palette's names and when they were read. Dropped with the connection.
+    names: Option<(Instant, Arc<ObjectNames>)>,
 }
 
 static NEXT_EPOCH: AtomicU64 = AtomicU64::new(1);
@@ -210,6 +212,7 @@ impl ClusterHandle {
                     discovery: established.discovery,
                     epoch: NEXT_EPOCH.fetch_add(1, Ordering::Relaxed),
                     resources: None,
+                    names: None,
                 });
                 shared.push_log(LogLevel::Info, "connected".to_owned());
                 ConnectionState::Connected {
@@ -282,6 +285,7 @@ pub(crate) struct ClusterManager {
     runtime_dir: PathBuf,
     events: broadcast::Sender<CoreEvent>,
     timeouts: Mutex<ConnectTimeouts>,
+    names_ttl: Mutex<Duration>,
 }
 
 impl ClusterManager {
@@ -294,6 +298,7 @@ impl ClusterManager {
             runtime_dir,
             events,
             timeouts: Mutex::new(ConnectTimeouts::default()),
+            names_ttl: Mutex::new(NAMES_TTL),
         }
     }
 
@@ -443,6 +448,37 @@ impl ClusterManager {
                     live.discovery = Arc::new(discovery);
                 }
                 live.resources = Some(resources);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    pub(crate) fn set_names_ttl(&self, ttl: Duration) {
+        *lock(&self.names_ttl) = ttl;
+    }
+
+    /// The palette's names read for this connection less than the TTL ago.
+    pub(crate) fn cached_names(&self, id: &ClusterId) -> CoreResult<Option<Arc<ObjectNames>>> {
+        let ttl = *lock(&self.names_ttl);
+        self.with_live(id, |live, _, _| {
+            live.names
+                .as_ref()
+                .filter(|(read_at, _)| read_at.elapsed() < ttl)
+                .map(|(_, names)| names.clone())
+        })
+    }
+
+    /// Keeps the names for the connection with this epoch and returns whether it
+    /// did, like `store_resources`.
+    pub(crate) fn store_names(&self, id: &ClusterId, epoch: u64, names: Arc<ObjectNames>) -> bool {
+        let Some(handle) = self.handle(id) else {
+            return false;
+        };
+        let mut shared = lock(&handle.shared);
+        match shared.live.as_mut() {
+            Some(live) if live.epoch == epoch => {
+                live.names = Some((Instant::now(), names));
                 true
             }
             _ => false,

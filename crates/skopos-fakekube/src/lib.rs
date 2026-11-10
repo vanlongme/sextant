@@ -101,6 +101,8 @@ struct State_ {
     log_failures: BTreeMap<LogKey, u16>,
     /// The query of every log request, oldest first.
     log_requests: Vec<BTreeMap<String, String>>,
+    /// path -> how many metadata-only lists (`as=PartialObjectMetadataList`) reached it.
+    metadata_lists: BTreeMap<String, usize>,
 }
 
 type LogKey = (String, String, String);
@@ -304,6 +306,7 @@ impl FakeKube {
                 logs: BTreeMap::new(),
                 log_failures: BTreeMap::new(),
                 log_requests: Vec::new(),
+                metadata_lists: BTreeMap::new(),
             }),
             events,
             stop_watches,
@@ -461,6 +464,16 @@ impl FakeKube {
 
     pub fn request_count(&self, path: &str) -> usize {
         self.inner.lock().counts.get(path).copied().unwrap_or(0)
+    }
+
+    /// How many metadata-only lists reached `path`.
+    pub fn metadata_list_count(&self, path: &str) -> usize {
+        self.inner
+            .lock()
+            .metadata_lists
+            .get(path)
+            .copied()
+            .unwrap_or(0)
     }
 
     /// How many watch requests reached `path`, without its lists.
@@ -910,7 +923,7 @@ async fn generic(
         }
     }
     match verb {
-        "list" => list(&s, &res, &t, &q),
+        "list" => list(&s, &res, &t, &q, &headers, uri.path()),
         "watch" => watch_response(s, &res, &t, uri.path(), &q),
         "get" => get_one(&s, &res, &t),
         "create" => create(&s, &res, &t, &body),
@@ -1080,9 +1093,29 @@ fn list_item(obj: &Value) -> Value {
     item
 }
 
-fn list(s: &Shared, res: &FakeResource, t: &Target, q: &BTreeMap<String, String>) -> Response {
-    let st = s.lock();
-    let items: Vec<Value> = st
+/// The Accept header of kube's `list_metadata`.
+fn wants_metadata_only(headers: &HeaderMap) -> bool {
+    headers
+        .get_all(axum::http::header::ACCEPT)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .any(|value| value.contains("as=PartialObjectMetadataList"))
+}
+
+fn list(
+    s: &Shared,
+    res: &FakeResource,
+    t: &Target,
+    q: &BTreeMap<String, String>,
+    headers: &HeaderMap,
+    path: &str,
+) -> Response {
+    let metadata_only = wants_metadata_only(headers);
+    let mut st = s.lock();
+    if metadata_only {
+        *st.metadata_lists.entry(path.to_string()).or_insert(0) += 1;
+    }
+    let mut items: Vec<Value> = st
         .objects
         .get(&res.plural)
         .map(|m| {
@@ -1094,10 +1127,42 @@ fn list(s: &Shared, res: &FakeResource, t: &Target, q: &BTreeMap<String, String>
                 .collect()
         })
         .unwrap_or_default();
+    let mut metadata = json!({ "resourceVersion": st.rv.to_string() });
+    // A real server pages at `limit` and hands out a token for the rest. The fake's
+    // token is the offset of the next item, so a client that pages (kube's watcher
+    // asks for 500) gets every object.
+    let offset = q
+        .get("continue")
+        .and_then(|c| c.strip_prefix("fake-continue-"))
+        .and_then(|n| n.parse::<usize>().ok())
+        .unwrap_or(0)
+        .min(items.len());
+    items.drain(..offset);
+    let limit = q
+        .get("limit")
+        .and_then(|l| l.parse::<usize>().ok())
+        .filter(|l| *l > 0 && items.len() > *l);
+    if let Some(limit) = limit {
+        metadata["continue"] = json!(format!("fake-continue-{}", offset + limit));
+        metadata["remainingItemCount"] = json!(items.len() - limit);
+        items.truncate(limit);
+    }
+    if metadata_only {
+        let items: Vec<Value> = items
+            .into_iter()
+            .map(|item| json!({ "metadata": item["metadata"].clone() }))
+            .collect();
+        return json_ok(json!({
+            "apiVersion": "meta.k8s.io/v1",
+            "kind": "PartialObjectMetadataList",
+            "metadata": metadata,
+            "items": items,
+        }));
+    }
     json_ok(json!({
         "apiVersion": res.api_version(),
         "kind": format!("{}List", res.kind),
-        "metadata": { "resourceVersion": st.rv.to_string() },
+        "metadata": metadata,
         "items": items,
     }))
 }

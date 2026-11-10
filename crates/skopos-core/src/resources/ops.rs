@@ -91,7 +91,7 @@ pub(super) fn object_request(
 
 /// The parts of `r` become the URL path, and what gets blanked in the answer depends on
 /// them, so a reference holding a path is refused here, before any request.
-fn resource_request(r: &ResourceRef, namespace: Option<&str>) -> CoreResult<Request> {
+pub(super) fn resource_request(r: &ResourceRef, namespace: Option<&str>) -> CoreResult<Request> {
     validate(r)?;
     let resource = ApiResource {
         group: r.group.clone(),

@@ -14,6 +14,7 @@ import type { LogDownload } from "./generated/LogDownload";
 import type { LogEvent } from "./generated/LogEvent";
 import type { LogOptions } from "./generated/LogOptions";
 import type { LogTarget } from "./generated/LogTarget";
+import type { ObjectNames } from "./generated/ObjectNames";
 import type { PortForward } from "./generated/PortForward";
 import type { PortForwardSpec } from "./generated/PortForwardSpec";
 import type { Prefs } from "./generated/Prefs";
@@ -49,6 +50,9 @@ export const api = {
   prefsSet: (prefs: Prefs) => call<void>("prefs_set", { prefs }),
   resourcesDiscover: (clusterId: string, refresh: boolean) =>
     call<ApiResourceInfo[]>("resources_discover", { clusterId, refresh }),
+  /** The names of 14 kinds for the palette; the backend keeps them for 30 s. */
+  resourcesNames: (clusterId: string) =>
+    call<ObjectNames>("resources_names", { clusterId }),
   /** Returns the subscription id. Events go to `onEvent` until unsubscribed. */
   resourcesSubscribe: (
     clusterId: string,

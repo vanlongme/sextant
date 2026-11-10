@@ -26,7 +26,7 @@ pub(super) fn state_name(state: &ConnectionState) -> &'static str {
 }
 
 /// Resources with a `list` verb, without subresources, one entry per group and plural.
-fn served_resources(discovery: &Discovery) -> Vec<Served> {
+pub(super) fn served_resources(discovery: &Discovery) -> Vec<Served> {
     let mut served = Vec::new();
     for group in discovery.groups() {
         for (resource, capabilities) in group.recommended_resources() {
