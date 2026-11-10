@@ -14,8 +14,11 @@ const envGroups = new Map<string, AppEnv>();
 
 const stops: Array<() => Promise<void>> = [];
 
-function createEnv(kubeconfigs: Record<string, string>): AppEnv {
-  const env = prepareAppEnv({ kubeconfigs });
+function createEnv(
+  kubeconfigs: Record<string, string>,
+  prefs?: Record<string, unknown>,
+): AppEnv {
+  const env = prepareAppEnv({ kubeconfigs, prefs });
   envs.push(env);
   return env;
 }
@@ -53,12 +56,14 @@ async function envForSpec(spec: string): Promise<AppEnv> {
     return shared;
   }
   let kubeconfigs = fixture.kubeconfigs;
+  let prefs: Record<string, unknown> | undefined;
   if (fixture.start) {
     const started = await fixture.start();
     stops.push(started.stop);
     kubeconfigs = { ...kubeconfigs, ...started.kubeconfigs };
+    prefs = started.prefs;
   }
-  const env = createEnv(kubeconfigs);
+  const env = createEnv(kubeconfigs, prefs);
   if (fixture.envGroup) envGroups.set(fixture.envGroup, env);
   return env;
 }

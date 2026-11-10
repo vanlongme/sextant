@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { startFakeKube } from "./fakekube";
+import { findHelm } from "./helmCharts";
 
 /** Unreachable, so nothing in these specs ever depends on a live cluster. */
 const DEAD_SERVER = "http://127.0.0.1:1";
@@ -37,6 +38,8 @@ export interface SpecFixture {
    */
   start?: () => Promise<{
     kubeconfigs: Record<string, string>;
+    /** Saved as the app's preferences before it starts; see `prepareAppEnv`. */
+    prefs?: Record<string, unknown>;
     stop(): Promise<void>;
   }>;
 }
@@ -89,6 +92,19 @@ async function startKindFixture() {
   };
 }
 
+/**
+ * The kind cluster, and helm: on PATH it needs nothing more, else the managed copy
+ * is set as `helmPath` in the preferences. `findHelm` throws when there is neither.
+ */
+async function startHelmFixture() {
+  const helm = findHelm();
+  return {
+    kubeconfigs: { kind: fs.readFileSync(KIND_KUBECONFIG, "utf8") },
+    prefs: helm.onPath ? undefined : { helmPath: helm.path },
+    async stop() {},
+  };
+}
+
 const FIXTURES: Record<string, SpecFixture> = {
   catalog: { kubeconfigs: { config: kubeconfig(["alpha", "beta"]) } },
   "hotbar-restart-1-save": {
@@ -131,6 +147,7 @@ const FIXTURES: Record<string, SpecFixture> = {
     envGroup: "port-forward-restart",
   },
   screens: { kubeconfigs: {}, start: startKindFixture },
+  helm: { kubeconfigs: {}, start: startHelmFixture },
 };
 
 /** Specs with no entry start with an empty `~/.kube`. */
