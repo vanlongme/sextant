@@ -1,4 +1,4 @@
-.PHONY: check ui-build build dev fmt e2e-build e2e e2e-smoke e2e-screens test-kind test-argocd
+.PHONY: check ui-build build dev fmt e2e-build e2e e2e-smoke e2e-screens test-kind test-argocd test-metrics
 ifeq ($(shell uname -s),Linux)
 XVFB := xvfb-run -a --server-args="-screen 0 1600x1000x24"
 else
@@ -37,6 +37,13 @@ test-argocd:
 	scripts/argocd-up.sh
 	cargo test -p skopos-core --test 'argocd_*' -- --ignored --test-threads=1; \
 	  status=$$?; scripts/argocd-down.sh; exit $$status
+
+test-metrics:
+	scripts/kind-up.sh
+	scripts/metrics-up.sh
+	cargo test -p skopos-core --test 'metrics_*' -- --ignored --test-threads=1; \
+	  status=$$?; scripts/metrics-down.sh; exit $$status
+
 e2e-smoke: e2e-build
 	cargo build -p skopos-fakekube
 	SKOPOS_E2E_SPEC_SET=smoke $(XVFB) pnpm -C e2e exec wdio run wdio.conf.ts
