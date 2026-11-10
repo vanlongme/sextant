@@ -5,6 +5,7 @@ mod download;
 mod follow;
 mod parse;
 mod workload;
+pub(crate) use workload::workload_selector;
 
 use std::sync::Arc;
 use std::time::Duration;

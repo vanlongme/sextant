@@ -6,6 +6,7 @@ pub mod error;
 pub mod external_url;
 pub mod helm;
 pub mod kubeconfig;
+pub mod metrics;
 pub mod paths;
 pub mod portforward;
 pub mod prefs;

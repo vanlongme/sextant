@@ -38,7 +38,7 @@ pub(super) fn is_workload(resource: &ResourceRef) -> bool {
 
 /// The selector in `spec.selector`. An empty one would select every pod in the namespace,
 /// which no workload means.
-pub(super) fn workload_selector(workload: &Value) -> CoreResult<Selector> {
+pub(crate) fn workload_selector(workload: &Value) -> CoreResult<Selector> {
     let raw = workload
         .pointer("/spec/selector")
         .cloned()
