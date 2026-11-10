@@ -70,3 +70,17 @@
   gap: var(--space-7);
   min-height: 52px;
 }
+
+.toolText {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.toolAction {
+  display: flex;
+  flex: 0 1 280px;
+  justify-content: flex-end;
+  min-width: 0;
+}

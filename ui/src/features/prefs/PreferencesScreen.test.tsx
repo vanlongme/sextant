@@ -8,7 +8,9 @@ import {
 import { beforeEach, expect, test } from "vitest";
 import { Toaster } from "../../design";
 import type { Prefs } from "../../ipc/generated/Prefs";
+import { resetHelmForTest } from "../../stores/helm";
 import { resetPrefsForTest, usePrefs } from "../../stores/prefs";
+import { toolStatus } from "../../test/helm";
 import { mockBackend } from "../../test/ipc";
 import { PreferencesScreen } from "./PreferencesScreen";
 
@@ -27,6 +29,10 @@ function show(
   const ipc = mockBackend({
     prefs_get: () => prefs,
     prefs_set: () => null,
+    tools_status: () => [
+      toolStatus({ tool: "helm" }),
+      toolStatus({ tool: "kubectl" }),
+    ],
     ...over,
   });
   render(
@@ -40,6 +46,7 @@ function show(
 
 beforeEach(() => {
   resetPrefsForTest();
+  resetHelmForTest();
   delete document.documentElement.dataset.theme;
 });
 
@@ -68,6 +75,7 @@ test("shows an error with a retry when prefs cannot be read", async () => {
         throw { code: "Internal", message: "cannot read", details: null };
       return saved;
     },
+    tools_status: () => [],
   });
   render(<PreferencesScreen />);
 
@@ -242,4 +250,12 @@ test("the theme is a Segmented control, and Dark applies and saves the theme", a
     ]),
   );
   expect(usePrefs.getState().prefs?.theme).toBe("dark");
+});
+
+test("Tools sits between Kubeconfig sources and Appearance", async () => {
+  show();
+  await screen.findByTestId("pref-tool-helm");
+  expect(
+    screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent),
+  ).toEqual(["Kubeconfig sources", "Tools", "Appearance"]);
 });
