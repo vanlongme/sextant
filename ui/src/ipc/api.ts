@@ -3,6 +3,8 @@ import { call } from "./client";
 import type { ApiResourceInfo } from "./generated/ApiResourceInfo";
 import type { AppInfo } from "./generated/AppInfo";
 import type { ApplyResult } from "./generated/ApplyResult";
+import type { ChartSearch } from "./generated/ChartSearch";
+import type { ChartVersion } from "./generated/ChartVersion";
 import type { ClusterEntry } from "./generated/ClusterEntry";
 import type { ClusterSettings } from "./generated/ClusterSettings";
 import type { ConnectionLogEntry } from "./generated/ConnectionLogEntry";
@@ -10,6 +12,15 @@ import type { ConnectionState } from "./generated/ConnectionState";
 import type { DataChange } from "./generated/DataChange";
 import type { DrainEvent } from "./generated/DrainEvent";
 import type { DrainOptions } from "./generated/DrainOptions";
+import type { HelmInfo } from "./generated/HelmInfo";
+import type { HelmInstallRequest } from "./generated/HelmInstallRequest";
+import type { HelmPreview } from "./generated/HelmPreview";
+import type { HelmReleaseDetail } from "./generated/HelmReleaseDetail";
+import type { HelmReleaseList } from "./generated/HelmReleaseList";
+import type { HelmRepo } from "./generated/HelmRepo";
+import type { HelmRepoAdd } from "./generated/HelmRepoAdd";
+import type { HelmRevision } from "./generated/HelmRevision";
+import type { HelmUpgradeRequest } from "./generated/HelmUpgradeRequest";
 import type { InvolvedRef } from "./generated/InvolvedRef";
 import type { LogDownload } from "./generated/LogDownload";
 import type { LogEvent } from "./generated/LogEvent";
@@ -27,6 +38,8 @@ import type { SessionEvent } from "./generated/SessionEvent";
 import type { SyncWarning } from "./generated/SyncWarning";
 import type { JsonValue } from "./generated/serde_json/JsonValue";
 import type { TerminalSize } from "./generated/TerminalSize";
+import type { ToolName } from "./generated/ToolName";
+import type { ToolStatus } from "./generated/ToolStatus";
 import type { WatchEvent } from "./generated/WatchEvent";
 
 export const api = {
@@ -365,6 +378,122 @@ export const api = {
   portforwardRemove: (id: string) => call<void>("portforward_remove", { id }),
   /** The backend opens https URLs, and http ones on localhost or 127.0.0.1. */
   openExternal: (url: string) => call<void>("open_external", { url }),
+  /** Never touches the network. */
+  toolsStatus: () => call<ToolStatus[]>("tools_status"),
+  /** Resolves once installed; progress comes as `tools://progress` events. */
+  toolsDownload: (tool: ToolName) =>
+    call<ToolStatus>("tools_download", { tool }),
+  toolsDownloadCancel: (tool: ToolName) =>
+    call<void>("tools_download_cancel", { tool }),
+  helmVersion: () => call<HelmInfo>("helm_version"),
+  helmRepoList: () => call<HelmRepo[]>("helm_repo_list"),
+  helmRepoAdd: (repo: HelmRepoAdd) => call<void>("helm_repo_add", { repo }),
+  helmRepoRemove: (name: string) => call<void>("helm_repo_remove", { name }),
+  /** Null updates every repository. */
+  helmRepoUpdate: (names: string[] | null) =>
+    call<void>("helm_repo_update", { names }),
+  /** An empty query lists every chart; a null limit lists them all. */
+  helmChartSearch: (query: string, limit: number | null) =>
+    call<ChartSearch>("helm_chart_search", { query, limit }),
+  /** Newest first. */
+  helmChartVersions: (repo: string, chart: string) =>
+    call<ChartVersion[]>("helm_chart_versions", { repo, chart }),
+  /** Untrusted markdown from the chart's author. */
+  helmChartReadme: (repo: string, chart: string, version: string) =>
+    call<string>("helm_chart_readme", { repo, chart, version }),
+  /** YAML. */
+  helmChartValues: (repo: string, chart: string, version: string) =>
+    call<string>("helm_chart_values", { repo, chart, version }),
+  /** Null lists every namespace. */
+  helmReleaseList: (clusterId: string, namespaces: string[] | null) =>
+    call<HelmReleaseList>("helm_release_list", { clusterId, namespaces }),
+  helmReleaseGet: (clusterId: string, namespace: string, name: string) =>
+    call<HelmReleaseDetail>("helm_release_get", {
+      clusterId,
+      namespace,
+      name,
+    }),
+  /** YAML: the computed values when `all`, else the user-supplied ones ("" for none). */
+  helmReleaseValues: (
+    clusterId: string,
+    namespace: string,
+    name: string,
+    all: boolean,
+  ) => call<string>("helm_release_values", { clusterId, namespace, name, all }),
+  /** Newest first. */
+  helmReleaseHistory: (clusterId: string, namespace: string, name: string) =>
+    call<HelmRevision[]>("helm_release_history", {
+      clusterId,
+      namespace,
+      name,
+    }),
+  /** A server-side dry run; it creates nothing. */
+  helmInstallPreview: (clusterId: string, request: HelmInstallRequest) =>
+    call<HelmPreview>("helm_install_preview", { clusterId, request }),
+  helmUpgradePreview: (clusterId: string, request: HelmUpgradeRequest) =>
+    call<HelmPreview>("helm_upgrade_preview", { clusterId, request }),
+  /** Returns the session id. helm's output goes to `onData`, the rest to `onEvent`. */
+  helmInstallStart: (
+    clusterId: string,
+    request: HelmInstallRequest,
+    onData: (chunk: ArrayBuffer) => void,
+    onEvent: (event: SessionEvent) => void,
+  ) =>
+    call<string>("helm_install_start", {
+      clusterId,
+      request,
+      onData: new Channel<ArrayBuffer>(onData),
+      onEvent: new Channel<SessionEvent>(onEvent),
+    }),
+  helmUpgradeStart: (
+    clusterId: string,
+    request: HelmUpgradeRequest,
+    onData: (chunk: ArrayBuffer) => void,
+    onEvent: (event: SessionEvent) => void,
+  ) =>
+    call<string>("helm_upgrade_start", {
+      clusterId,
+      request,
+      onData: new Channel<ArrayBuffer>(onData),
+      onEvent: new Channel<SessionEvent>(onEvent),
+    }),
+  helmRollbackStart: (
+    clusterId: string,
+    namespace: string,
+    release: string,
+    revision: number,
+    wait: boolean,
+    onData: (chunk: ArrayBuffer) => void,
+    onEvent: (event: SessionEvent) => void,
+  ) =>
+    call<string>("helm_rollback_start", {
+      clusterId,
+      namespace,
+      release,
+      revision,
+      wait,
+      onData: new Channel<ArrayBuffer>(onData),
+      onEvent: new Channel<SessionEvent>(onEvent),
+    }),
+  /** `keepHistory` passes --keep-history: the release stays listed as `uninstalled`. */
+  helmUninstallStart: (
+    clusterId: string,
+    namespace: string,
+    release: string,
+    wait: boolean,
+    keepHistory: boolean,
+    onData: (chunk: ArrayBuffer) => void,
+    onEvent: (event: SessionEvent) => void,
+  ) =>
+    call<string>("helm_uninstall_start", {
+      clusterId,
+      namespace,
+      release,
+      wait,
+      keepHistory,
+      onData: new Channel<ArrayBuffer>(onData),
+      onEvent: new Channel<SessionEvent>(onEvent),
+    }),
   uiStateGet: (key: string) => call<JsonValue | null>("ui_state_get", { key }),
   uiStateSet: (key: string, value: JsonValue) =>
     call<void>("ui_state_set", { key, value }),

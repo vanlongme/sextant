@@ -3,6 +3,7 @@ import type { ConnectionState } from "./generated/ConnectionState";
 import type { PortForward } from "./generated/PortForward";
 import type { StoreWarning } from "./generated/StoreWarning";
 import type { SyncWarning } from "./generated/SyncWarning";
+import type { ToolProgress } from "./generated/ToolProgress";
 
 function on<T>(
   name: string,
@@ -24,6 +25,9 @@ export const events = {
   /** Carries the whole list after every change. */
   onPortForwardsChanged: (handler: (forwards: PortForward[]) => void) =>
     on("portforward://changed", handler),
+  /** A tool download's progress: at most every 200 ms, and at once on each phase change. */
+  onToolsProgress: (handler: (progress: ToolProgress) => void) =>
+    on("tools://progress", handler),
   /** The macOS menu's app items: `about`, `preferences`, `palette`, `shortcuts`. */
   onMenuCommand: (handler: (command: { id: string }) => void) =>
     on("menu://command", handler),
