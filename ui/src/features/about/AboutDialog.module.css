@@ -1,0 +1,118 @@
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-7);
+  margin-bottom: var(--space-10);
+}
+
+.tile {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-accent);
+  color: var(--text-on-accent);
+}
+
+.titles {
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  color: var(--text-primary);
+  font: var(--type-heading);
+}
+
+.tagline {
+  margin: var(--space-3) 0 0;
+  color: var(--text-secondary);
+  font: var(--type-body-sm);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.facts {
+  display: grid;
+  gap: var(--space-4);
+  margin: 0 0 var(--space-10);
+}
+
+.fact {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: var(--space-6);
+}
+
+.fact dt {
+  color: var(--text-secondary);
+  font: var(--type-body-sm);
+}
+
+.fact dd {
+  margin: 0;
+  color: var(--text-primary);
+  font: var(--type-mono);
+  overflow-wrap: anywhere;
+}
+
+.sectionTitle {
+  margin: 0 0 var(--space-5);
+  color: var(--text-tertiary);
+  font: var(--type-overline);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+}
+
+.components {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.components table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.components th {
+  position: sticky;
+  top: 0;
+  padding: var(--space-4) var(--space-6);
+  background: var(--surface-raised);
+  color: var(--text-tertiary);
+  font: var(--type-caption);
+  text-align: left;
+}
+
+.components td {
+  padding: var(--space-4) var(--space-6);
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  font: var(--type-body-sm);
+}
+
+.components td + td {
+  font: var(--type-mono);
+}
+
+.notice {
+  margin: var(--space-8) 0 0;
+  color: var(--text-secondary);
+  font: var(--type-caption);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-5);
+  margin-top: var(--space-10);
+}

@@ -1,10 +1,13 @@
 import { useEffect, useRef } from "react";
 import { Outlet, useNavigate } from "react-router";
+import { AboutDialog } from "../features/about/AboutDialog";
 import { CommandPalette } from "../features/palette/CommandPalette";
+import { ShortcutsDialog } from "../features/shortcuts/ShortcutsDialog";
+import { events } from "../ipc/events";
 import { useCatalog } from "../stores/catalog";
 import { useShell } from "../stores/shell";
 import { AppHeader } from "./AppHeader";
-import { runCommand, useCommandContext } from "./commands";
+import { runCommand, runMenuCommand, useCommandContext } from "./commands";
 import { Hotbar } from "./Hotbar";
 import { installHistoryShortcuts } from "./history";
 import styles from "./Shell.module.css";
@@ -42,6 +45,17 @@ export function Shell() {
     [],
   );
 
+  // The macOS menu's app items (spec C §9.2). Elsewhere nothing emits the event.
+  useEffect(() => {
+    const listening = events.onMenuCommand(({ id }) =>
+      runMenuCommand(id, contextRef.current),
+    );
+    return () => {
+      // A failed unlisten at unmount has nothing to undo, so it is not reported.
+      void listening.then((unlisten) => unlisten()).catch(() => {});
+    };
+  }, []);
+
   return (
     <div className={styles.shell}>
       <Hotbar />
@@ -53,6 +67,8 @@ export function Shell() {
       </div>
       <StatusBar />
       <CommandPalette />
+      <ShortcutsDialog />
+      <AboutDialog />
     </div>
   );
 }

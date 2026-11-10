@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, test } from "vitest";
 import { resetCatalogForTest } from "../stores/catalog";
 import { resetShellForTest } from "../stores/shell";
-import { clusterEntry, mockBackend } from "../test/ipc";
+import { clusterEntry, emitEvent, mockBackend } from "../test/ipc";
 import { App } from "./App";
 
 beforeEach(() => {
@@ -138,4 +138,41 @@ test("Ctrl+Shift+P opens the palette from a text field", async () => {
   expect(
     await screen.findByRole("dialog", { name: "Command palette" }),
   ).toBeTruthy();
+});
+
+test("menu commands open the dialogs and Preferences", async () => {
+  mockBackend({
+    catalog_list: () => [clusterEntry({ contextName: "alpha" })],
+    catalog_warnings: () => [],
+    hotbar_get: () => [],
+    prefs_get: () => ({ theme: "system", syncSources: [] }),
+    app_info: () => {
+      throw { code: "Internal", message: "no facts", details: null };
+    },
+  });
+
+  render(<App />);
+  await screen.findByTestId("catalog-row-alpha");
+
+  await emitEvent("menu://command", { id: "shortcuts" });
+  expect(
+    await screen.findByRole("dialog", { name: "Keyboard shortcuts" }),
+  ).toBeTruthy();
+
+  await emitEvent("menu://command", { id: "about" });
+  expect(
+    await screen.findByRole("dialog", { name: "About SkoposIDE" }),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("dialog", { name: "Keyboard shortcuts" }),
+  ).toBeNull();
+
+  await emitEvent("menu://command", { id: "palette" });
+  expect(
+    await screen.findByRole("dialog", { name: "Command palette" }),
+  ).toBeTruthy();
+
+  await emitEvent("menu://command", { id: "preferences" });
+  await waitFor(() => expect(window.location.hash).toBe("#/preferences"));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 });
