@@ -203,6 +203,8 @@ pub async fn helm_rollback_start(
     Ok(id)
 }
 
+// The IPC contract fixes these arguments, and a command takes them one by one.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn helm_uninstall_start(
     state: State<'_, AppState>,
@@ -210,13 +212,14 @@ pub async fn helm_uninstall_start(
     namespace: String,
     release: String,
     wait: bool,
+    keep_history: bool,
     on_data: Channel<InvokeResponseBody>,
     on_event: Channel<SessionEvent>,
 ) -> Result<String, IpcError> {
     let (tx, rx) = mpsc::channel(OUTPUT_BACKLOG);
     let id = state
         .core
-        .helm_uninstall_start(&cluster_id, &namespace, &release, wait, tx)
+        .helm_uninstall_start(&cluster_id, &namespace, &release, wait, keep_history, tx)
         .await?;
     forward_output(state.core.clone(), id.clone(), rx, on_data, on_event);
     Ok(id)

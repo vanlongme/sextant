@@ -599,8 +599,27 @@ async fn release_lifecycle(core: &AppCore, id: &ClusterId, client: &Client, name
         Some("hi")
     );
 
+    // Keeping the history removes the objects and lists the release as uninstalled.
     let (tx, rx) = mpsc::channel(64);
-    core.helm_uninstall_start(id, namespace, RELEASE, true, tx)
+    core.helm_uninstall_start(id, namespace, RELEASE, true, true, tx)
+        .await
+        .unwrap();
+    exited(rx).await;
+    let kept = core
+        .helm_release_list(id, Some(vec![namespace.to_owned()]))
+        .await
+        .unwrap();
+    let states: Vec<(&str, &str)> = kept
+        .releases
+        .iter()
+        .map(|release| (release.name.as_str(), release.status.as_str()))
+        .collect();
+    assert_eq!(states, [(RELEASE, "uninstalled")]);
+    assert_eq!(config_message(client, namespace).await, None);
+
+    // A plain uninstall then purges that history.
+    let (tx, rx) = mpsc::channel(64);
+    core.helm_uninstall_start(id, namespace, RELEASE, true, false, tx)
         .await
         .unwrap();
     exited(rx).await;
@@ -609,7 +628,6 @@ async fn release_lifecycle(core: &AppCore, id: &ClusterId, client: &Client, name
         .await
         .unwrap();
     assert!(after.releases.is_empty(), "{:?}", after.releases);
-    assert_eq!(config_message(client, namespace).await, None);
 }
 
 async fn whole_flow(version: Version) {

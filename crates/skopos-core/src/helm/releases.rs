@@ -96,6 +96,8 @@ pub struct HelmReleaseDetail {
     pub first_deployed: Option<String>,
     pub last_deployed: Option<String>,
     pub resources: Vec<ManifestResource>,
+    /// The current revision's rendered manifest, as helm stores it; empty when it has none.
+    pub manifest: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
@@ -236,6 +238,7 @@ pub(crate) fn detail_from(
         notes: text(info, "notes"),
         first_deployed: text(info, "first_deployed").and_then(|time| rfc3339(&time)),
         last_deployed,
+        manifest: manifest.to_owned(),
     }
 }
 
@@ -833,5 +836,10 @@ just text
         let json = serde_json::to_value(&detail).unwrap();
         assert_eq!(json["name"], "rel");
         assert_eq!(json["resources"][0]["ref"]["plural"], "configmaps");
+        assert_eq!(json["manifest"], status["manifest"]);
+
+        // A status without a manifest gives an empty one.
+        let bare = serde_json::json!({ "name": "rel", "version": 1 });
+        assert_eq!(detail_from(&bare, &[], &lookup).manifest, "");
     }
 }

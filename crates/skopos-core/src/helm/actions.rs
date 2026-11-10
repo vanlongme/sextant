@@ -271,9 +271,13 @@ pub(crate) fn uninstall_args(
     namespace: &str,
     major: HelmMajor,
     wait: bool,
+    keep_history: bool,
 ) -> Vec<OsString> {
     let mut call = args(&["uninstall", release]);
     call.extend(cluster_args(kubeconfig, namespace));
+    if keep_history {
+        call.push("--keep-history".into());
+    }
     finish(&mut call, major, wait, Run::Action);
     call
 }
@@ -527,13 +531,21 @@ impl AppCore {
         namespace: &str,
         release: &str,
         wait: bool,
+        keep_history: bool,
         output: mpsc::Sender<SessionOutput>,
     ) -> CoreResult<String> {
         check_namespace(namespace)?;
         check_name("release", release)?;
         let helm = self.helm_binary().await?;
         let kubeconfig = self.cluster_kubeconfig_path(id)?;
-        let call = uninstall_args(release, &kubeconfig, namespace, helm.major, wait);
+        let call = uninstall_args(
+            release,
+            &kubeconfig,
+            namespace,
+            helm.major,
+            wait,
+            keep_history,
+        );
         self.start_action(id, helm, call, None, output)
     }
 }
@@ -772,6 +784,7 @@ mod tests {
             "ns",
             HelmMajor::V4,
             true,
+            false,
         ));
         assert_eq!(
             call,
@@ -789,8 +802,27 @@ mod tests {
             "ns",
             HelmMajor::V4,
             false,
+            false,
         ));
         assert_eq!(call.len(), 4);
+        let call = texts(&uninstall_args(
+            "rel",
+            Path::new(KUBECONFIG),
+            "ns",
+            HelmMajor::V3,
+            false,
+            true,
+        ));
+        assert_eq!(
+            call,
+            [
+                "uninstall",
+                "rel",
+                "--kubeconfig=/data/runtime/c.yaml",
+                "--namespace=ns",
+                "--keep-history"
+            ]
+        );
     }
 
     #[test]

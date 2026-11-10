@@ -587,6 +587,9 @@ async fn a_release_detail_comes_from_status_history_and_discovery() {
             ("gadget".into(), None, None),
         ]
     );
+    // The current revision's manifest comes back as helm printed it.
+    let status: serde_json::Value = serde_json::from_str(STATUS).unwrap();
+    assert_eq!(detail.manifest, status["manifest"].as_str().unwrap());
     let kubeconfig = kubeconfig_arg(&core, &id);
     let kubeconfig = kubeconfig.as_str();
     let mut calls = helm.calls();
@@ -885,7 +888,7 @@ async fn bad_requests_are_refused_before_helm_runs() {
     assert_eq!(error.code, ErrorCode::InvalidInput);
     let (tx, _rx) = mpsc::channel(32);
     let error = core
-        .helm_uninstall_start(&id, "skopos-test-helm", "-rel", false, tx)
+        .helm_uninstall_start(&id, "skopos-test-helm", "-rel", false, false, tx)
         .await
         .unwrap_err();
     assert_eq!(error.code, ErrorCode::InvalidInput);
@@ -971,7 +974,7 @@ async fn rollback_and_uninstall_run_as_sessions() {
         "{events:?}"
     );
     let (tx, rx) = mpsc::channel(32);
-    core.helm_uninstall_start(&id, "skopos-test-helm", "rel", false, tx)
+    core.helm_uninstall_start(&id, "skopos-test-helm", "rel", false, true, tx)
         .await
         .unwrap();
     let (_, events) = session_output(rx).await;
@@ -996,7 +999,8 @@ async fn rollback_and_uninstall_run_as_sessions() {
                 "uninstall",
                 "rel",
                 kubeconfig,
-                "--namespace=skopos-test-helm"
+                "--namespace=skopos-test-helm",
+                "--keep-history"
             ]),
         ]
     );
