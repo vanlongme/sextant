@@ -12,6 +12,7 @@ import { HelmReleasesRoute } from "../features/helm/HelmReleasesScreen";
 import { PortForwardsRoute } from "../features/portForward/PortForwardsScreen";
 import { PreferencesScreen } from "../features/prefs/PreferencesScreen";
 import { ResourceRoute } from "../features/resources/ResourceScreen";
+import { ClusterSettingsRoute } from "../features/settings/ClusterSettingsScreen";
 import { Shell } from "./Shell";
 
 /** A router over the current hash. */
@@ -38,6 +39,7 @@ export function createAppRouter() {
               path: "helm/upgrade/:namespace/:name",
               element: <HelmUpgradeRoute />,
             },
+            { path: "settings", element: <ClusterSettingsRoute /> },
           ],
         },
         { path: "preferences", element: <PreferencesScreen /> },

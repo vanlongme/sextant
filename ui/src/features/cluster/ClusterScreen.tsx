@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useMatch, useParams } from "react-router";
 import { EmptyState, Spinner } from "../../design";
 import { useCatalog } from "../../stores/catalog";
 import { useClusterState, useConnect } from "../../stores/clusters";
+import { ClusterSettingsScreen } from "../settings/ClusterSettingsScreen";
 import { ClusterLayout } from "./ClusterLayout";
 import styles from "./ClusterScreen.module.css";
 import { ConnectionPanel } from "./ConnectionPanel";
@@ -10,6 +11,9 @@ import { ConnectionPanel } from "./ConnectionPanel";
 function ClusterView({ id }: { id: string }) {
   const state = useClusterState(id);
   const { connect, disconnect, busy } = useConnect(id);
+  // The Settings page opens whether or not the cluster is connected: it does not
+  // connect, and it shows in place of the connection panel.
+  const onSettings = useMatch("/cluster/:id/settings") !== null;
   // One automatic connect per mount, and none after the user disconnects.
   const autoDone = useRef(false);
   const [userDisconnected, setUserDisconnected] = useState(false);
@@ -28,10 +32,12 @@ function ClusterView({ id }: { id: string }) {
   }, [state.status]);
 
   useEffect(() => {
-    if (autoDone.current || state.status !== "disconnected") return;
+    if (autoDone.current || onSettings || state.status !== "disconnected") {
+      return;
+    }
     autoDone.current = true;
     void connect();
-  }, [state.status, connect]);
+  }, [state.status, connect, onSettings]);
 
   // Cancel while connecting, in the connection panel.
   function userDisconnect(): void {
@@ -40,6 +46,9 @@ function ClusterView({ id }: { id: string }) {
     void disconnect();
   }
 
+  if (onSettings && state.status !== "connected") {
+    return <ClusterSettingsScreen clusterId={id} />;
+  }
   return (
     <div className={styles.screen}>
       {state.status === "connected" ? (

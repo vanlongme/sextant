@@ -1,0 +1,122 @@
+/* The page scrolls on its own, both inside the cluster layout and in place of the
+   connection panel. */
+.page {
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-8) var(--space-9) var(--space-10);
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-7);
+}
+
+.titles {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font: var(--type-subheading);
+}
+
+.sub {
+  margin: var(--space-3) 0 0;
+  color: var(--text-secondary);
+  font: var(--type-body-sm);
+  overflow-wrap: anywhere;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-7);
+  padding: var(--space-9);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-1);
+}
+
+.heading {
+  margin: 0;
+  font: var(--type-heading);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-7);
+}
+
+.promGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-7);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.icon {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-6);
+}
+
+.iconLabel {
+  font: var(--type-body-sm);
+}
+
+.iconImage {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-inset);
+}
+
+.noIcon {
+  color: var(--text-tertiary);
+  font: var(--type-caption);
+}
+
+.iconError {
+  flex-basis: 100%;
+  color: var(--text-danger);
+  font: var(--type-caption);
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.status {
+  flex: 1 1 240px;
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--type-body-sm);
+}
