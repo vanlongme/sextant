@@ -49,6 +49,10 @@ for (const theme of ["light", "dark"] as const) {
     ).toBeGreaterThanOrEqual(4.5);
   });
 
+  test(`${theme}: the chart series reaches 3:1 on cards`, () => {
+    expect(contrast(v("--chart-series"), card)).toBeGreaterThanOrEqual(3);
+  });
+
   test(`${theme}: text on filled buttons reaches 4.5:1`, () => {
     expect(
       contrast(v("--text-on-accent"), v("--surface-accent")),
@@ -63,6 +67,11 @@ test("the dark theme keeps the design system's own danger and warning text", () 
   const dark = themeTokens("dark");
   expect(dark.get("--text-danger")).toBe("#ff8088");
   expect(dark.get("--status-warning-text")).toBe("#ffc178");
+});
+
+test("the chart series is the accent, one step lighter in the dark theme", () => {
+  expect(themeTokens("light").get("--chart-series")).toBe("#0b57e3");
+  expect(themeTokens("dark").get("--chart-series")).toBe("#4f80fb");
 });
 
 test.each(CLUSTER_PALETTE)("white initials on %s reach 3:1", (colour) => {

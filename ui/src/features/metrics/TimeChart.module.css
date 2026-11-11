@@ -1,0 +1,167 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-7) var(--space-7) var(--space-5);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-hairline);
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font: var(--type-label);
+  white-space: nowrap;
+}
+
+.sub {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: var(--type-caption);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.now {
+  flex: none;
+  font: var(--type-label);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.body {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  grid-template-rows: 140px 20px;
+}
+
+.yAxis,
+.xAxis {
+  position: relative;
+}
+
+.yTick {
+  position: absolute;
+  right: var(--space-5);
+  transform: translateY(-50%);
+  font: var(--type-caption);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.xTick {
+  position: absolute;
+  top: var(--space-3);
+  transform: translateX(-50%);
+  font: var(--type-caption);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.plot {
+  position: relative;
+  min-width: 0;
+  outline: none;
+  cursor: crosshair;
+}
+
+.plot:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-xs);
+}
+
+.svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.grid {
+  fill: none;
+  stroke: var(--divider);
+  stroke-width: 1;
+}
+
+.area {
+  fill: var(--chart-series);
+  fill-opacity: 0.1;
+  stroke: none;
+}
+
+.ref {
+  fill: none;
+  stroke: var(--text-tertiary);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+}
+
+.line {
+  fill: none;
+  stroke: var(--chart-series);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.halfLabel {
+  position: absolute;
+  left: var(--space-4);
+  font: var(--type-caption);
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+
+.upLabel {
+  top: var(--space-2);
+}
+
+.downLabel {
+  bottom: var(--space-2);
+}
+
+.refLabel {
+  position: absolute;
+  right: var(--space-3);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-xs);
+  background: var(--surface-card);
+  font: var(--type-caption);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.above {
+  transform: translateY(calc(-100% - 2px));
+}
+
+.below {
+  transform: translateY(3px);
+}
+
+.empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0 var(--space-8);
+  text-align: center;
+  font: var(--type-body-sm);
+  color: var(--text-secondary);
+}

@@ -23,6 +23,16 @@ body,
   color-scheme: dark;
 }
 
+/* The chart series colour (D2 §7.2): the design system's accent, one step lighter on the
+   dark surfaces. */
+:root {
+  --chart-series: var(--orbit-500);
+}
+
+[data-theme="dark"] {
+  --chart-series: var(--orbit-400);
+}
+
 body {
   background: var(--surface-page);
   color: var(--text-primary);
