@@ -7,6 +7,7 @@ import {
   metricsResult,
   metricsServer,
   NO_PROMETHEUS,
+  noProvider,
   PROMETHEUS_DOWN,
   points,
   prometheus,
@@ -286,6 +287,20 @@ test("no ask while hidden or disconnected; one ask when the window shows again o
   await flush();
   expect(asks()).toBe(3);
   stop();
+});
+
+test("a reconnect forgets the provider although no watcher is alive", async () => {
+  mockBackend({ metrics_provider: () => noProvider() });
+  ensureProvider("c1");
+  await flush();
+  expect(metrics().providers.c1?.value).toEqual(noProvider());
+
+  // Every panel unmounts while the cluster is not connected.
+  setClusterState("c1", { status: "disconnected" });
+  await flush();
+  setClusterState("c1", CONNECTED);
+  await flush();
+  expect(metrics().providers.c1).toBeUndefined();
 });
 
 test("an older answer of the same key is dropped", async () => {

@@ -29,6 +29,23 @@
   border-bottom: 1px solid var(--border-subtle);
 }
 
+.stickyEnd {
+  position: sticky;
+  right: 0;
+  background: var(--surface-card);
+}
+
+.bodyRow:hover .stickyEnd {
+  background: var(--surface-hover);
+}
+
+.bodyRow.selected .stickyEnd,
+.bodyRow.active .stickyEnd,
+.bodyRow.selected:hover .stickyEnd,
+.bodyRow.active:hover .stickyEnd {
+  background: var(--surface-selected);
+}
+
 .head .cell {
   color: var(--text-secondary);
   font: var(--type-caption);

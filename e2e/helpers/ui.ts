@@ -27,9 +27,6 @@ export async function clickWhenShown(id: string): Promise<void> {
  * send pointer events, which Radix menus open on.
  */
 export async function pointerClick(element: WebdriverIO.Element): Promise<void> {
-  // A table wider than the window (the CPU and Memory columns) scrolls sideways, and the
-  // pointer lands where the element is on screen.
-  await element.scrollIntoView({ block: "nearest", inline: "nearest" });
   const at = await element.getLocation();
   const size = await element.getSize();
   await browser

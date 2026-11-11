@@ -179,8 +179,12 @@ function statusesOf(): Map<string, string> {
   );
 }
 
-/** Starts with the first poller: reconnects and the window coming back. */
-function startListening(): void {
+/**
+ * Reconnects are watched for the store's whole life, not only while a poller lives:
+ * a disconnected cluster unmounts every panel, and the provider must still be forgotten.
+ */
+function watchCatalog(): void {
+  if (unwatchCatalog) return;
   let statuses = statusesOf();
   unwatchCatalog = useCatalog.subscribe(() => {
     const before = statuses;
@@ -192,12 +196,14 @@ function startListening(): void {
       }
     }
   });
+}
+
+/** Starts with the first poller: the window coming back. */
+function startListening(): void {
   document.addEventListener("visibilitychange", onVisibility);
 }
 
 function stopListening(): void {
-  unwatchCatalog?.();
-  unwatchCatalog = null;
   document.removeEventListener("visibilitychange", onVisibility);
 }
 
@@ -211,6 +217,7 @@ function watch(
 ): () => void {
   let poller = pollers.get(key);
   if (!poller) {
+    watchCatalog();
     if (pollers.size === 0) startListening();
     const created: Poller = {
       key,
@@ -272,6 +279,7 @@ function patchUsage(key: string, change: Partial<UsageSlice>): void {
 }
 
 function loadProvider(clusterId: string, refresh: boolean): Promise<void> {
+  watchCatalog();
   const mine = (providerSeq.get(clusterId) ?? 0) + 1;
   providerSeq.set(clusterId, mine);
   patchProvider(clusterId, { loading: true });
@@ -518,5 +526,7 @@ export function resetMetricsForTest(): void {
   providerLoads.clear();
   notServedRefreshed.clear();
   stopListening();
+  unwatchCatalog?.();
+  unwatchCatalog = null;
   useMetrics.setState(FIRST);
 }

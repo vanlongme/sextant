@@ -157,6 +157,7 @@ export function ResourceScreen(props: {
         id: ACTIONS_COLUMN,
         header: "Actions",
         width: 72,
+        stickyEnd: true,
         render: (o) => (
           <RowActions
             object={o}

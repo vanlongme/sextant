@@ -25,6 +25,8 @@ export interface TableColumn<T> {
   render(row: T): ReactNode;
   /** Hidden unless the table is given its own `hiddenColumns`. */
   defaultHidden?: boolean;
+  /** Stays at the right edge while the table scrolls sideways. */
+  stickyEnd?: boolean;
 }
 
 export type TableSort = { id: string; dir: "asc" | "desc" };
@@ -235,7 +237,11 @@ export function VirtualTable<T>(props: {
               return (
                 <th
                   key={c.id}
-                  className={styles.cell}
+                  className={
+                    c.stickyEnd
+                      ? `${styles.cell} ${styles.stickyEnd}`
+                      : styles.cell
+                  }
                   aria-sort={
                     active
                       ? active.dir === "asc"
@@ -327,7 +333,14 @@ export function VirtualTable<T>(props: {
                   </td>
                 ) : null}
                 {columns.map((c) => (
-                  <td key={c.id} className={styles.cell}>
+                  <td
+                    key={c.id}
+                    className={
+                      c.stickyEnd
+                        ? `${styles.cell} ${styles.stickyEnd}`
+                        : styles.cell
+                    }
+                  >
                     {c.render(row)}
                   </td>
                 ))}
