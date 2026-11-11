@@ -17,8 +17,11 @@ export interface TableColumn<T> {
   header: string;
   /** Pixels, or any CSS grid track such as `minmax(160px, 1fr)`. */
   width: number | string;
-  /** A column can be sorted when it has this. */
-  sortValue?(row: T): string | number;
+  /**
+   * A column can be sorted when it has this. Null is a row with nothing to sort by,
+   * such as a cell that shows "—": it sorts last in both directions.
+   */
+  sortValue?(row: T): string | number | null;
   render(row: T): ReactNode;
   /** Hidden unless the table is given its own `hiddenColumns`. */
   defaultHidden?: boolean;
@@ -125,7 +128,11 @@ export function VirtualTable<T>(props: {
     // Each row's value is read once: it may mean evaluating a JSONPath.
     return props.rows
       .map((row) => ({ row, key: value(row) }))
-      .sort((a, b) => sign * compare(a.key, b.key))
+      .sort((a, b) => {
+        if (a.key === null) return b.key === null ? 0 : 1;
+        if (b.key === null) return -1;
+        return sign * compare(a.key, b.key);
+      })
       .map(({ row }) => row);
   }, [props.rows, columns, sort]);
 

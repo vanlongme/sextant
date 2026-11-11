@@ -5,6 +5,7 @@ import { api } from "../../ipc/api";
 import { baseColumns, statusColumn, textColumn } from "../columns";
 import type { KindAction } from "../registry";
 import { registerKind } from "../registry";
+import { usageColumns } from "../usageColumns";
 import { nodeShellAction } from "../workloads/sessionActions";
 import { DrainDialog } from "./DrainDialog";
 import { NodeDetail } from "./NodeDetail";
@@ -51,7 +52,7 @@ const drain: KindAction = {
 };
 
 registerKind("", "nodes", {
-  columns: (info) =>
+  columns: (info, usage) =>
     baseColumns(
       info.resource,
       statusColumn(nodeStatus),
@@ -61,6 +62,7 @@ registerKind("", "nodes", {
         "Version",
         (o) => o.status?.nodeInfo?.kubeletVersion,
       ),
+      ...usageColumns(usage, (o) => o.metadata.name),
       textColumn("ip", "Internal IP", internalIp),
       {
         id: "taints",

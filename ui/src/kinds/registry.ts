@@ -4,6 +4,7 @@ import { type TableColumn, useNow } from "../design/VirtualTable";
 import type { ApiResourceInfo } from "../ipc/generated/ApiResourceInfo";
 import type { ResourceRef } from "../ipc/generated/ResourceRef";
 import { formatAge, type KubeObject } from "./objects";
+import type { UsageView } from "./usageColumns";
 
 export interface KindAction {
   id: string;
@@ -44,8 +45,14 @@ export interface DetailProps {
 }
 
 export interface KindSpec {
-  /** The whole set of columns for this kind, in place of the defaults. */
-  columns?(resource: ApiResourceInfo): TableColumn<KubeObject>[];
+  /**
+   * The whole set of columns for this kind, in place of the defaults. `usage` is the
+   * latest metrics-server usage, for the kinds that show CPU and Memory.
+   */
+  columns?(
+    resource: ApiResourceInfo,
+    usage?: UsageView,
+  ): TableColumn<KubeObject>[];
   /** Row actions, shown above the Delete every kind has. */
   actions?: KindAction[];
   /** The kind's own part of the detail drawer, in place of the generic field tree. */

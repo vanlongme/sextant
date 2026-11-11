@@ -133,6 +133,27 @@ test("sorts numbers numerically and strings with locale compare", () => {
   expect(shownIds()).toEqual(["r3", "r1", "r2"]);
 });
 
+test("a row without a sort value sorts last in both directions", () => {
+  const sized: TableColumn<Row> = {
+    ...columns[1],
+    // A negative size stands for a cell that shows "—".
+    sortValue: (r) => (r.size < 0 ? null : r.size),
+  };
+  render(
+    <VirtualTable
+      rows={[row("a", "a", 2), row("none", "none", -1), row("c", "c", 1)]}
+      columns={[columns[0], sized]}
+      rowKey={rowKey}
+      rowTestId={rowTestId}
+    />,
+  );
+  const button = screen.getByRole("button", { name: /Size/ });
+  fireEvent.click(button);
+  expect(shownIds()).toEqual(["c", "a", "none"]);
+  fireEvent.click(button);
+  expect(shownIds()).toEqual(["a", "c", "none"]);
+});
+
 test("sorting 10000 rows reads each sort value once and shares one collator", () => {
   const rows = Array.from({ length: 10000 }, (_, i) =>
     row(`r${i}`, `pod-${(i * 7919) % 10000}`),

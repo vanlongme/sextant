@@ -8,8 +8,9 @@ import {
   textColumn,
 } from "../columns";
 import { portForwardAction } from "../network/portForwardAction";
-import type { KubeObject } from "../objects";
+import { type KubeObject, objectKey } from "../objects";
 import { registerKind } from "../registry";
+import { usageColumns } from "../usageColumns";
 import "./jobs";
 import { podLogsAction, workloadLogsAction } from "./logsAction";
 import { PodDetail } from "./PodDetail";
@@ -25,7 +26,7 @@ import {
 import { podAttachAction, podShellAction } from "./sessionActions";
 
 registerKind("", "pods", {
-  columns: (info) =>
+  columns: (info, usage) =>
     baseColumns(
       info.resource,
       textColumn("ready", "Ready", (o) => podSummary(o).ready, { width: 72 }),
@@ -33,6 +34,7 @@ registerKind("", "pods", {
       numberColumn("restarts", "Restarts", (o) => podSummary(o).restarts),
       textColumn("ip", "IP", (o) => o.status?.podIP, { defaultHidden: true }),
       textColumn("node", "Node", (o) => o.spec?.nodeName),
+      ...usageColumns(usage, objectKey),
       textColumn("qos", "QoS", (o) => o.status?.qosClass, {
         defaultHidden: true,
       }),

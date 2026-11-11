@@ -18,10 +18,12 @@ import { BUILTIN_GROUPS, groupFromSegment } from "../../kinds/nav";
 import { type KubeObject, objectKey } from "../../kinds/objects";
 import { columnsFromCrd } from "../../kinds/printerColumns";
 import { defaultColumns, kindSpec } from "../../kinds/registry";
+import type { UsageView } from "../../kinds/usageColumns";
 import { findResource, useResourceList } from "../../stores/resources";
 import { useUiState } from "../../stores/uiState";
 import { useClusterContext } from "../cluster/ClusterLayout";
 import { DetailDrawer, type SummaryItem } from "../details/DetailDrawer";
+import { useListUsage } from "../metrics/useListUsage";
 import { DeleteDialog } from "./DeleteDialog";
 import { matchesSearch } from "./filter";
 import { NamespaceFilter, namespaceFilterKey } from "./NamespaceFilter";
@@ -76,10 +78,11 @@ function useCustomResourceDefinition(
 function kindColumns(
   info: ApiResourceInfo,
   crd: KubeObject | undefined,
+  usage: UsageView | undefined,
 ): TableColumn<KubeObject>[] {
   const { resource } = info;
   const registered = kindSpec(resource.group, resource.plural)?.columns;
-  if (registered) return registered(info);
+  if (registered) return registered(info, usage);
   const printer = columnsFromCrd(crd, resource.version);
   if (printer.length === 0) return defaultColumns(resource);
   return [
@@ -144,10 +147,12 @@ export function ResourceScreen(props: {
     );
   }, [list.items, namespaces, search]);
 
+  // CPU and Memory for Pods and Nodes; undefined for every other kind.
+  const usage = useListUsage(clusterId, resource, namespaces);
   const columns = useMemo<TableColumn<KubeObject>[]>(() => {
     const actions = kindSpec(resource.group, resource.plural)?.actions ?? [];
     return [
-      ...kindColumns(info, crd),
+      ...kindColumns(info, crd, usage),
       {
         id: ACTIONS_COLUMN,
         header: "Actions",
@@ -163,7 +168,7 @@ export function ResourceScreen(props: {
         ),
       },
     ];
-  }, [info, crd, resource, context]);
+  }, [info, crd, resource, context, usage]);
 
   const kindActions = kindSpec(resource.group, resource.plural)?.actions ?? [];
 
