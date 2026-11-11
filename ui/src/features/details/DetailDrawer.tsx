@@ -13,6 +13,8 @@ import type { ResourceRef } from "../../ipc/generated/ResourceRef";
 import { type KubeObject, objectKey } from "../../kinds/objects";
 import { kindSpec } from "../../kinds/registry";
 import { rowsAreTrimmed, useResourceList } from "../../stores/resources";
+import { DrawerMetrics } from "../metrics/DrawerMetrics";
+import { metricsTargetOf } from "../metrics/targets";
 import { ConditionsSection } from "./ConditionsSection";
 import { CopyRow } from "./CopyRow";
 import styles from "./DetailDrawer.module.css";
@@ -29,10 +31,21 @@ export interface SummaryItem {
   value: React.ReactNode;
 }
 
-const TABS = [
-  { value: "overview", label: "Overview" },
-  { value: "events", label: "Events" },
-];
+const OVERVIEW_TAB = {
+  value: "overview",
+  label: "Overview",
+  testId: "detail-tab-overview",
+};
+const METRICS_TAB = {
+  value: "metrics",
+  label: "Metrics",
+  testId: "detail-tab-metrics",
+};
+const EVENTS_TAB = {
+  value: "events",
+  label: "Events",
+  testId: "detail-tab-events",
+};
 
 function Owners(props: {
   clusterId: string;
@@ -82,8 +95,8 @@ function Body(props: {
   const { clusterId, resource, object, resources, summary, tab } = props;
   const Detail = kindSpec(resource.group, resource.plural)?.detail;
   const { metadata: _metadata, ...rest } = object;
-  // The overview stays mounted under the Events tab, so unsaved edits survive a
-  // tab switch.
+  // The overview stays mounted under the other tabs, so unsaved edits survive a
+  // tab switch. The metrics panel polls, so it is mounted only while it is shown.
   return (
     <>
       {tab === "events" ? (
@@ -93,7 +106,16 @@ function Body(props: {
           object={object}
         />
       ) : null}
-      <div hidden={tab === "events"}>
+      {tab === "metrics" ? (
+        <section className={styles.section} data-testid="detail-metrics">
+          <DrawerMetrics
+            clusterId={clusterId}
+            resource={resource}
+            object={object}
+          />
+        </section>
+      ) : null}
+      <div hidden={tab !== "overview"}>
         {summary.length > 0 ? (
           <section className={styles.section} data-testid="detail-summary">
             <dl className={styles.facts}>
@@ -187,6 +209,16 @@ export function DetailDrawer(props: {
     ? (whole.object ?? (found ? null : last))
     : (found ?? last);
   const name = wanted.slice(wanted.indexOf("/") + 1);
+  // Metrics are for a live Node, Pod, workload or PVC. A deleted object loses the
+  // tab, and a drawer showing it goes back to the overview.
+  const metrics =
+    shown !== null &&
+    found !== undefined &&
+    metricsTargetOf(resource, shown) !== null;
+  if (tab === "metrics" && shown !== null && !metrics) setTab("overview");
+  const tabs = metrics
+    ? [OVERVIEW_TAB, METRICS_TAB, EVENTS_TAB]
+    : [OVERVIEW_TAB, EVENTS_TAB];
 
   return (
     <aside
@@ -250,7 +282,7 @@ export function DetailDrawer(props: {
       ) : null}
       {shown ? (
         <>
-          <Tabs value={tab} onChange={setTab} tabs={TABS} />
+          <Tabs value={tab} onChange={setTab} tabs={tabs} />
           <div className={styles.content}>
             <Body
               clusterId={clusterId}

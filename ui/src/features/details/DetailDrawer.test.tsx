@@ -14,10 +14,20 @@ import type { ApiResourceInfo } from "../../ipc/generated/ApiResourceInfo";
 import type { ResourceRef } from "../../ipc/generated/ResourceRef";
 import type { WatchEvent } from "../../ipc/generated/WatchEvent";
 import type { KubeObject } from "../../kinds/objects";
+import { JOBS } from "../../kinds/refs";
 import { registerKind } from "../../kinds/registry";
+import { resetCatalogForTest } from "../../stores/catalog";
+import { resetMetricsForTest } from "../../stores/metrics";
 import { resetResourcesForTest } from "../../stores/resources";
 import { CSS_FILES, cssRules } from "../../test/css";
 import { flush, mockBackend } from "../../test/ipc";
+import {
+  metricsResult,
+  noProvider,
+  points,
+  prometheus,
+} from "../../test/metrics";
+import { connectClusters } from "../../test/terminal";
 import { DetailDrawer } from "./DetailDrawer";
 
 vi.mock("../../design/clipboard", () => ({ copyText: vi.fn(async () => {}) }));
@@ -74,8 +84,13 @@ type Get = (a: {
 /**
  * A backend whose watch sends the rows given to `snapshot` and `batch`. By default
  * `resource_get` answers with the row as it is now, or NotFound once it is deleted.
+ * `extra` adds handlers, such as the metrics commands.
  */
-function fake(events: () => unknown = () => [], get?: Get) {
+function fake(
+  events: () => unknown = () => [],
+  get?: Get,
+  extra: Parameters<typeof mockBackend>[0] = {},
+) {
   let send: (e: WatchEvent) => void = () => {};
   const rows = new Map<string, KubeObject>();
   const keep = (o: KubeObject) =>
@@ -96,6 +111,7 @@ function fake(events: () => unknown = () => [], get?: Get) {
         if (!found) throw { code: "NotFound", message: `${a.name} not found` };
         return found;
       }),
+    ...extra,
   });
   return {
     backend,
@@ -138,9 +154,15 @@ function drawer(onClose = () => {}, key: string | null = "team-a/web") {
   );
 }
 
-beforeEach(() => resetResourcesForTest());
+beforeEach(() => {
+  resetResourcesForTest();
+  resetMetricsForTest();
+  resetCatalogForTest();
+});
 afterEach(() => {
   resetResourcesForTest();
+  resetMetricsForTest();
+  resetCatalogForTest();
   vi.restoreAllMocks();
 });
 
@@ -803,4 +825,98 @@ test("a row's copy button is transparent at rest and shows on hover and focus, w
       expect(property).not.toBe("visibility");
     }
   }
+});
+
+const tabNames = () =>
+  screen.getAllByRole("tab").map((t) => t.textContent ?? "");
+
+test("a Pod gets Overview, Metrics and Events; the panel mounts only while its tab is open", async () => {
+  const f = fake(undefined, undefined, {
+    metrics_provider: () => noProvider("setting"),
+  });
+  render(drawer());
+  await act(flush);
+  await f.snapshot([pod()]);
+  expect(tabNames()).toEqual(["Overview", "Metrics", "Events"]);
+  expect(screen.getByTestId("detail-tab-overview")).toBeTruthy();
+  expect(screen.getByTestId("detail-tab-events")).toBeTruthy();
+  expect(f.backend.callsTo("metrics_provider")).toHaveLength(0);
+
+  fireEvent.mouseDown(screen.getByTestId("detail-tab-metrics"), { button: 0 });
+  await act(flush);
+  expect(f.backend.callsTo("metrics_provider")).toEqual([
+    { clusterId: "c1", refresh: false },
+  ]);
+  expect(screen.getByTestId("metrics-note").textContent).toContain(
+    "Metrics are off",
+  );
+  const hidden = [
+    ...screen.getByTestId("detail-drawer").querySelectorAll("[hidden]"),
+  ];
+  expect(hidden.some((el) => el.textContent?.includes("Labels"))).toBe(true);
+
+  fireEvent.mouseDown(screen.getByTestId("detail-tab-events"), { button: 0 });
+  await act(flush);
+  expect(screen.queryByTestId("detail-metrics")).toBeNull();
+});
+
+test("a Job has no Metrics tab", async () => {
+  const f = fake();
+  render(
+    <MemoryRouter>
+      <DetailDrawer
+        clusterId="c1"
+        resource={JOBS}
+        objectKey="team-a/web"
+        onClose={() => {}}
+      />
+    </MemoryRouter>,
+  );
+  await act(flush);
+  await f.snapshot([pod()]);
+  expect(tabNames()).toEqual(["Overview", "Events"]);
+  expect(screen.queryByTestId("detail-tab-metrics")).toBeNull();
+});
+
+test("a deleted object loses the Metrics tab and the drawer goes back to the overview", async () => {
+  const f = fake(undefined, undefined, {
+    metrics_provider: () => noProvider("setting"),
+  });
+  render(drawer());
+  await act(flush);
+  await f.snapshot([pod()]);
+  fireEvent.mouseDown(screen.getByTestId("detail-tab-metrics"), { button: 0 });
+  await act(flush);
+  expect(screen.getByTestId("detail-metrics")).toBeTruthy();
+
+  await f.batch([], [{ namespace: "team-a", name: "web" }]);
+  expect(screen.getByTestId("detail-removed")).toBeTruthy();
+  expect(tabNames()).toEqual(["Overview", "Events"]);
+  expect(
+    screen.getByTestId("detail-tab-overview").getAttribute("data-state"),
+  ).toBe("active");
+  expect(screen.queryByTestId("detail-metrics")).toBeNull();
+});
+
+test("Escape on a chart hides its readout first and closes the drawer only the second time", async () => {
+  connectClusters({ id: "c1", name: "kind" });
+  const f = fake(undefined, undefined, {
+    metrics_provider: () => prometheus(),
+    metrics_query: () => metricsResult({ cpuUsage: points([0.1, 0.2, 0.3]) }),
+  });
+  const onClose = vi.fn();
+  render(drawer(onClose));
+  await act(flush);
+  await f.snapshot([pod()]);
+  fireEvent.mouseDown(screen.getByTestId("detail-tab-metrics"), { button: 0 });
+  await act(flush);
+  await act(flush);
+  const plot = screen.getByTestId("metrics-chart-cpu-plot");
+  act(() => plot.focus());
+  expect(screen.getByTestId("metrics-chart-cpu-readout")).toBeTruthy();
+
+  fireEvent.keyDown(plot, { key: "Escape" });
+  expect(onClose).not.toHaveBeenCalled();
+  fireEvent.keyDown(plot, { key: "Escape" });
+  expect(onClose).toHaveBeenCalledTimes(1);
 });
