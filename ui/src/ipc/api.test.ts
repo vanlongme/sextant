@@ -5,6 +5,7 @@ import { api } from "./api";
 import type { HelmInstallRequest } from "./generated/HelmInstallRequest";
 import type { HelmRepoAdd } from "./generated/HelmRepoAdd";
 import type { HelmUpgradeRequest } from "./generated/HelmUpgradeRequest";
+import type { MetricsTarget } from "./generated/MetricsTarget";
 import type { PortForwardSpec } from "./generated/PortForwardSpec";
 import type { SessionEvent } from "./generated/SessionEvent";
 
@@ -276,6 +277,35 @@ test.each<[string, () => Promise<unknown>, Record<string, unknown>]>([
     "helm_upgrade_preview",
     () => api.helmUpgradePreview("c1", UPGRADE),
     { clusterId: "c1", request: UPGRADE },
+  ],
+])("%s gets exactly its arguments", async (cmd, run, args) => {
+  const backend = mockBackend({ [cmd]: () => null });
+  await run();
+  expect(backend.calls).toEqual([{ cmd, args }]);
+});
+
+const TARGET: MetricsTarget = {
+  kind: "workload",
+  namespace: "shop",
+  name: "web",
+  workloadKind: "Deployment",
+};
+
+test.each<[string, () => Promise<unknown>, Record<string, unknown>]>([
+  [
+    "metrics_provider",
+    () => api.metricsProvider("c1", true),
+    { clusterId: "c1", refresh: true },
+  ],
+  [
+    "metrics_query",
+    () => api.metricsQuery("c1", TARGET, "6h"),
+    { clusterId: "c1", target: TARGET, range: "6h" },
+  ],
+  [
+    "metrics_usage",
+    () => api.metricsUsage("c1", "pods", null),
+    { clusterId: "c1", of: "pods", namespace: null },
   ],
 ])("%s gets exactly its arguments", async (cmd, run, args) => {
   const backend = mockBackend({ [cmd]: () => null });

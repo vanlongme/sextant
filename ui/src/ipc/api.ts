@@ -26,6 +26,10 @@ import type { LogDownload } from "./generated/LogDownload";
 import type { LogEvent } from "./generated/LogEvent";
 import type { LogOptions } from "./generated/LogOptions";
 import type { LogTarget } from "./generated/LogTarget";
+import type { MetricsProvider } from "./generated/MetricsProvider";
+import type { MetricsRange } from "./generated/MetricsRange";
+import type { MetricsResult } from "./generated/MetricsResult";
+import type { MetricsTarget } from "./generated/MetricsTarget";
 import type { ObjectNames } from "./generated/ObjectNames";
 import type { PortForward } from "./generated/PortForward";
 import type { PortForwardSpec } from "./generated/PortForwardSpec";
@@ -40,6 +44,8 @@ import type { JsonValue } from "./generated/serde_json/JsonValue";
 import type { TerminalSize } from "./generated/TerminalSize";
 import type { ToolName } from "./generated/ToolName";
 import type { ToolStatus } from "./generated/ToolStatus";
+import type { UsageOf } from "./generated/UsageOf";
+import type { UsageSnapshot } from "./generated/UsageSnapshot";
 import type { WatchEvent } from "./generated/WatchEvent";
 
 export const api = {
@@ -494,6 +500,18 @@ export const api = {
       onData: new Channel<ArrayBuffer>(onData),
       onEvent: new Channel<SessionEvent>(onEvent),
     }),
+  /** Where this cluster's metrics come from. `refresh` looks again instead of using the cache. */
+  metricsProvider: (clusterId: string, refresh: boolean) =>
+    call<MetricsProvider>("metrics_provider", { clusterId, refresh }),
+  /** Prometheus only: rejects with NotFound "noPrometheus" under another provider. */
+  metricsQuery: (
+    clusterId: string,
+    target: MetricsTarget,
+    range: MetricsRange,
+  ) => call<MetricsResult>("metrics_query", { clusterId, target, range }),
+  /** metrics.k8s.io; null lists every namespace. NotFound "noMetricsServer" when not served. */
+  metricsUsage: (clusterId: string, of: UsageOf, namespace: string | null) =>
+    call<UsageSnapshot>("metrics_usage", { clusterId, of, namespace }),
   uiStateGet: (key: string) => call<JsonValue | null>("ui_state_get", { key }),
   uiStateSet: (key: string, value: JsonValue) =>
     call<void>("ui_state_set", { key, value }),
