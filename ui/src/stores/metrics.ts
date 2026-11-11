@@ -5,6 +5,8 @@ import type { MetricsProvider } from "../ipc/generated/MetricsProvider";
 import type { MetricsRange } from "../ipc/generated/MetricsRange";
 import type { MetricsResult } from "../ipc/generated/MetricsResult";
 import type { MetricsTarget } from "../ipc/generated/MetricsTarget";
+import type { UsageItem } from "../ipc/generated/UsageItem";
+import type { UsageOf } from "../ipc/generated/UsageOf";
 import type { UsageSnapshot } from "../ipc/generated/UsageSnapshot";
 import { useCatalog } from "./catalog";
 import { asFailure } from "./helm";
@@ -40,6 +42,12 @@ export const QUERY_STEP_MS: Record<MetricsRange, number> = {
   "7d": 3_600_000,
 };
 
+/** metrics-server is read every 15 s. */
+export const USAGE_POLL_MS = 15_000;
+/** One hour of 15 s samples per item. */
+export const HISTORY_LIMIT = 240;
+export const HISTORY_SECONDS = 3600;
+
 export interface MetricsState {
   /** By cluster id. */
   providers: Record<string, Slice<MetricsProvider>>;
@@ -73,9 +81,13 @@ export const useMetrics: UseBoundStore<StoreApi<MetricsState>> =
   }));
 
 const IDLE = { value: null, error: null, loading: false } as const;
+const IDLE_USAGE: UsageSlice = { ...IDLE, history: {}, nextAt: null };
 
 interface Poller {
+  key: string;
   clusterId: string;
+  /** A metrics-server poller: it records `nextAt` and pauses while usage is not served. */
+  usage: boolean;
   /** Watchers that share it. */
   count: number;
   timer: number;
@@ -89,6 +101,8 @@ const pollers = new Map<string, Poller>();
 const seqs = new Map<string, number>();
 const providerSeq = new Map<string, number>();
 const providerLoads = new Map<string, Promise<void>>();
+// Clusters whose provider was read again after a noMetricsServer answer, until forgetProvider.
+const notServedRefreshed = new Set<string>();
 let unwatchCatalog: (() => void) | null = null;
 
 /** The same string for the same cluster, target and range, whatever order the target's fields were written in. */
@@ -121,10 +135,17 @@ function connected(clusterId: string): boolean {
 }
 
 function mayAsk(poller: Poller): boolean {
-  return document.visibilityState === "visible" && connected(poller.clusterId);
+  return (
+    document.visibilityState === "visible" &&
+    connected(poller.clusterId) &&
+    !(poller.usage && useMetrics.getState().usageNotServed[poller.clusterId])
+  );
 }
 
 function tick(poller: Poller): void {
+  if (poller.usage) {
+    patchUsage(poller.key, { nextAt: Date.now() + USAGE_POLL_MS });
+  }
   if (mayAsk(poller)) {
     poller.missed = false;
     poller.ask();
@@ -184,6 +205,7 @@ function stopListening(): void {
 function watch(
   key: string,
   clusterId: string,
+  usage: boolean,
   every: number,
   ask: () => void,
 ): () => void {
@@ -191,7 +213,9 @@ function watch(
   if (!poller) {
     if (pollers.size === 0) startListening();
     const created: Poller = {
+      key,
       clusterId,
+      usage,
       count: 0,
       timer: 0,
       missed: false,
@@ -212,6 +236,7 @@ function watch(
     if (mine.count > 0) return;
     window.clearInterval(mine.timer);
     pollers.delete(key);
+    if (mine.usage) patchUsage(key, { nextAt: null });
     if (pollers.size === 0) stopListening();
   };
 }
@@ -237,6 +262,15 @@ function patchQuery(key: string, change: Partial<Slice<MetricsResult>>): void {
   }));
 }
 
+function patchUsage(key: string, change: Partial<UsageSlice>): void {
+  useMetrics.setState((s) => ({
+    usage: {
+      ...s.usage,
+      [key]: { ...(s.usage[key] ?? IDLE_USAGE), ...change },
+    },
+  }));
+}
+
 function loadProvider(clusterId: string, refresh: boolean): Promise<void> {
   const mine = (providerSeq.get(clusterId) ?? 0) + 1;
   providerSeq.set(clusterId, mine);
@@ -246,6 +280,17 @@ function loadProvider(clusterId: string, refresh: boolean): Promise<void> {
       const value = await api.metricsProvider(clusterId, refresh);
       if (providerSeq.get(clusterId) !== mine) return;
       patchProvider(clusterId, { value, error: null, loading: false });
+      if (useMetrics.getState().usageNotServed[clusterId]) {
+        // Looked again after a noMetricsServer answer: let the usage pollers try again.
+        useMetrics.setState((s) => {
+          const usageNotServed = { ...s.usageNotServed };
+          delete usageNotServed[clusterId];
+          return { usageNotServed };
+        });
+        for (const poller of pollers.values()) {
+          if (poller.usage && poller.clusterId === clusterId) tick(poller);
+        }
+      }
     } catch (error) {
       if (providerSeq.get(clusterId) !== mine) return;
       patchProvider(clusterId, { error: asFailure(error), loading: false });
@@ -276,6 +321,7 @@ export function refreshProvider(clusterId: string): Promise<void> {
 export function forgetProvider(clusterId: string): void {
   providerSeq.set(clusterId, (providerSeq.get(clusterId) ?? 0) + 1);
   providerLoads.delete(clusterId);
+  notServedRefreshed.delete(clusterId);
   useMetrics.setState((s) => {
     const providers = { ...s.providers };
     delete providers[clusterId];
@@ -331,9 +377,135 @@ export function watchQuery(
   return watch(
     queryKey(clusterId, target, range),
     clusterId,
+    false,
     QUERY_STEP_MS[range],
     () => {
       void askQuery(clusterId, target, range);
+    },
+  );
+}
+
+export function usageKey(
+  clusterId: string,
+  of: UsageOf,
+  namespace: string | null,
+): string {
+  return JSON.stringify([clusterId, of, namespace]);
+}
+
+function itemKey(of: UsageOf, item: UsageItem): string {
+  return of === "nodes" ? item.name : `${item.namespace ?? ""}/${item.name}`;
+}
+
+/**
+ * Appends a snapshot to the rolling history: one sample per item, only when it is
+ * newer than the item's last one. Samples an hour older than the snapshot go, also
+ * for items that left it, and each item keeps its newest `HISTORY_LIMIT`.
+ */
+function appendHistory(
+  history: Record<string, Sample[]>,
+  snapshot: UsageSnapshot,
+  of: UsageOf,
+): Record<string, Sample[]> {
+  const t = Date.parse(snapshot.timestamp) / 1000;
+  if (!Number.isFinite(t)) return history;
+  const next: Record<string, Sample[]> = { ...history };
+  for (const item of snapshot.items) {
+    const key = itemKey(of, item);
+    const samples = next[key] ?? [];
+    const last = samples[samples.length - 1];
+    if (last && last.t >= t) continue;
+    next[key] = [
+      ...samples,
+      { t, cpu: item.cpuCores, memory: item.memoryBytes },
+    ];
+  }
+  for (const [key, samples] of Object.entries(next)) {
+    const kept = samples
+      .filter((sample) => sample.t > t - HISTORY_SECONDS)
+      .slice(-HISTORY_LIMIT);
+    if (kept.length === 0) delete next[key];
+    else next[key] = kept;
+  }
+  return next;
+}
+
+/** metrics.k8s.io is not served: the cluster's usage pollers pause until the provider is read again. */
+function markNotServed(clusterId: string): void {
+  useMetrics.setState((s) => ({
+    usageNotServed: { ...s.usageNotServed, [clusterId]: true },
+  }));
+  const provider = useMetrics.getState().providers[clusterId]?.value;
+  if (
+    provider?.kind === "metricsServer" &&
+    !notServedRefreshed.has(clusterId)
+  ) {
+    notServedRefreshed.add(clusterId);
+    void refreshProvider(clusterId);
+  }
+}
+
+/** Reads metrics.k8s.io now, whatever the poller's state (the error block's Retry). */
+export async function askUsage(
+  clusterId: string,
+  of: UsageOf,
+  namespace: string | null,
+): Promise<void> {
+  const key = usageKey(clusterId, of, namespace);
+  const mine = nextSeq(key);
+  patchUsage(key, { loading: true });
+  try {
+    const snapshot = await api.metricsUsage(clusterId, of, namespace);
+    if (seqs.get(key) !== mine) return;
+    useMetrics.setState((s) => {
+      const slice = s.usage[key] ?? IDLE_USAGE;
+      return {
+        usage: {
+          ...s.usage,
+          [key]: {
+            ...slice,
+            value: snapshot,
+            error: null,
+            loading: false,
+            history: appendHistory(slice.history, snapshot, of),
+          },
+        },
+      };
+    });
+  } catch (error) {
+    if (seqs.get(key) !== mine) return;
+    const failure = asFailure(error);
+    if (failure.code === "Unreachable") {
+      patchUsage(key, { loading: false });
+      markMissed(key);
+    } else if (
+      failure.code === "NotFound" &&
+      failure.details === "noMetricsServer"
+    ) {
+      patchUsage(key, { loading: false });
+      markNotServed(clusterId);
+    } else {
+      patchUsage(key, { error: failure, loading: false });
+    }
+  }
+}
+
+/**
+ * Keeps metrics.k8s.io usage fresh while something shows it: watchers of the same
+ * cluster, `of` and namespace share one poller that asks at once, then every 15 s.
+ */
+export function watchUsage(
+  clusterId: string,
+  of: UsageOf,
+  namespace: string | null,
+): () => void {
+  return watch(
+    usageKey(clusterId, of, namespace),
+    clusterId,
+    true,
+    USAGE_POLL_MS,
+    () => {
+      void askUsage(clusterId, of, namespace);
     },
   );
 }
@@ -344,6 +516,7 @@ export function resetMetricsForTest(): void {
   seqs.clear();
   providerSeq.clear();
   providerLoads.clear();
+  notServedRefreshed.clear();
   stopListening();
   useMetrics.setState(FIRST);
 }
