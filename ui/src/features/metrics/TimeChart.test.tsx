@@ -16,7 +16,9 @@ function props(over: Partial<TimeChartProps> = {}): TimeChartProps {
     domain: { start: T0, end: T0 + 120, step: 60 },
     period: "1 hour",
     days: false,
+    missing: [],
     emptyText: "No samples in this range.",
+    view: "chart",
     ...over,
   };
 }

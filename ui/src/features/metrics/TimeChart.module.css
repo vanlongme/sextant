@@ -165,3 +165,118 @@
   font: var(--type-body-sm);
   color: var(--text-secondary);
 }
+
+.hairline {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border-default);
+  pointer-events: none;
+}
+
+.dot {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border: 2px solid var(--surface-card);
+  border-radius: 50%;
+  background: var(--chart-series);
+  pointer-events: none;
+}
+
+.readout {
+  position: absolute;
+  top: var(--space-4);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 150px;
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-3);
+  transform: translateX(10px);
+  pointer-events: none;
+}
+
+.flip {
+  transform: translateX(calc(-100% - 10px));
+}
+
+.readoutTime {
+  font: var(--type-caption);
+  color: var(--text-secondary);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  white-space: nowrap;
+}
+
+.swatch {
+  flex: none;
+  width: 14px;
+  height: 0;
+  border-top: 2px solid var(--chart-series);
+}
+
+.dashed {
+  border-top-style: dashed;
+  border-top-color: var(--text-tertiary);
+}
+
+.value {
+  font: var(--type-label);
+  font-variant-numeric: tabular-nums;
+}
+
+.rowName {
+  font: var(--type-caption);
+  color: var(--text-secondary);
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font: var(--type-body-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.table th {
+  padding: var(--space-4) var(--space-7) var(--space-4) 0;
+  font: var(--type-overline);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  text-align: left;
+}
+
+.table td {
+  padding: var(--space-3) var(--space-7) var(--space-3) 0;
+  white-space: nowrap;
+}
+
+.table td:first-child {
+  color: var(--text-secondary);
+}
+
+.table tbody tr {
+  border-top: 1px solid var(--divider);
+}
+
+.tableEmpty {
+  margin: 0;
+  padding: var(--space-8) 0;
+  text-align: center;
+  font: var(--type-body-sm);
+  color: var(--text-secondary);
+}
