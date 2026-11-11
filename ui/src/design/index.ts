@@ -11,6 +11,7 @@ export { IconButton } from "./IconButton";
 export { Input } from "./Input";
 export { CheckMenu, Menu } from "./Menu";
 export { ProgressBar } from "./ProgressBar";
+export { RadioGroup, type RadioOption } from "./RadioGroup";
 export { Segmented } from "./Segmented";
 export { Select } from "./Select";
 export { Spinner } from "./Spinner";
