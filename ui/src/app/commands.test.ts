@@ -51,6 +51,7 @@ test("the registry lists the spec's commands in order", () => {
       ["install-chart", "Install a Helm chart", null],
       ["terminal", "Open a terminal in prod", "terminal"],
       ["disconnect", "Disconnect prod", null],
+      ["cluster-settings", "Cluster settings for prod", null],
       ["shortcuts", "Show keyboard shortcuts", "shortcuts"],
       ["about", "About SkoposIDE", null],
       ["theme-dark", "Theme: Dark", null],
@@ -62,19 +63,20 @@ test("the registry lists the spec's commands in order", () => {
   );
 });
 
-test("terminal, disconnect and install-chart need the current cluster connected", () => {
+test("terminal, disconnect and install-chart need the current cluster connected; cluster-settings any cluster", () => {
   const available = (ctx: CommandContext) =>
     COMMANDS.filter((c) => c.available(ctx)).map((c) => c.id);
   const all = COMMANDS.map((c) => c.id);
-  const always = all.filter(
+  const onCluster = all.filter(
     (id) => id !== "terminal" && id !== "disconnect" && id !== "install-chart",
   );
+  const always = onCluster.filter((id) => id !== "cluster-settings");
   expect(available(context())).toEqual(always);
   expect(
     available(context({ cluster: on({ status: "disconnected" }) })),
-  ).toEqual(always);
+  ).toEqual(onCluster);
   expect(available(context({ cluster: on({ status: "connecting" }) }))).toEqual(
-    always,
+    onCluster,
   );
   expect(available(context({ cluster: on(CONNECTED) }))).toEqual(all);
 });
@@ -83,6 +85,26 @@ test("install-chart opens the cluster's Charts", () => {
   const ctx = context({ cluster: on(CONNECTED) });
   runCommand("install-chart", ctx);
   expect(ctx.navigate.mock.calls).toEqual([["/cluster/c1/helm/charts"]]);
+});
+
+test("cluster-settings opens the cluster's Settings page, connected or not, once", () => {
+  const off = context({
+    pathname: "/cluster/a%2Fb",
+    cluster: { id: "a/b", name: "staging", state: { status: "disconnected" } },
+  });
+  runCommand("cluster-settings", off);
+  expect(off.navigate.mock.calls).toEqual([["/cluster/a%2Fb/settings"]]);
+
+  const there = context({
+    pathname: "/cluster/c1/settings",
+    cluster: on(CONNECTED),
+  });
+  runCommand("cluster-settings", there);
+  expect(there.navigate).not.toHaveBeenCalled();
+
+  const nowhere = context();
+  runCommand("cluster-settings", nowhere);
+  expect(nowhere.navigate).not.toHaveBeenCalled();
 });
 
 test("catalog, back and forward navigate", () => {

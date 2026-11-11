@@ -21,6 +21,7 @@ import { failureMessage } from "../../ipc/client";
 import type { ClusterEntry } from "../../ipc/generated/ClusterEntry";
 import { useCatalog } from "../../stores/catalog";
 import { useShell } from "../../stores/shell";
+import { settingsPath } from "../settings/paths";
 import { AddClusterDialog } from "./AddClusterDialog";
 import styles from "./CatalogScreen.module.css";
 
@@ -80,6 +81,7 @@ function RowActions(props: {
   onRemove(cluster: ClusterEntry): void;
 }) {
   const { cluster, onRemove } = props;
+  const navigate = useNavigate();
   const pinned = useCatalog((s) => s.hotbar.includes(cluster.id));
   const pin = useCatalog((s) => s.pin);
   const unpin = useCatalog((s) => s.unpin);
@@ -96,6 +98,11 @@ function RowActions(props: {
           label: "Pin to hotbar",
           onSelect: () => void pin(cluster.id),
         },
+    {
+      id: "settings",
+      label: "Settings",
+      onSelect: () => void navigate(settingsPath(cluster.id)),
+    },
   ];
   if (cluster.source.kind === "pasted") {
     items.push({

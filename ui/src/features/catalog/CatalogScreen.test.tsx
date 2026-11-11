@@ -322,6 +322,27 @@ test("remove only offered for pasted clusters", async () => {
   expect(screen.getByTestId("where").textContent).toBe("/catalog");
 });
 
+test("the row menu offers Settings above Remove, and it opens the cluster's Settings page", async () => {
+  await show([
+    clusterEntry({
+      id: "p",
+      contextName: "pasted",
+      source: { kind: "pasted", path: "/data/pasted/abc.yaml" },
+    }),
+  ]);
+
+  openRowMenu("pasted");
+  await screen.findByTestId("menu-item-settings");
+  expect(
+    screen.getAllByRole("menuitem").map((item) => item.textContent),
+  ).toEqual(["Pin to hotbar", "Settings", "Remove"]);
+  fireEvent.click(screen.getByTestId("menu-item-settings"));
+
+  await waitFor(() =>
+    expect(screen.getByTestId("where").textContent).toBe("/cluster/p/settings"),
+  );
+});
+
 test("pin and unpin from the row menu", async () => {
   const ipc = await show([clusterEntry({ id: "a", contextName: "alpha" })]);
 

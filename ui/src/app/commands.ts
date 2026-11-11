@@ -11,6 +11,7 @@ import {
   Plus,
   Power,
   Settings,
+  SlidersHorizontal,
   SquareTerminal,
   Sun,
 } from "lucide-react";
@@ -18,6 +19,7 @@ import { useMemo } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { openTerminal } from "../features/dock/openTerminal";
 import { chartsPath } from "../features/helm/helmText";
+import { settingsPath } from "../features/settings/paths";
 import type { Theme } from "../ipc/generated/Theme";
 import { disconnectCluster } from "../stores/clusters";
 import { usePrefs } from "../stores/prefs";
@@ -40,6 +42,7 @@ export type CommandId =
   | "install-chart"
   | "terminal"
   | "disconnect"
+  | "cluster-settings"
   | "shortcuts"
   | "about"
   | "theme-dark"
@@ -50,7 +53,7 @@ export type CommandId =
 
 export interface AppCommand {
   id: CommandId;
-  /** A function, because two labels name the cluster. */
+  /** A function, because some labels name the cluster. */
   label(ctx: CommandContext): string;
   icon: LucideIcon;
   shortcut?: ShortcutId;
@@ -62,6 +65,10 @@ const always = () => true;
 
 function connected(ctx: CommandContext): boolean {
   return ctx.cluster?.state.status === "connected";
+}
+
+function onCluster(ctx: CommandContext): boolean {
+  return ctx.cluster !== null;
 }
 
 function clusterName(ctx: CommandContext): string {
@@ -151,6 +158,15 @@ export const COMMANDS: readonly AppCommand[] = [
     available: connected,
     run: (ctx) => {
       if (ctx.cluster) void disconnectCluster(ctx.cluster.id);
+    },
+  },
+  {
+    id: "cluster-settings",
+    label: (ctx) => `Cluster settings for ${clusterName(ctx)}`,
+    icon: SlidersHorizontal,
+    available: onCluster,
+    run: (ctx) => {
+      if (ctx.cluster) go(ctx, settingsPath(ctx.cluster.id));
     },
   },
   {

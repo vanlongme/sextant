@@ -4,8 +4,10 @@ import {
   Plus,
   Power,
   Search,
+  Settings,
   SquareTerminal,
 } from "lucide-react";
+import { matchPath } from "react-router";
 import { Badge, Button, IconButton } from "../design";
 import { useConnect } from "../stores/clusters";
 import { useShell } from "../stores/shell";
@@ -16,7 +18,11 @@ import type { CurrentCluster } from "./currentCluster";
 import { IS_MAC, shortKeys } from "./shortcuts";
 
 function title(pathname: string, cluster: CurrentCluster | null): string {
-  if (cluster !== null) return cluster.name;
+  if (cluster !== null) {
+    return matchPath("/cluster/:id/settings", pathname) !== null
+      ? `${cluster.name} · Settings`
+      : cluster.name;
+  }
   if (pathname === "/catalog") return "Catalog";
   if (pathname === "/preferences") return "Preferences";
   return "";
@@ -107,6 +113,14 @@ export function AppHeader() {
           <Plus size={14} aria-hidden="true" />
           Add cluster
         </Button>
+      ) : null}
+      {cluster !== null ? (
+        <IconButton
+          label="Cluster settings"
+          icon={<Settings size={16} aria-hidden="true" />}
+          onClick={() => runCommand("cluster-settings", ctx)}
+          data-testid="header-cluster-settings"
+        />
       ) : null}
       {cluster !== null && info !== null ? (
         <ConnectedActions key={cluster.id} id={cluster.id} />

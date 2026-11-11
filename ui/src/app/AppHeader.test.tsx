@@ -89,9 +89,10 @@ test("on Preferences: the title only", async () => {
   expect(text("header-title")).toBe("Preferences");
   expect(screen.queryByTestId("catalog-add")).toBeNull();
   expect(screen.queryByTestId("connection-status")).toBeNull();
+  expect(screen.queryByTestId("header-cluster-settings")).toBeNull();
 });
 
-test("a disconnected cluster: its name and badge, and no actions", async () => {
+test("a disconnected cluster: its name, badge and Cluster settings, and no other actions", async () => {
   await show(["/cluster/c2"]);
 
   expect(text("header-title")).toBe("staging");
@@ -104,6 +105,20 @@ test("a disconnected cluster: its name and badge, and no actions", async () => {
   ]) {
     expect([id, screen.queryByTestId(id)]).toEqual([id, null]);
   }
+  const settings = screen.getByTestId("header-cluster-settings");
+  expect(settings.getAttribute("aria-label")).toBe("Cluster settings");
+  fireEvent.click(settings);
+  await waitFor(() => expect(text("where")).toBe("/cluster/c2/settings"));
+});
+
+test("the Settings route is titled with the cluster's name and Settings", async () => {
+  await show(["/cluster/c1/settings"]);
+
+  expect(text("header-title")).toBe("prod · Settings");
+  expect(text("connection-status")).toBe("Connected");
+  expect(screen.getByTestId("header-terminal")).toBeTruthy();
+  fireEvent.click(screen.getByTestId("header-cluster-settings"));
+  expect(text("where")).toBe("/cluster/c1/settings");
 });
 
 test("a connected cluster: the distribution, Terminal and Disconnect", async () => {
@@ -112,6 +127,7 @@ test("a connected cluster: the distribution, Terminal and Disconnect", async () 
   expect(text("header-title")).toBe("prod");
   expect(text("connection-status")).toBe("Connected");
   expect(text("header-distribution")).toBe("kind · v1.31.0");
+  expect(screen.getByTestId("header-cluster-settings")).toBeTruthy();
   fireEvent.click(screen.getByTestId("header-terminal"));
   expect(openTerminal).toHaveBeenCalledWith("c1");
   fireEvent.click(screen.getByTestId("cluster-disconnect"));
