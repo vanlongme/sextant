@@ -10,7 +10,9 @@ import { beforeEach, expect, test } from "vitest";
 import type { ConnectionLogEntry } from "../../ipc/generated/ConnectionLogEntry";
 import type { ConnectionState } from "../../ipc/generated/ConnectionState";
 import { resetCatalogForTest, useCatalog } from "../../stores/catalog";
+import { resetMetricsForTest } from "../../stores/metrics";
 import { clusterEntry, emitEvent, mockBackend } from "../../test/ipc";
+import { noProvider } from "../../test/metrics";
 import { ClusterOverview } from "./ClusterHome";
 import { ClusterScreen } from "./ClusterScreen";
 
@@ -36,6 +38,7 @@ async function show(
     cluster_connect: () => ({ status: "connecting" }),
     cluster_disconnect: () => null,
     resources_discover: () => [],
+    metrics_provider: () => noProvider("setting"),
     ...over,
   });
   await useCatalog.getState().init();
@@ -45,6 +48,7 @@ async function show(
         <Route path="/cluster/:id" element={<ClusterScreen />}>
           <Route index element={<ClusterOverview />} />
         </Route>
+        <Route path="/cluster/:id/settings" element={<p>settings page</p>} />
         <Route path="/catalog" element={<p>catalog page</p>} />
       </Routes>
     </MemoryRouter>,
@@ -56,7 +60,10 @@ function setState(state: ConnectionState) {
   return emitEvent("cluster://state", { id: "id-x", state });
 }
 
-beforeEach(() => resetCatalogForTest());
+beforeEach(() => {
+  resetCatalogForTest();
+  resetMetricsForTest();
+});
 
 test("opening a disconnected cluster connects automatically", async () => {
   const ipc = await show({ status: "disconnected" });
@@ -145,6 +152,34 @@ test("a connected cluster says when it cannot list namespaces", async () => {
   expect(screen.getByTestId("cluster-info-namespaces").textContent).toBe(
     "Restricted",
   );
+});
+
+test("the namespace warning offers the cluster settings, and its text is unchanged", async () => {
+  await show({
+    status: "connected",
+    info: { ...INFO, namespaces: ["team-a"], namespacesRestricted: true },
+  });
+  const warning = await screen.findByTestId("cluster-namespaces-warning");
+  expect(warning.textContent).toBe(
+    "You may not list this cluster's namespaces, so only these are used: team-a.",
+  );
+  fireEvent.click(screen.getByTestId("cluster-namespaces-settings"));
+  expect(await screen.findByText("settings page")).toBeTruthy();
+});
+
+test("the connected Overview shows the Metrics section below the facts", async () => {
+  const ipc = await show({ status: "connected", info: INFO });
+  const section = await screen.findByTestId("overview-metrics");
+  expect(section.querySelector("h2")?.textContent).toBe("Metrics");
+  await waitFor(() =>
+    expect(screen.getByTestId("metrics-note").textContent).toContain(
+      "Metrics are off: the metrics provider is None in the cluster settings.",
+    ),
+  );
+  expect(ipc.callsTo("metrics_provider")).toEqual([
+    { clusterId: "id-x", refresh: false },
+  ]);
+  expect(screen.queryByTestId("overview-gauges")).toBeNull();
 });
 
 test("no namespace warning when namespaces can be listed", async () => {

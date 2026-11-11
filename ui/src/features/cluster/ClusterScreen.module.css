@@ -59,6 +59,19 @@
   color: var(--status-warning-text);
 }
 
+/* The restricted-namespaces warning with its Cluster settings button. */
+.warnRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.warnRow .warn {
+  flex: 1;
+  margin: 0;
+}
+
 .error {
   color: var(--text-danger);
 }
