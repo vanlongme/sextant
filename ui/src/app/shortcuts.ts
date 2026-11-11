@@ -1,6 +1,7 @@
 /**
- * The keyboard shortcuts of spec C §7.2: one table that the Keyboard shortcuts
- * dialog shows and the key handlers match, so the two cannot drift apart.
+ * The keyboard shortcuts of spec C §7.2 and D2 §13: one table that the Keyboard
+ * shortcuts dialog shows and the key handlers match, so the two cannot drift apart.
+ * The Charts keys act only while a chart has focus; the chart reads them itself.
  */
 
 export type Platform = "macos" | "windows" | "linux";
@@ -36,6 +37,7 @@ export const SHORTCUT_GROUPS = [
   "Command palette",
   "Dock and terminal",
   "Dialogs and lists",
+  "Charts",
 ] as const;
 export type ShortcutGroup = (typeof SHORTCUT_GROUPS)[number];
 
@@ -54,7 +56,10 @@ export type ShortcutId =
   | "terminal-copy"
   | "terminal-paste"
   | "focus"
-  | "press";
+  | "press"
+  | "chartSample"
+  | "chartEnds"
+  | "chartHide";
 
 export interface ShortcutRow {
   id: ShortcutId;
@@ -184,6 +189,24 @@ export const SHORTCUTS: readonly ShortcutRow[] = [
     group: "Dialogs and lists",
     action: "Press the focused button",
     keys: pair("Enter", "Space"),
+  },
+  {
+    id: "chartSample",
+    group: "Charts",
+    action: "Previous or next sample",
+    keys: pair("Left", "Right"),
+  },
+  {
+    id: "chartEnds",
+    group: "Charts",
+    action: "First or last sample",
+    keys: pair("Home", "End"),
+  },
+  {
+    id: "chartHide",
+    group: "Charts",
+    action: "Hide the readout",
+    keys: one("Esc"),
   },
 ];
 

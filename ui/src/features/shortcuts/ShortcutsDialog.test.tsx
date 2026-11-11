@@ -54,6 +54,7 @@ test("the groups and rows follow the table, with words off macOS", () => {
     "Command palette",
     "Dock and terminal",
     "Dialogs and lists",
+    "Charts",
   ]);
   expect(rows()).toEqual([
     "shortcut-palette",
@@ -71,6 +72,9 @@ test("the groups and rows follow the table, with words off macOS", () => {
     "shortcut-terminal-paste",
     "shortcut-focus",
     "shortcut-press",
+    "shortcut-chartSample",
+    "shortcut-chartEnds",
+    "shortcut-chartHide",
   ]);
   expect(chips("palette")).toEqual(["Ctrl+Shift+P"]);
   expect(chips("shortcuts")).toEqual(["Ctrl+/"]);
@@ -83,6 +87,9 @@ test("the groups and rows follow the table, with words off macOS", () => {
     "Ctrl+Shift+PageDown",
   ]);
   expect(chips("terminal-copy")).toEqual(["Ctrl+Shift+C"]);
+  expect(chips("chartSample")).toEqual(["Left", "Right"]);
+  expect(chips("chartEnds")).toEqual(["Home", "End"]);
+  expect(chips("chartHide")).toEqual(["Esc"]);
   expect(screen.getByTestId("shortcut-focus").textContent).toBe(
     "Move between controlsTab/Shift+Tab",
   );
@@ -98,6 +105,10 @@ test("on macOS the keys use symbols, and alternatives read or", () => {
   expect(chips("terminal-copy")).toEqual(["⌘C"]);
   expect(chips("palette-move")).toEqual(["↑", "↓"]);
   expect(chips("focus")).toEqual(["Tab", "⇧Tab"]);
+  expect(chips("chartSample")).toEqual(["←", "→"]);
+  expect(screen.getByTestId("shortcut-chartSample").textContent).toBe(
+    "Previous or next sample←/→",
+  );
   expect(screen.getByTestId("shortcut-mouse").textContent).toBe(
     "Back and forward with the mouseMouse 4/Mouse 5",
   );
@@ -120,6 +131,19 @@ test("the filter matches the action, the group or the keys, ignoring case", () =
 
   filter("shift+tab");
   expect(rows()).toEqual(["shortcut-focus"]);
+});
+
+test("the filter finds the Charts group by its name", () => {
+  body("linux");
+
+  filter("charts");
+
+  expect(groups()).toEqual(["Charts"]);
+  expect(rows()).toEqual([
+    "shortcut-chartSample",
+    "shortcut-chartEnds",
+    "shortcut-chartHide",
+  ]);
 });
 
 test("on macOS the filter reads the symbols", () => {

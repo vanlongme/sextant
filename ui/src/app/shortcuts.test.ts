@@ -26,6 +26,9 @@ const ELSEWHERE: Record<ShortcutId, string> = {
   "terminal-paste": "Ctrl+Shift+V",
   focus: "Tab / Shift+Tab",
   press: "Enter / Space",
+  chartSample: "Left / Right",
+  chartEnds: "Home / End",
+  chartHide: "Esc",
 };
 
 /** Spec C §7.2, the On macOS column ("same" written out). */
@@ -45,6 +48,9 @@ const MAC: Record<ShortcutId, string> = {
   "terminal-paste": "⌘V",
   focus: "Tab / ⇧Tab",
   press: "Enter / Space",
+  chartSample: "← / →",
+  chartEnds: "Home / End",
+  chartHide: "Esc",
 };
 
 function key(init: KeyboardEventInit): KeyboardEvent {
@@ -58,6 +64,7 @@ test("the table holds the spec's rows in order", () => {
     "Command palette",
     "Dock and terminal",
     "Dialogs and lists",
+    "Charts",
   ]);
   expect(SHORTCUTS.map((row) => [row.group, row.id, row.action])).toEqual([
     ["General", "palette", "Command palette"],
@@ -75,6 +82,9 @@ test("the table holds the spec's rows in order", () => {
     ["Dock and terminal", "terminal-paste", "Paste in a terminal"],
     ["Dialogs and lists", "focus", "Move between controls"],
     ["Dialogs and lists", "press", "Press the focused button"],
+    ["Charts", "chartSample", "Previous or next sample"],
+    ["Charts", "chartEnds", "First or last sample"],
+    ["Charts", "chartHide", "Hide the readout"],
   ]);
 });
 
@@ -199,4 +209,20 @@ test("Cmd+[ and Cmd+] are back and forward on macOS only", () => {
     matchesShortcut("back", back, true),
     matchesShortcut("forward", key({ key: "]", metaKey: true }), true),
   ]).toEqual([true, false, true, true]);
+});
+
+test("the chart keys are the arrows, Home, End and Escape, without modifiers", () => {
+  expect([
+    matchesShortcut("chartSample", key({ key: "ArrowLeft" }), false),
+    matchesShortcut("chartSample", key({ key: "ArrowRight" }), true),
+    matchesShortcut("chartEnds", key({ key: "Home" }), false),
+    matchesShortcut("chartEnds", key({ key: "End" }), true),
+    matchesShortcut("chartHide", key({ key: "Escape" }), false),
+    matchesShortcut("chartSample", key({ key: "ArrowUp" }), false),
+    matchesShortcut(
+      "chartSample",
+      key({ key: "ArrowLeft", altKey: true }),
+      false,
+    ),
+  ]).toEqual([true, true, true, true, true, false, false]);
 });
