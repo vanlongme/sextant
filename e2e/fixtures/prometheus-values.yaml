@@ -1,0 +1,28 @@
+alertmanager:
+  enabled: false
+prometheus-pushgateway:
+  enabled: false
+# The node-exporter binds its port on each node's host network; 9110 keeps it clear of
+# the core test's release (crates/skopos-core/tests/metrics_kind.rs), which uses 9100.
+prometheus-node-exporter:
+  service:
+    port: 9110
+    targetPort: 9110
+server:
+  global:
+    scrape_interval: 15s
+  persistentVolume:
+    enabled: false
+  nodeSelector:
+    kubernetes.io/hostname: skopos-e2e-control-plane
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+kube-state-metrics:
+  nodeSelector:
+    kubernetes.io/hostname: skopos-e2e-control-plane
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
