@@ -1,0 +1,113 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-5);
+}
+
+.liveDot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: var(--space-2);
+  border-radius: 50%;
+  background: currentColor;
+  vertical-align: middle;
+}
+
+.live,
+.loading {
+  font: var(--type-caption);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.loading {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.source {
+  flex-basis: 100%;
+  margin: 0;
+  font: var(--type-caption);
+  color: var(--text-tertiary);
+}
+
+.note,
+.error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-5);
+  padding: var(--space-6) var(--space-7);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  font: var(--type-body-sm);
+}
+
+.note {
+  background: var(--status-neutral-soft);
+  color: var(--status-neutral-text);
+}
+
+.error {
+  background: var(--status-critical-soft);
+  color: var(--status-critical-text);
+}
+
+.note > svg,
+.error > svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.noteText {
+  flex: 1;
+  margin: 0;
+}
+
+.errorText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.errorText p {
+  margin: 0;
+}
+
+.errorActions {
+  display: flex;
+  flex: none;
+  gap: var(--space-4);
+}
+
+.grid,
+.column {
+  display: grid;
+  gap: var(--space-6);
+  transition: opacity var(--dur-base) ease;
+}
+
+.grid {
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+}
+
+.column {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.dim {
+  opacity: 0.55;
+}
