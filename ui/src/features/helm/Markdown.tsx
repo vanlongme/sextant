@@ -1,6 +1,6 @@
 import { createElement, type ReactNode, useMemo } from "react";
 import styles from "./Markdown.module.css";
-import { type Block, type Inline, parseMarkdown } from "./markdown";
+import { type Block, type Inline, parseMarkdown } from "./parseMarkdown";
 
 // Children are spread into `createElement`, so the lists of a tree need no keys.
 

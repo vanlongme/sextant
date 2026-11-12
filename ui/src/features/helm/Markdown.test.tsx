@@ -1,7 +1,7 @@
 import { render } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { Markdown } from "./Markdown";
-import { type Block, type Inline, parseMarkdown } from "./markdown";
+import { type Block, type Inline, parseMarkdown } from "./parseMarkdown";
 
 function show(text: string): HTMLElement {
   const { container } = render(<Markdown text={text} testId="md" />);
