@@ -150,24 +150,26 @@ describe("metrics", () => {
       /^\d+$/,
     );
 
-    await clickWhenShown("metrics-range-6h");
-    await until(
-      async () =>
-        (
-          (await byTestId("metrics-chart-cpu-plot").getAttribute("aria-label")) ?? ""
-        ).startsWith("CPU over the last 6 hours: Usage now "),
-      "the CPU chart never showed the last 6 hours",
-      120_000,
-    );
-
     await clickWhenShown("metrics-view-table");
     const table = await shown("metrics-table-cpu");
     await until(
       async () => (await table.$$("tbody tr").length) > 0,
       "the CPU table never showed a row",
     );
-
     await clickWhenShown("metrics-view-chart");
+
+    // The 6h query ends on the last whole 5-minute step, so a Prometheus installed minutes
+    // ago may have no sample there yet: "no data." is a valid answer for this range.
+    await clickWhenShown("metrics-range-6h");
+    await until(
+      async () =>
+        (
+          (await byTestId("metrics-chart-cpu-plot").getAttribute("aria-label")) ?? ""
+        ).startsWith("CPU over the last 6 hours: "),
+      "the CPU chart never answered for the last 6 hours",
+      120_000,
+    );
+
     await clickWhenShown("metrics-range-1h");
     await shown("metrics-chart-cpu-plot");
     await until(
