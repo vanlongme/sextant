@@ -321,7 +321,8 @@ pub(crate) fn build(store: &Store) -> Built {
 
 /// What one subscription sees (spec E §4.7). `None` is the whole graph. Otherwise: the nodes in
 /// those namespaces, then every node joined to the view by a `routes` or `class` edge, until
-/// nothing is added, and the edges between them. Counts, missing kinds and the Gateway API flag
+/// nothing is added, and the edges between them. A GatewayClass or LoadBalancer is brought in
+/// but not expanded from, so a shared class or address does not pull in the whole cluster. Counts, missing kinds and the Gateway API flag
 /// always describe the whole graph.
 pub(crate) fn view(built: &Built, namespaces: Option<&[String]>) -> GraphEvent {
     let (nodes, edges) = match namespaces {
@@ -338,14 +339,23 @@ pub(crate) fn view(built: &Built, namespaces: Option<&[String]>) -> GraphEvent {
                 .iter()
                 .filter(|edge| matches!(edge.rel, GraphRel::Routes | GraphRel::Class))
                 .collect();
+            // A GatewayClass or LoadBalancer joins the view but never widens it: it is shared
+            // by every Gateway of the class or every object behind the address.
+            let ends: HashSet<&str> = built
+                .nodes
+                .iter()
+                .filter(|node| node.kind == LOAD_BALANCER || node.kind == "GatewayClass")
+                .map(|node| node.id.as_str())
+                .collect();
             loop {
                 let before = members.len();
                 for join in &joins {
-                    if members.contains(join.from.as_str()) {
-                        members.insert(join.to.as_str());
+                    let (from, to) = (join.from.as_str(), join.to.as_str());
+                    if members.contains(from) && !ends.contains(from) {
+                        members.insert(to);
                     }
-                    if members.contains(join.to.as_str()) {
-                        members.insert(join.from.as_str());
+                    if members.contains(to) && !ends.contains(to) {
+                        members.insert(from);
                     }
                 }
                 if members.len() == before {
@@ -994,6 +1004,37 @@ mod tests {
                 .map(|e| (e.from.as_str(), e.to.as_str()))
                 .collect(),
         )
+    }
+
+    #[test]
+    fn a_shared_class_or_address_does_not_widen_a_namespace_view() {
+        let gateway = |namespace: &str, name: &str, address: &str| {
+            (
+                Kind::Gateway,
+                json!({
+                    "metadata": { "namespace": namespace, "name": name },
+                    "spec": { "gatewayClassName": "cls" },
+                    "status": { "addresses": [{ "value": address }] },
+                }),
+            )
+        };
+        let graph = built(&[
+            (Kind::GatewayClass, json!({ "metadata": { "name": "cls" } })),
+            gateway("a", "ga", "10.0.0.1"),
+            gateway("b", "gb", "10.0.0.2"),
+            (
+                Kind::Service,
+                json!({ "metadata": { "namespace": "b", "name": "sb" } }),
+            ),
+        ]);
+        let event = view(&graph, Some(&["a".to_owned()][..]));
+        let (nodes, _) = snapshot_ids(&event);
+        assert!(nodes.contains(&"Gateway/a/ga"));
+        assert!(nodes.contains(&"GatewayClass//cls"));
+        assert!(nodes.contains(&"LoadBalancer//10.0.0.1"));
+        assert!(!nodes.contains(&"Gateway/b/gb"));
+        assert!(!nodes.contains(&"LoadBalancer//10.0.0.2"));
+        assert!(!nodes.contains(&"Service/b/sb"));
     }
 
     #[test]
