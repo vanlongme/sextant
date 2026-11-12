@@ -4,6 +4,7 @@ pub mod catalog;
 pub mod cluster;
 pub mod error;
 pub mod external_url;
+pub mod graph;
 pub mod helm;
 pub mod kubeconfig;
 pub mod metrics;
