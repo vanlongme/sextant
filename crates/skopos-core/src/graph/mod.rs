@@ -3,6 +3,8 @@
 
 // The graph hub reads these. Until it exists, only their tests do.
 #[allow(dead_code)]
+mod extract;
+#[allow(dead_code)]
 mod kinds;
 #[allow(dead_code)]
 mod pod;
