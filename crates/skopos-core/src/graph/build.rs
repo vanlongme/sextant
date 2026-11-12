@@ -322,8 +322,8 @@ pub(crate) fn build(store: &Store) -> Built {
 /// What one subscription sees (spec E §4.7). `None` is the whole graph. Otherwise: the nodes in
 /// those namespaces, then every node joined to the view by a `routes` or `class` edge, until
 /// nothing is added, and the edges between them. A GatewayClass or LoadBalancer is brought in
-/// but not expanded from, so a shared class or address does not pull in the whole cluster. Counts, missing kinds and the Gateway API flag
-/// always describe the whole graph.
+/// but not expanded from, so a shared class or address does not pull in the whole cluster.
+/// Counts, missing kinds and the Gateway API flag always describe the whole graph.
 pub(crate) fn view(built: &Built, namespaces: Option<&[String]>) -> GraphEvent {
     let (nodes, edges) = match namespaces {
         None => (built.nodes.clone(), built.edges.clone()),
