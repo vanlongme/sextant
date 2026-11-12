@@ -2,6 +2,8 @@
 //! selector, and the references it gives (spec E §4.4 to §4.6). Values are read leniently: a
 //! field of another type than expected counts as absent, and nothing here panics.
 
+mod config;
+mod network;
 mod workloads;
 
 use std::collections::BTreeMap;
@@ -219,8 +221,15 @@ pub(crate) fn extract(kind: Kind, object: &Value) -> Option<Item> {
         Kind::ReplicaSet => workloads::replica_set(&mut item, object),
         Kind::Job => workloads::job(&mut item, object),
         Kind::CronJob => workloads::cron_job(&mut item, object),
-        // Task 4 replaces this arm with the other nine kinds.
-        _ => {}
+        Kind::Service => network::service(&mut item, object),
+        Kind::Ingress => network::ingress(&mut item, object),
+        Kind::Gateway => network::gateway(&mut item, object),
+        Kind::HttpRoute => network::http_route(&mut item, object),
+        Kind::GatewayClass => network::gateway_class(&mut item, object),
+        Kind::ConfigMap => config::config_map(&mut item, object),
+        Kind::Secret => config::secret(&mut item, object),
+        Kind::ServiceAccount => config::service_account(&mut item, object),
+        Kind::PersistentVolumeClaim => config::claim(&mut item, object),
     }
     Some(item)
 }
@@ -288,6 +297,45 @@ mod tests {
     fn an_object_without_a_name_is_skipped() {
         assert!(extract(Kind::Pod, &json!({ "metadata": {} })).is_none());
         assert!(extract(Kind::Pod, &json!(null)).is_none());
+    }
+
+    /// Review Focus 1: fields of an unexpected type count as absent, and nothing panics.
+    #[test]
+    fn odd_fields_never_panic() {
+        let odd = json!({
+            "metadata": {
+                "name": "odd", "namespace": "a", "labels": "app=web",
+                "ownerReferences": { "kind": "X" }, "annotations": 5,
+            },
+            "spec": {
+                "replicas": "two", "completions": null, "suspend": "yes", "type": 7,
+                "selector": ["app"], "ports": [{ "port": "http" }, 8], "strategy": "fast",
+                "template": { "spec": { "containers": "app" } },
+                "volumes": [7, { "configMap": "web" }, { "projected": { "sources": 3 } }],
+                "containers": [{ "env": [{ "valueFrom": 1 }], "envFrom": "all" }], "initContainers": 5,
+                "rules": [{ "http": { "paths": [{ "backend": 1 }] } }, 4],
+                "parentRefs": [{ "name": 9 }, "edge"], "listeners": [{ "port": "eighty" }],
+                "hostnames": [1, "h"], "accessModes": "RWO", "gatewayClassName": ["x"],
+                "serviceAccountName": 3, "nodeName": false, "schedule": 1,
+            },
+            "status": {
+                "conditions": "Ready", "parents": [{ "conditions": 1 }], "addresses": [{ "value": 1 }],
+                "loadBalancer": { "ingress": "x" }, "containerStatuses": [1, { "state": 2 }],
+                "startTime": 5, "phase": 4, "capacity": [],
+            },
+            "data": ["a"], "type": 1, "automountServiceAccountToken": "no",
+        });
+        for kind in Kind::ALL {
+            let item = extract(kind, &odd).expect("the object has a name");
+            assert_eq!(
+                item.id(),
+                if kind.namespaced() {
+                    format!("{}/a/odd", kind.name())
+                } else {
+                    format!("{}//odd", kind.name())
+                }
+            );
+        }
     }
 
     #[test]
