@@ -139,6 +139,8 @@ fn run_app(core: AppCore, mut log_guard: Option<WorkerGuard>, context: Context<W
             commands::resources::resources_names,
             commands::resources::resources_subscribe,
             commands::resources::resources_unsubscribe,
+            commands::graph::resource_graph_subscribe,
+            commands::graph::resource_graph_unsubscribe,
             commands::resources::resources_list,
             commands::resources::resource_get,
             commands::resources::resource_get_yaml,

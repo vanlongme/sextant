@@ -17,6 +17,7 @@ use ts_rs::TS;
 use crate::catalog::{build_entries, ClusterEntry, PastedConfigs};
 use crate::cluster::{ClusterManager, ConnectTimeouts, ConnectionLogEntry, ConnectionState};
 use crate::error::{CoreResult, ErrorCode, IpcError};
+use crate::graph::GraphHub;
 use crate::helm::Helm;
 use crate::kubeconfig::{
     default_sources, ClusterId, KubeconfigSync, SyncSnapshot, SyncSource, SyncWarning,
@@ -80,6 +81,7 @@ struct Inner {
     pasted: PastedConfigs,
     connections: Arc<ClusterManager>,
     watches: Arc<WatchHub>,
+    graphs: Arc<GraphHub>,
     drains: DashMap<(ClusterId, String), RunningDrain>,
     next_drain: AtomicU64,
     sessions: Arc<SessionRegistry>,
@@ -219,6 +221,7 @@ impl AppCore {
                 pasted,
                 connections,
                 watches: Arc::new(WatchHub::default()),
+                graphs: Arc::new(GraphHub::default()),
                 drains: DashMap::new(),
                 next_drain: AtomicU64::new(1),
                 sessions: Arc::new(SessionRegistry::default()),
@@ -421,6 +424,10 @@ impl AppCore {
 
     pub(crate) fn watches(&self) -> &Arc<WatchHub> {
         &self.inner.watches
+    }
+
+    pub(crate) fn graphs(&self) -> &Arc<GraphHub> {
+        &self.inner.graphs
     }
 
     pub(crate) fn drains(&self) -> &DashMap<(ClusterId, String), RunningDrain> {

@@ -6,6 +6,7 @@ pub mod app;
 pub mod argocd;
 pub mod catalog;
 pub mod cluster;
+pub mod graph;
 pub mod helm;
 pub mod logs;
 pub mod metrics;

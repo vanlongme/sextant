@@ -50,7 +50,6 @@ type Partition = Option<String>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum RowShape {
     Table,
-    #[allow(dead_code)] // Read by the resource graph (spec E §4).
     Graph,
 }
 
@@ -413,7 +412,6 @@ impl WatchHub {
     }
 
     /// How long a watcher outlives its last subscriber. The graph lingers as long.
-    #[allow(dead_code)] // Read by the resource graph (spec E §4).
     pub(crate) fn linger(&self) -> Duration {
         self.timing().linger
     }
