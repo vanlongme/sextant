@@ -952,7 +952,10 @@ async fn a_watched_pod_row_is_trimmed_and_a_get_returns_the_whole_pod() {
     table.until("the pod", |c| c.has("default", "full")).await;
     let row = &table.rows[&(Some("default".to_owned()), "full".to_owned())];
     assert_eq!(row["metadata"]["labels"], json!({ "app": "web" }));
-    assert_eq!(row["spec"]["containers"], json!([{ "name": "main" }]));
+    assert_eq!(
+        row["spec"]["containers"],
+        json!([{ "name": "main", "image": "registry.k8s.io/pause:3.10" }])
+    );
     assert_eq!(row["status"]["phase"], "Running");
     assert!(row["metadata"].get("annotations").is_none(), "{row}");
 

@@ -21,7 +21,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::discovery::state_name;
 use super::sanitize::strip_for_list;
-use super::trim::trim_for_watch;
+use super::trim::{is_core_pods, trim_for_graph, trim_for_watch};
 use super::types::{ObjectKey, ResourceRef, Row, WatchEvent, WatchStatus};
 use crate::app_core::AppCore;
 use crate::cluster::ConnectionState;
@@ -44,6 +44,29 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 /// One watcher's scope: a namespace, or `None` for the whole cluster.
 type Partition = Option<String>;
+
+/// What a watcher's rows keep: what the tables read, or what the relationship graph reads.
+/// The two differ only for core Pods, so every other resource shares one watcher.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum RowShape {
+    Table,
+    #[allow(dead_code)] // Read by the resource graph (spec E §4).
+    Graph,
+}
+
+impl RowShape {
+    /// The shape `resource`'s rows are kept in when this one is asked for.
+    fn of(self, resource: &ResourceRef) -> Self {
+        if is_core_pods(resource) {
+            self
+        } else {
+            Self::Table
+        }
+    }
+}
+
+/// A group's key: cluster, group, plural and row shape.
+type GroupKey = (ClusterId, String, String, RowShape);
 
 enum Phase {
     Syncing,
@@ -154,15 +177,17 @@ impl GroupState {
 
 struct Group {
     resource: ResourceRef,
+    shape: RowShape,
     /// A child of the cluster's token. Lingering out cancels it too.
     token: CancellationToken,
     state: Mutex<GroupState>,
 }
 
 impl Group {
-    fn new(resource: ResourceRef, token: CancellationToken) -> Self {
+    fn new(resource: ResourceRef, shape: RowShape, token: CancellationToken) -> Self {
         Self {
             resource,
+            shape,
             token,
             state: Mutex::new(GroupState {
                 store: HashMap::new(),
@@ -354,7 +379,7 @@ struct Timing {
 /// The shared watchers of every cluster.
 pub(crate) struct WatchHub {
     /// Keyed by cluster, group and plural.
-    groups: DashMap<(ClusterId, String, String), Arc<Group>>,
+    groups: DashMap<GroupKey, Arc<Group>>,
     /// What stops each subscription's flush task.
     subscriptions: DashMap<String, CancellationToken>,
     next_subscription: AtomicU64,
@@ -387,13 +412,21 @@ impl WatchHub {
         *lock(&self.timing)
     }
 
+    /// How long a watcher outlives its last subscriber. The graph lingers as long.
+    #[allow(dead_code)] // Read by the resource graph (spec E §4).
+    pub(crate) fn linger(&self) -> Duration {
+        self.timing().linger
+    }
+
     fn subscribe(
         self: &Arc<Self>,
         id: &ClusterId,
         resource: ResourceRef,
+        shape: RowShape,
         tx: mpsc::Sender<WatchEvent>,
         connection: &Connection,
     ) -> CoreResult<String> {
+        let shape = shape.of(&resource);
         let number = self.next_subscription.fetch_add(1, Ordering::Relaxed);
         let subscription = format!("watch-{number}");
         let group = loop {
@@ -404,7 +437,7 @@ impl WatchHub {
                     format!("cluster {id} is not connected"),
                 ));
             }
-            let group = self.group_for(id, &resource, connection);
+            let group = self.group_for(id, &resource, shape, connection);
             if group.attach(&subscription) {
                 break group;
             }
@@ -427,13 +460,23 @@ impl WatchHub {
         self: &Arc<Self>,
         id: &ClusterId,
         resource: &ResourceRef,
+        shape: RowShape,
         connection: &Connection,
     ) -> Arc<Group> {
-        let key = (id.clone(), resource.group.clone(), resource.plural.clone());
+        let key = (
+            id.clone(),
+            resource.group.clone(),
+            resource.plural.clone(),
+            shape,
+        );
         match self.groups.entry(key.clone()) {
             Entry::Occupied(entry) if !entry.get().is_closed() => entry.get().clone(),
             entry => {
-                let group = Arc::new(Group::new(resource.clone(), connection.token.child_token()));
+                let group = Arc::new(Group::new(
+                    resource.clone(),
+                    shape,
+                    connection.token.child_token(),
+                ));
                 entry.insert(group.clone());
                 tokio::spawn(run_group(
                     self.clone(),
@@ -499,7 +542,7 @@ enum PartitionEnd {
 
 async fn run_group(
     hub: Arc<WatchHub>,
-    key: (ClusterId, String, String),
+    key: GroupKey,
     group: Arc<Group>,
     client: Client,
     namespaces: Vec<String>,
@@ -619,14 +662,21 @@ fn object_key(object: &DynamicObject) -> Option<ObjectKey> {
 
 /// The row for a subscriber. List items come without `kind` and `apiVersion`, so
 /// these are set from the resource before stripping, which depends on them.
-fn to_row(object: &DynamicObject, resource: &ResourceRef) -> Option<(ObjectKey, Row)> {
+fn to_row(
+    object: &DynamicObject,
+    resource: &ResourceRef,
+    shape: RowShape,
+) -> Option<(ObjectKey, Row)> {
     let key = object_key(object)?;
     let mut value = serde_json::to_value(object).ok()?;
     let fields = value.as_object_mut()?;
     fields.insert("apiVersion".to_owned(), api_version(resource).into());
     fields.insert("kind".to_owned(), stamped_kind(resource).into());
     strip_for_list(&mut value);
-    trim_for_watch(resource, &mut value);
+    match shape {
+        RowShape::Table => trim_for_watch(resource, &mut value),
+        RowShape::Graph => trim_for_graph(resource, &mut value),
+    }
     Some((key, Row::new(&value).ok()?))
 }
 
@@ -673,7 +723,7 @@ async fn run_partition(group: &Group, client: &Client, partition: Partition) -> 
                     continue;
                 }
                 Some(Ok(watcher::Event::InitApply(object))) => {
-                    listing.extend(to_row(&object, resource));
+                    listing.extend(to_row(&object, resource, group.shape));
                     continue;
                 }
                 Some(Ok(watcher::Event::InitDone)) => {
@@ -682,7 +732,7 @@ async fn run_partition(group: &Group, client: &Client, partition: Partition) -> 
                     continue;
                 }
                 Some(Ok(watcher::Event::Apply(object))) => {
-                    if let Some((key, value)) = to_row(&object, resource) {
+                    if let Some((key, value)) = to_row(&object, resource, group.shape) {
                         group.apply(key, value);
                     }
                     continue;
@@ -767,6 +817,17 @@ impl AppCore {
         tx: mpsc::Sender<WatchEvent>,
     ) -> CoreResult<String> {
         validate(&resource)?;
+        self.subscribe_rows(id, resource, RowShape::Table, tx)
+    }
+
+    /// `resources_subscribe` for a reader inside the core, which picks the rows' shape.
+    pub(crate) fn subscribe_rows(
+        &self,
+        id: &ClusterId,
+        resource: ResourceRef,
+        shape: RowShape,
+        tx: mpsc::Sender<WatchEvent>,
+    ) -> CoreResult<String> {
         let info = match self.cluster_state(id) {
             ConnectionState::Connected { info } => info,
             other => {
@@ -781,7 +842,8 @@ impl AppCore {
             token: self.cluster_cancel_token(id)?,
             namespaces: info.namespaces,
         };
-        self.watches().subscribe(id, resource, tx, &connection)
+        self.watches()
+            .subscribe(id, resource, shape, tx, &connection)
     }
 
     /// An id that is unknown or already ended is ignored.
@@ -870,5 +932,51 @@ mod tests {
             (WatchStatus::Reconnecting, Some("broken".to_owned()))
         );
         assert!(!state.synced());
+    }
+
+    fn resource(group: &str, plural: &str) -> ResourceRef {
+        ResourceRef {
+            group: group.into(),
+            version: "v1".into(),
+            plural: plural.into(),
+            kind: "Pod".into(),
+            namespaced: true,
+        }
+    }
+
+    #[test]
+    fn a_graph_row_keeps_what_the_graph_reads_and_a_table_row_does_not() {
+        let object: DynamicObject = serde_json::from_value(serde_json::json!({
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "metadata": { "name": "web", "namespace": "a" },
+            "spec": {
+                "serviceAccountName": "web",
+                "containers": [{ "name": "app", "env": [{ "name": "A", "value": "hidden-value" }] }],
+            },
+        }))
+        .unwrap();
+        let pods = resource("", "pods");
+
+        let (_, table) = to_row(&object, &pods, RowShape::Table).unwrap();
+        let (_, graph) = to_row(&object, &pods, RowShape::Graph).unwrap();
+
+        assert!(table.to_value()["spec"].get("serviceAccountName").is_none());
+        assert_eq!(graph.to_value()["spec"]["serviceAccountName"], "web");
+        assert!(!graph.json().contains("hidden-value"), "{}", graph.json());
+    }
+
+    #[test]
+    fn only_core_pods_have_a_graph_shape_of_their_own() {
+        assert_eq!(RowShape::Graph.of(&resource("", "pods")), RowShape::Graph);
+        assert_eq!(
+            RowShape::Graph.of(&resource("", "secrets")),
+            RowShape::Table
+        );
+        assert_eq!(
+            RowShape::Graph.of(&resource("example.com", "pods")),
+            RowShape::Table
+        );
+        assert_eq!(RowShape::Table.of(&resource("", "pods")), RowShape::Table);
     }
 }

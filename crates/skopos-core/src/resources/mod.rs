@@ -20,8 +20,12 @@ pub use argocd::{
     ArgoRollbackOptions, ArgoSyncOptions, ArgoSyncResource, ArgoSyncStrategy,
     SYNC_WINDOWS_UNVERIFIED,
 };
+#[allow(unused_imports)] // Read by the resource graph (spec E §4).
+pub(crate) use discovery::state_name;
 pub(crate) use drain::RunningDrain;
 pub use drain::{DrainEvent, DrainOptions, DrainOutcome, PodRef, SkipReason, SkippedPod};
+#[allow(unused_imports)] // Read by the resource graph (spec E §4).
+pub(crate) use hub::RowShape;
 pub(crate) use hub::WatchHub;
 pub(crate) use names::NAMES_TTL;
 pub use names::{ObjectName, ObjectNames};

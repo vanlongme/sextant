@@ -37,8 +37,96 @@ const CONTAINER_STATUS: Keep = Fields(&[
     ),
 ]);
 
+/// What the Pods table's Ready, Status and Restarts columns and the graph's Pod status read.
+const POD_STATUS: Keep = Fields(&[
+    ("phase", All),
+    ("reason", All),
+    ("podIP", All),
+    ("qosClass", All),
+    (
+        "conditions",
+        Each(&Fields(&[("type", All), ("status", All), ("reason", All)])),
+    ),
+    ("containerStatuses", Each(&CONTAINER_STATUS)),
+    ("initContainerStatuses", Each(&CONTAINER_STATUS)),
+]);
+
+/// An object reference the graph follows: only its name.
+const NAME_ONLY: Keep = Fields(&[("name", All)]);
+
+/// The environment variables that name a ConfigMap or Secret. A value is never kept.
+const ENV_REFS: Keep = Each(&Fields(&[(
+    "valueFrom",
+    Fields(&[("configMapKeyRef", NAME_ONLY), ("secretKeyRef", NAME_ONLY)]),
+)]));
+
+const ENV_FROM_REFS: Keep = Each(&Fields(&[
+    ("configMapRef", NAME_ONLY),
+    ("secretRef", NAME_ONLY),
+]));
+
+/// What the relationship graph (spec E §4) reads of a Pod: its owner and labels, the objects
+/// it mounts, reads and runs as, and what its status and facts need.
+const POD_GRAPH: Keep = Fields(&[
+    ("apiVersion", All),
+    ("kind", All),
+    (
+        "metadata",
+        Fields(&[
+            ("name", All),
+            ("namespace", All),
+            ("creationTimestamp", All),
+            ("deletionTimestamp", All),
+            ("labels", All),
+            ("ownerReferences", All),
+        ]),
+    ),
+    (
+        "spec",
+        Fields(&[
+            ("nodeName", All),
+            ("serviceAccountName", All),
+            (
+                "volumes",
+                Each(&Fields(&[
+                    ("configMap", NAME_ONLY),
+                    ("secret", Fields(&[("secretName", All)])),
+                    ("persistentVolumeClaim", Fields(&[("claimName", All)])),
+                    (
+                        "projected",
+                        Fields(&[(
+                            "sources",
+                            Each(&Fields(&[("configMap", NAME_ONLY), ("secret", NAME_ONLY)])),
+                        )]),
+                    ),
+                ])),
+            ),
+            (
+                "containers",
+                Each(&Fields(&[
+                    ("name", All),
+                    ("env", ENV_REFS),
+                    ("envFrom", ENV_FROM_REFS),
+                ])),
+            ),
+            (
+                "initContainers",
+                Each(&Fields(&[
+                    ("name", All),
+                    ("restartPolicy", All),
+                    ("env", ENV_REFS),
+                    ("envFrom", ENV_FROM_REFS),
+                ])),
+            ),
+        ]),
+    ),
+    ("status", POD_STATUS),
+]);
+
 /// The Pods table, its search and sort, the pod lists of the Node, Job and Rollout
-/// drawers, and the Pods row-menu Port forward action (which reads the container ports) read these. `uid` and `resourceVersion` let an action or a fetch name the object.
+/// drawers, the Pods row-menu Port forward action (which reads the container ports) and the
+/// Workspace Pods view's Image column (spec E §4.9) read these. `uid` and `resourceVersion` let
+/// an action or a fetch name the object.
 const POD_ROW: Keep = Fields(&[
     ("apiVersion", All),
     ("kind", All),
@@ -63,6 +151,7 @@ const POD_ROW: Keep = Fields(&[
                 "containers",
                 Each(&Fields(&[
                     ("name", All),
+                    ("image", All),
                     (
                         "ports",
                         Each(&Fields(&[
@@ -79,21 +168,7 @@ const POD_ROW: Keep = Fields(&[
             ),
         ]),
     ),
-    (
-        "status",
-        Fields(&[
-            ("phase", All),
-            ("reason", All),
-            ("podIP", All),
-            ("qosClass", All),
-            (
-                "conditions",
-                Each(&Fields(&[("type", All), ("status", All), ("reason", All)])),
-            ),
-            ("containerStatuses", Each(&CONTAINER_STATUS)),
-            ("initContainerStatuses", Each(&CONTAINER_STATUS)),
-        ]),
-    ),
+    ("status", POD_STATUS),
 ]);
 
 /// A value of another shape than the rule expects is kept as it is.
@@ -120,10 +195,23 @@ fn keep(value: &mut Value, rule: &Keep) {
     }
 }
 
+/// Core `v1` Pods are the only rows trimmed, and the only ones with a graph shape of their own.
+pub(super) fn is_core_pods(resource: &ResourceRef) -> bool {
+    resource.group.is_empty() && resource.plural == "pods"
+}
+
 /// Trims a row after `strip_for_list`. Only core `v1` Pods are trimmed.
 pub(super) fn trim_for_watch(resource: &ResourceRef, row: &mut Value) {
-    if resource.group.is_empty() && resource.plural == "pods" {
+    if is_core_pods(resource) {
         keep(row, &POD_ROW);
+    }
+}
+
+/// Trims a graph row after `strip_for_list`. A core Pod keeps what the relationship graph
+/// reads, and never an environment variable's value.
+pub(super) fn trim_for_graph(resource: &ResourceRef, row: &mut Value) {
+    if is_core_pods(resource) {
+        keep(row, &POD_GRAPH);
     }
 }
 
@@ -256,7 +344,7 @@ mod tests {
                 "spec": {
                     "nodeName": "node-1",
                     "initContainers": [{ "name": "setup", "restartPolicy": "Always" }],
-                    "containers": [{ "name": "app", "ports": [{ "name": "http", "containerPort": 8080, "protocol": "TCP" }] }],
+                    "containers": [{ "name": "app", "image": "registry.example.com/app:1", "ports": [{ "name": "http", "containerPort": 8080, "protocol": "TCP" }] }],
                 },
                 "status": {
                     "phase": "Running",
@@ -312,5 +400,79 @@ mod tests {
                 "status": { "containerStatuses": "not a list", "conditions": [1, "two"] },
             })
         );
+    }
+
+    #[test]
+    fn a_graph_pod_row_keeps_the_references_and_no_values() {
+        let mut row = full_pod();
+        row["spec"]["volumes"] = json!([
+            { "name": "cfg", "configMap": { "name": "web-config", "defaultMode": 420 } },
+            { "name": "sec", "secret": { "secretName": "web-secret", "optional": true } },
+            { "name": "data", "persistentVolumeClaim": { "claimName": "web-data" } },
+            { "name": "token", "projected": { "sources": [
+                { "serviceAccountToken": { "path": "token" } },
+                { "configMap": { "name": "kube-root-ca.crt", "items": [{ "key": "ca.crt", "path": "ca.crt" }] } },
+                { "secret": { "name": "extra" } },
+            ] } },
+        ]);
+        row["spec"]["containers"][0]["env"] = json!([
+            { "name": "PLAIN", "value": "visible-value" },
+            { "name": "FROM_CM", "valueFrom": { "configMapKeyRef": { "name": "cm", "key": "k" } } },
+            { "name": "FROM_SECRET", "valueFrom": { "secretKeyRef": { "name": "s", "key": "k" } } },
+        ]);
+        row["spec"]["containers"][0]["envFrom"] =
+            json!([{ "secretRef": { "name": "all" }, "prefix": "P_" }]);
+
+        trim_for_graph(&resource("", "pods", "Pod"), &mut row);
+
+        assert_eq!(row["spec"]["serviceAccountName"], "web");
+        assert_eq!(row["spec"]["nodeName"], "node-1");
+        assert_eq!(
+            row["spec"]["volumes"],
+            json!([
+                { "configMap": { "name": "web-config" } },
+                { "secret": { "secretName": "web-secret" } },
+                { "persistentVolumeClaim": { "claimName": "web-data" } },
+                { "projected": { "sources": [
+                    {},
+                    { "configMap": { "name": "kube-root-ca.crt" } },
+                    { "secret": { "name": "extra" } },
+                ] } },
+            ])
+        );
+        assert_eq!(
+            row["spec"]["containers"][0],
+            json!({
+                "name": "app",
+                "env": [
+                    {},
+                    { "valueFrom": { "configMapKeyRef": { "name": "cm" } } },
+                    { "valueFrom": { "secretKeyRef": { "name": "s" } } },
+                ],
+                "envFrom": [{ "secretRef": { "name": "all" } }],
+            })
+        );
+        assert_eq!(
+            row["spec"]["initContainers"][0],
+            json!({ "name": "setup", "restartPolicy": "Always", "env": [{}] })
+        );
+        assert_eq!(row["metadata"]["labels"], json!({ "app": "web" }));
+        assert!(row["metadata"].get("uid").is_none());
+        assert_eq!(row["status"]["initContainerStatuses"][0]["restartCount"], 3);
+        assert_eq!(
+            row["status"]["containerStatuses"][1]["state"]["terminated"]["reason"],
+            "OOMKilled"
+        );
+        let text = row.to_string();
+        assert!(!text.contains("visible-value"), "{text}");
+        assert!(!text.contains("registry.example.com"), "{text}");
+    }
+
+    #[test]
+    fn a_graph_row_of_another_resource_is_untouched() {
+        let mut row = json!({ "kind": "Deployment", "spec": { "template": { "spec": { "containers": [{ "image": "x" }] } } } });
+        let before = row.clone();
+        trim_for_graph(&resource("apps", "deployments", "Deployment"), &mut row);
+        assert_eq!(row, before);
     }
 }
