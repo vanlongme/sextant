@@ -3,7 +3,10 @@ import { Link } from "react-router";
 import { Button, Spinner } from "../../design";
 import { connectCluster } from "../../stores/clusters";
 import { useClusterName, useWorkspaceClusterState } from "./clusters";
+import { EventsView } from "./EventsView";
 import type { WorkspaceTab } from "./layout";
+import { OverviewView } from "./OverviewView";
+import { PodsView } from "./PodsView";
 import { useConnectOnActivate } from "./paneData";
 import styles from "./WorkspaceScreen.module.css";
 
@@ -74,6 +77,9 @@ export function PaneBody(props: { tab: WorkspaceTab }) {
       </div>
     );
   }
-  // The views of a connected cluster render here (Task 22).
-  return null;
+  if (tab.view === "overview") {
+    return <OverviewView clusterId={tab.clusterId} info={state.info} />;
+  }
+  if (tab.view === "pods") return <PodsView tab={tab} info={state.info} />;
+  return <EventsView clusterId={tab.clusterId} />;
 }

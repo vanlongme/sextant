@@ -58,6 +58,64 @@ export function wsNode(name: string, ready: boolean): KubeObject {
   };
 }
 
+/**
+ * A Pod as a watch sends it; the rows keep the containers' images (spec E §4.9).
+ * Without `images`, it has one container, "app", with no image.
+ */
+export function wsPod(
+  name: string,
+  namespace: string,
+  over: { phase?: string; restarts?: number; images?: string[] } = {},
+): KubeObject {
+  const images = over.images ?? [];
+  return {
+    metadata: {
+      name,
+      namespace,
+      uid: `uid-${namespace}-${name}`,
+      creationTimestamp: new Date(Date.now() - 3 * 60_000).toISOString(),
+    },
+    spec: {
+      containers: (images.length > 0 ? images : ["app"]).map((image, i) =>
+        images.length > 0 ? { name: `c${i}`, image } : { name: image },
+      ),
+    },
+    status: {
+      phase: over.phase ?? "Running",
+      containerStatuses: [
+        {
+          name: "c0",
+          ready: (over.phase ?? "Running") === "Running",
+          restartCount: over.restarts ?? 0,
+          state: { running: {} },
+        },
+      ],
+    },
+  };
+}
+
+/** An event about `kind/name`, last seen `minutes` ago. */
+export function wsEvent(
+  id: string,
+  over: {
+    type?: "Normal" | "Warning";
+    kind?: string;
+    name?: string;
+    message?: string;
+    minutes?: number;
+  } = {},
+): KubeObject {
+  return {
+    metadata: { name: id, namespace: "default", uid: `uid-${id}` },
+    type: over.type ?? "Normal",
+    involvedObject: { kind: over.kind ?? "Pod", name: over.name ?? "web-1" },
+    message: over.message ?? `message ${id}`,
+    lastTimestamp: new Date(
+      Date.now() - (over.minutes ?? 1) * 60_000,
+    ).toISOString(),
+  };
+}
+
 /** The route and query the page navigated to. */
 export function Where() {
   const { pathname, search } = useLocation();
