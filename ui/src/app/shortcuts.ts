@@ -1,7 +1,9 @@
 /**
  * The keyboard shortcuts of spec C §7.2 and D2 §13: one table that the Keyboard
  * shortcuts dialog shows and the key handlers match, so the two cannot drift apart.
- * The Charts keys act only while a chart has focus; the chart reads them itself.
+ * The Charts keys act only while a chart has focus; the chart reads them itself. The
+ * Resource map keys (spec E §16) act only while the map's canvas has focus, and the
+ * canvas reads them itself too.
  */
 
 export type Platform = "macos" | "windows" | "linux";
@@ -38,6 +40,7 @@ export const SHORTCUT_GROUPS = [
   "Dock and terminal",
   "Dialogs and lists",
   "Charts",
+  "Resource map",
 ] as const;
 export type ShortcutGroup = (typeof SHORTCUT_GROUPS)[number];
 
@@ -59,7 +62,11 @@ export type ShortcutId =
   | "press"
   | "chartSample"
   | "chartEnds"
-  | "chartHide";
+  | "chartHide"
+  | "mapMove"
+  | "mapZoom"
+  | "mapFit"
+  | "mapClear";
 
 export interface ShortcutRow {
   id: ShortcutId;
@@ -93,6 +100,11 @@ function either(...texts: string[]): KeySpec {
 
 function pair(first: string, second: string): KeySpec {
   return { chords: [parseChord(first), parseChord(second)], join: "/" };
+}
+
+/** Keys as written, for what `parseChord` cannot read: "+", or "Arrow keys". */
+function literal(...keys: string[]): KeySpec {
+  return { chords: keys.map((key) => ({ mods: [], key })), join: "/" };
 }
 
 export const SHORTCUTS: readonly ShortcutRow[] = [
@@ -206,6 +218,30 @@ export const SHORTCUTS: readonly ShortcutRow[] = [
     id: "chartHide",
     group: "Charts",
     action: "Hide the readout",
+    keys: one("Esc"),
+  },
+  {
+    id: "mapMove",
+    group: "Resource map",
+    action: "Move to the nearest resource",
+    keys: literal("Arrow keys"),
+  },
+  {
+    id: "mapZoom",
+    group: "Resource map",
+    action: "Zoom in or out",
+    keys: literal("+", "-"),
+  },
+  {
+    id: "mapFit",
+    group: "Resource map",
+    action: "Fit to view",
+    keys: one("0"),
+  },
+  {
+    id: "mapClear",
+    group: "Resource map",
+    action: "Clear the selection",
     keys: one("Esc"),
   },
 ];

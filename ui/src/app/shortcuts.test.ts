@@ -29,6 +29,10 @@ const ELSEWHERE: Record<ShortcutId, string> = {
   chartSample: "Left / Right",
   chartEnds: "Home / End",
   chartHide: "Esc",
+  mapMove: "Arrow keys",
+  mapZoom: "+ / -",
+  mapFit: "0",
+  mapClear: "Esc",
 };
 
 /** Spec C §7.2, the On macOS column ("same" written out). */
@@ -51,6 +55,10 @@ const MAC: Record<ShortcutId, string> = {
   chartSample: "← / →",
   chartEnds: "Home / End",
   chartHide: "Esc",
+  mapMove: "Arrow keys",
+  mapZoom: "+ / -",
+  mapFit: "0",
+  mapClear: "Esc",
 };
 
 function key(init: KeyboardEventInit): KeyboardEvent {
@@ -65,6 +73,7 @@ test("the table holds the spec's rows in order", () => {
     "Dock and terminal",
     "Dialogs and lists",
     "Charts",
+    "Resource map",
   ]);
   expect(SHORTCUTS.map((row) => [row.group, row.id, row.action])).toEqual([
     ["General", "palette", "Command palette"],
@@ -85,6 +94,10 @@ test("the table holds the spec's rows in order", () => {
     ["Charts", "chartSample", "Previous or next sample"],
     ["Charts", "chartEnds", "First or last sample"],
     ["Charts", "chartHide", "Hide the readout"],
+    ["Resource map", "mapMove", "Move to the nearest resource"],
+    ["Resource map", "mapZoom", "Zoom in or out"],
+    ["Resource map", "mapFit", "Fit to view"],
+    ["Resource map", "mapClear", "Clear the selection"],
   ]);
 });
 

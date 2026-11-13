@@ -55,6 +55,7 @@ test("the groups and rows follow the table, with words off macOS", () => {
     "Dock and terminal",
     "Dialogs and lists",
     "Charts",
+    "Resource map",
   ]);
   expect(rows()).toEqual([
     "shortcut-palette",
@@ -75,6 +76,10 @@ test("the groups and rows follow the table, with words off macOS", () => {
     "shortcut-chartSample",
     "shortcut-chartEnds",
     "shortcut-chartHide",
+    "shortcut-mapMove",
+    "shortcut-mapZoom",
+    "shortcut-mapFit",
+    "shortcut-mapClear",
   ]);
   expect(chips("palette")).toEqual(["Ctrl+Shift+P"]);
   expect(chips("shortcuts")).toEqual(["Ctrl+/"]);
@@ -90,6 +95,10 @@ test("the groups and rows follow the table, with words off macOS", () => {
   expect(chips("chartSample")).toEqual(["Left", "Right"]);
   expect(chips("chartEnds")).toEqual(["Home", "End"]);
   expect(chips("chartHide")).toEqual(["Esc"]);
+  expect(chips("mapMove")).toEqual(["Arrow keys"]);
+  expect(chips("mapZoom")).toEqual(["+", "-"]);
+  expect(chips("mapFit")).toEqual(["0"]);
+  expect(chips("mapClear")).toEqual(["Esc"]);
   expect(screen.getByTestId("shortcut-focus").textContent).toBe(
     "Move between controlsTab/Shift+Tab",
   );
@@ -143,6 +152,20 @@ test("the filter finds the Charts group by its name", () => {
     "shortcut-chartSample",
     "shortcut-chartEnds",
     "shortcut-chartHide",
+  ]);
+});
+
+test("the filter finds the Resource map group by its name", () => {
+  body("linux");
+
+  filter("resource map");
+
+  expect(groups()).toEqual(["Resource map"]);
+  expect(rows()).toEqual([
+    "shortcut-mapMove",
+    "shortcut-mapZoom",
+    "shortcut-mapFit",
+    "shortcut-mapClear",
   ]);
 });
 
