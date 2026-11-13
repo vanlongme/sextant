@@ -1,7 +1,8 @@
 # SkoposIDE
 
 Open-source desktop Kubernetes IDE. Tauri 2 + Rust core + React.
-Spec: `docs/superpowers/specs/2026-11-05-skopos-milestone-a-design.md`. Later work: `docs/roadmap.md`.
+Spec: `docs/superpowers/specs/2026-11-05-skopos-milestone-a-design.md` (kept locally, not in git).
+Later work: `docs/roadmap.md`.
 
 ## Binding rules
 

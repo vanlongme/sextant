@@ -8,4 +8,5 @@ e2e/.tmp/
 .DS_Store
 crates/skopos-app/gen/schemas/
 .superpowers/
+docs/superpowers/
 tmp/
