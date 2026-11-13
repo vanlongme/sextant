@@ -9,10 +9,12 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use futures::FutureExt;
-use k8s_openapi::api::core::v1::{Namespace, Pod};
+use k8s_openapi::api::authentication::v1::TokenRequest;
+use k8s_openapi::api::core::v1::{Namespace, Pod, ServiceAccount};
+use k8s_openapi::api::rbac::v1::{Role, RoleBinding};
 use kube::api::{DeleteParams, ObjectMeta, PostParams};
 use kube::{Api, Client};
-use serde_json::Value;
+use serde_json::{json, Value};
 use skopos_core::app_core::AppCore;
 use skopos_core::cluster::ConnectionState;
 use skopos_core::kubeconfig::ClusterId;
@@ -75,6 +77,68 @@ pub async fn connected_kind() -> (AppCore, ClusterId, TempDir) {
 }
 
 /// A core whose only kubeconfig is `kubeconfig`, connected to `context`.
+fn from_json<T: serde::de::DeserializeOwned>(value: Value) -> T {
+    serde_json::from_value(value).unwrap()
+}
+
+/// A kubeconfig for the kind cluster, context `viewer`, that signs in with `token`.
+pub fn kubeconfig_with_token(token: &str) -> String {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../e2e/.tmp/kubeconfig");
+    let source: Value = serde_yaml_ng::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let cluster = &source["clusters"][0]["cluster"];
+    let config = json!({
+        "apiVersion": "v1",
+        "kind": "Config",
+        "clusters": [{ "name": "viewer", "cluster": {
+            "server": cluster["server"],
+            "certificate-authority-data": cluster["certificate-authority-data"],
+        } }],
+        "users": [{ "name": "viewer", "user": { "token": token } }],
+        "contexts": [{ "name": "viewer", "context": { "cluster": "viewer", "user": "viewer" } }],
+        "current-context": "viewer",
+    });
+    serde_yaml_ng::to_string(&config).unwrap()
+}
+
+/// A token for a `viewer` service account that may only read ConfigMaps in `namespace`.
+pub async fn viewer_token(client: &Client, namespace: &str) -> String {
+    let made = PostParams::default();
+    let accounts: Api<ServiceAccount> = Api::namespaced(client.clone(), namespace);
+    accounts
+        .create(
+            &made,
+            &from_json(json!({ "metadata": { "name": "viewer" } })),
+        )
+        .await
+        .unwrap();
+    let roles: Api<Role> = Api::namespaced(client.clone(), namespace);
+    let role = json!({
+        "metadata": { "name": "viewer" },
+        "rules": [{ "apiGroups": [""], "resources": ["configmaps"], "verbs": ["get", "list", "watch"] }],
+    });
+    roles.create(&made, &from_json(role)).await.unwrap();
+    let bindings: Api<RoleBinding> = Api::namespaced(client.clone(), namespace);
+    let binding = json!({
+        "metadata": { "name": "viewer" },
+        "roleRef": { "apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": "viewer" },
+        "subjects": [{ "kind": "ServiceAccount", "name": "viewer", "namespace": namespace }],
+    });
+    bindings.create(&made, &from_json(binding)).await.unwrap();
+    let request: TokenRequest = from_json(json!({
+        "apiVersion": "authentication.k8s.io/v1",
+        "kind": "TokenRequest",
+        "spec": { "audiences": [] },
+    }));
+    accounts
+        .create_token_request("viewer", &made, &request)
+        .await
+        .unwrap()
+        .status
+        .unwrap()
+        .token
+        .unwrap()
+}
+
 pub async fn connected_with(kubeconfig: &str, context: &str) -> (AppCore, ClusterId, TempDir) {
     let root = tempfile::tempdir().unwrap();
     let kube_dir = root.path().join("home").join(".kube");

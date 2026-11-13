@@ -18,12 +18,9 @@ use axum::routing::get;
 use axum::Router;
 use futures::FutureExt;
 use k8s_openapi::api::apps::v1::Deployment;
-use k8s_openapi::api::authentication::v1::TokenRequest;
-use k8s_openapi::api::core::v1::{ConfigMap, Namespace, ServiceAccount};
-use k8s_openapi::api::rbac::v1::{Role, RoleBinding};
-use kube::api::{DeleteParams, PostParams};
+use k8s_openapi::api::core::v1::{ConfigMap, Namespace};
+use kube::api::DeleteParams;
 use kube::{Api, Client};
-use serde_json::{json, Value};
 use skopos_core::app_core::AppCore;
 use skopos_core::error::ErrorCode;
 use skopos_core::helm::{
@@ -37,7 +34,7 @@ use skopos_core::resources::ResourceRef;
 use skopos_core::sessions::{SessionEvent, SessionOutput};
 use skopos_core::tools::pinned::{ArchiveFormat, PinnedDownload, HELM_VERSION};
 use skopos_core::tools::{ToolName, ToolsConfig};
-use support::{connected_kind, connected_with, in_namespace};
+use support::{connected_kind, connected_with, in_namespace, kubeconfig_with_token, viewer_token};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -307,67 +304,6 @@ fn helm_processes(namespace: &str) -> Vec<String> {
         }
     }
     found
-}
-
-fn from_json<T: serde::de::DeserializeOwned>(value: Value) -> T {
-    serde_json::from_value(value).unwrap()
-}
-
-fn kubeconfig_with_token(token: &str) -> String {
-    let path = repo_root().join("e2e/.tmp/kubeconfig");
-    let source: Value = serde_yaml_ng::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
-    let cluster = &source["clusters"][0]["cluster"];
-    let config = json!({
-        "apiVersion": "v1",
-        "kind": "Config",
-        "clusters": [{ "name": "viewer", "cluster": {
-            "server": cluster["server"],
-            "certificate-authority-data": cluster["certificate-authority-data"],
-        } }],
-        "users": [{ "name": "viewer", "user": { "token": token } }],
-        "contexts": [{ "name": "viewer", "context": { "cluster": "viewer", "user": "viewer" } }],
-        "current-context": "viewer",
-    });
-    serde_yaml_ng::to_string(&config).unwrap()
-}
-
-/// A token for a `viewer` service account that may only read ConfigMaps in `namespace`.
-async fn viewer_token(client: &Client, namespace: &str) -> String {
-    let made = PostParams::default();
-    let accounts: Api<ServiceAccount> = Api::namespaced(client.clone(), namespace);
-    accounts
-        .create(
-            &made,
-            &from_json(json!({ "metadata": { "name": "viewer" } })),
-        )
-        .await
-        .unwrap();
-    let roles: Api<Role> = Api::namespaced(client.clone(), namespace);
-    let role = json!({
-        "metadata": { "name": "viewer" },
-        "rules": [{ "apiGroups": [""], "resources": ["configmaps"], "verbs": ["get", "list", "watch"] }],
-    });
-    roles.create(&made, &from_json(role)).await.unwrap();
-    let bindings: Api<RoleBinding> = Api::namespaced(client.clone(), namespace);
-    let binding = json!({
-        "metadata": { "name": "viewer" },
-        "roleRef": { "apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": "viewer" },
-        "subjects": [{ "kind": "ServiceAccount", "name": "viewer", "namespace": namespace }],
-    });
-    bindings.create(&made, &from_json(binding)).await.unwrap();
-    let request: TokenRequest = from_json(json!({
-        "apiVersion": "authentication.k8s.io/v1",
-        "kind": "TokenRequest",
-        "spec": { "audiences": [] },
-    }));
-    accounts
-        .create_token_request("viewer", &made, &request)
-        .await
-        .unwrap()
-        .status
-        .unwrap()
-        .token
-        .unwrap()
 }
 
 async fn repos(core: &AppCore, url: &str, root: &Path) {

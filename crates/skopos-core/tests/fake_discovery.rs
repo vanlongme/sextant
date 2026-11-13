@@ -15,6 +15,7 @@ use tempfile::TempDir;
 
 const CONTEXT: &str = "fake";
 const REVIEWS: &str = "/apis/authorization.k8s.io/v1/selfsubjectaccessreviews";
+const RULES: &str = "/apis/authorization.k8s.io/v1/selfsubjectrulesreviews";
 
 async fn core_with_fake(cfg: FakeKubeConfig) -> (AppCore, FakeKube, ClusterId, TempDir) {
     let fake = FakeKube::start(cfg).await.unwrap();
@@ -282,6 +283,98 @@ async fn delete_of_a_cluster_scoped_kind_needs_the_cluster_wide_permission() {
     let all = core.resources_discover(&id, true).await.unwrap();
 
     assert!(!find(&all, "example.com", "gadgets").can_delete);
+}
+
+fn reviews_of(fake: &FakeKube, verb: &str, plural: &str) -> usize {
+    fake.access_reviews()
+        .iter()
+        .filter(|r| r.verb == verb && r.resource == plural)
+        .count()
+}
+
+#[tokio::test]
+async fn a_user_with_every_permission_needs_one_access_review() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig::default()).await;
+    let before = fake.request_count(REVIEWS);
+
+    let all = core.resources_discover(&id, false).await.unwrap();
+
+    assert_eq!(fake.request_count(REVIEWS) - before, 1);
+    assert_eq!(fake.request_count(RULES), 0);
+    for r in &all {
+        assert!(
+            r.can_list
+                && r.can_watch
+                && r.can_create
+                && r.can_update
+                && r.can_patch
+                && r.can_delete,
+            "{} should be fully allowed",
+            r.resource.plural
+        );
+    }
+}
+
+#[tokio::test]
+async fn namespaced_access_comes_from_one_rules_review_per_namespace() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig {
+        namespaces: vec!["a".to_owned(), "b".to_owned()],
+        deny: vec![
+            deny("delete", "pods", Some("a")),
+            deny("list", "configmaps", None),
+        ],
+        deny_cluster_wide: vec![deny("delete", "pods", None)],
+        ..Default::default()
+    })
+    .await;
+
+    let all = core.resources_discover(&id, false).await.unwrap();
+
+    assert_eq!(fake.request_count(RULES), 2);
+    let pods = find(&all, "", "pods");
+    assert!(pods.can_list && pods.can_delete, "namespace b allows both");
+    assert!(!find(&all, "", "configmaps").can_list);
+    for plural in ["pods", "configmaps"] {
+        for verb in ["list", "watch", "create", "update", "patch", "delete"] {
+            assert_eq!(reviews_of(&fake, verb, plural), 0, "{verb} {plural}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_cluster_scoped_kind_no_rule_grants_needs_no_access_review() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig {
+        namespaces: vec!["a".to_owned()],
+        deny: vec![deny("delete", "nodes", None)],
+        ..Default::default()
+    })
+    .await;
+
+    let all = core.resources_discover(&id, false).await.unwrap();
+
+    let nodes = find(&all, "", "nodes");
+    assert!(nodes.can_list && !nodes.can_delete);
+    assert_eq!(reviews_of(&fake, "delete", "nodes"), 0);
+    // A rule that names a cluster-scoped kind may come from a RoleBinding, so the
+    // cluster-wide answer still comes from an access review.
+    assert!(reviews_of(&fake, "list", "nodes") > 0);
+}
+
+#[tokio::test]
+async fn incomplete_rules_fall_back_to_access_reviews() {
+    let (core, fake, id, _root) = connected(FakeKubeConfig {
+        namespaces: vec!["a".to_owned()],
+        incomplete_rules_reviews: true,
+        deny: vec![deny("delete", "pods", None)],
+        ..Default::default()
+    })
+    .await;
+
+    let all = core.resources_discover(&id, false).await.unwrap();
+
+    let pods = find(&all, "", "pods");
+    assert!(pods.can_list && !pods.can_delete);
+    assert!(reviews_of(&fake, "delete", "pods") > 0);
 }
 
 #[tokio::test]

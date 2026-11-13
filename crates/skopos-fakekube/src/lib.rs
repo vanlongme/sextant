@@ -52,8 +52,19 @@ pub struct FakeKubeConfig {
     /// Like `deny`, but only for requests without a namespace (cluster-wide).
     /// The rule's `namespace` is ignored.
     pub deny_cluster_wide: Vec<DenyRule>,
-    /// SelfSubjectAccessReview answers 500.
+    /// SelfSubjectAccessReview and SelfSubjectRulesReview answer 500.
     pub fail_access_reviews: bool,
+    /// SelfSubjectRulesReview lists no rules and says `incomplete`, as when a webhook
+    /// authorizer grants access.
+    pub incomplete_rules_reviews: bool,
+}
+
+/// A SelfSubjectAccessReview the fake answered.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AccessReview {
+    pub verb: String,
+    pub resource: String,
+    pub namespace: Option<String>,
 }
 
 /// A write the fake received, for tests that check what the client sent.
@@ -82,6 +93,7 @@ struct State_ {
     history: Vec<WatchEvent>,
     counts: BTreeMap<String, usize>,
     watch_counts: BTreeMap<String, usize>,
+    access_reviews: Vec<AccessReview>,
     fail: BTreeMap<String, u16>,
     fail_discovery: Option<u16>,
     /// (namespace, name) of a pod -> scripted eviction failure and the answers left.
@@ -320,6 +332,15 @@ impl Inner {
                     .iter()
                     .any(|d| d.verb == verb && d.plural == plural))
     }
+
+    /// Whether any rule limits this user, so a review for `*` is denied.
+    fn limited(&self) -> bool {
+        self.cfg.deny_all_access_reviews
+            || !self.cfg.deny.is_empty()
+            || !self.cfg.deny_cluster_wide.is_empty()
+            || self.cfg.forbid_namespace_list
+            || self.cfg.forbid_cluster_wide_pods
+    }
 }
 
 type Shared = Arc<Inner>;
@@ -354,6 +375,7 @@ impl FakeKube {
                 history: Vec::new(),
                 counts: BTreeMap::new(),
                 watch_counts: BTreeMap::new(),
+                access_reviews: Vec::new(),
                 fail: BTreeMap::new(),
                 fail_discovery: None,
                 eviction_failures: BTreeMap::new(),
@@ -525,6 +547,11 @@ impl FakeKube {
 
     pub fn request_count(&self, path: &str) -> usize {
         self.inner.lock().counts.get(path).copied().unwrap_or(0)
+    }
+
+    /// The SelfSubjectAccessReviews answered so far, oldest first.
+    pub fn access_reviews(&self) -> Vec<AccessReview> {
+        self.inner.lock().access_reviews.clone()
     }
 
     /// How many metadata-only lists reached `path`.
@@ -791,6 +818,10 @@ fn router(inner: Shared) -> Router {
         .route(
             "/apis/authorization.k8s.io/v1/selfsubjectaccessreviews",
             post(access_review),
+        )
+        .route(
+            "/apis/authorization.k8s.io/v1/selfsubjectrulesreviews",
+            post(rules_review),
         )
         .route(
             "/api/v1/namespaces/{namespace}/services/{service}/proxy",
@@ -1908,17 +1939,80 @@ async fn access_review(State(s): State<Shared>, Json(mut review): Json<Value>) -
             .and_then(|a| a.get(k))
             .and_then(Value::as_str)
             .filter(|v| !v.is_empty())
+            .map(str::to_owned)
     };
-    let denied = match (text("verb"), text("resource")) {
-        (Some(verb), Some(resource)) => s.denied(verb, resource, text("namespace")),
+    let (verb, resource, namespace) = (text("verb"), text("resource"), text("namespace"));
+    let denied = match (verb.as_deref(), resource.as_deref()) {
+        // A review for `*` asks whether nothing limits the user.
+        (Some("*"), _) | (_, Some("*")) => s.limited(),
+        (Some(verb), Some(resource)) => s.denied(verb, resource, namespace.as_deref()),
         _ => false,
     };
+    if let (Some(verb), Some(resource)) = (verb, resource) {
+        s.lock().access_reviews.push(AccessReview {
+            verb,
+            resource,
+            namespace,
+        });
+    }
     review["status"] = json!({ "allowed": !(s.cfg.deny_all_access_reviews || denied) });
     if review.get("apiVersion").is_none() {
         review["apiVersion"] = json!("authorization.k8s.io/v1");
     }
     if review.get("kind").is_none() {
         review["kind"] = json!("SelfSubjectAccessReview");
+    }
+    json_code(StatusCode::CREATED, review)
+}
+
+/// The rules of one namespace: each served resource with the verbs no deny rule takes away.
+/// The fake does not know which rules are cluster-wide, so cluster-scoped kinds are listed too,
+/// as a RoleBinding to a ClusterRole would list them.
+async fn rules_review(State(s): State<Shared>, Json(mut review): Json<Value>) -> Response {
+    if s.cfg.fail_access_reviews {
+        return status(500, "InternalError", "access reviews are failing");
+    }
+    let Some(namespace) = review
+        .pointer("/spec/namespace")
+        .and_then(Value::as_str)
+        .filter(|n| !n.is_empty())
+        .map(str::to_owned)
+    else {
+        return status(400, "BadRequest", "no namespace on request");
+    };
+    let rules: Vec<Value> = if s.cfg.deny_all_access_reviews || s.cfg.incomplete_rules_reviews {
+        Vec::new()
+    } else {
+        served(&s)
+            .iter()
+            .filter_map(|r| {
+                let verbs: Vec<&str> = r
+                    .verbs()
+                    .iter()
+                    .copied()
+                    .filter(|verb| !s.denied(verb, &r.plural, Some(&namespace)))
+                    .collect();
+                (!verbs.is_empty()).then(
+                    || json!({ "verbs": verbs, "apiGroups": [r.group], "resources": [r.plural] }),
+                )
+            })
+            .collect()
+    };
+    let mut status_body = json!({
+        "resourceRules": rules,
+        "nonResourceRules": [],
+        "incomplete": s.cfg.incomplete_rules_reviews,
+    });
+    if s.cfg.incomplete_rules_reviews {
+        status_body["evaluationError"] =
+            json!("webhook authorizer does not support user rule resolution");
+    }
+    review["status"] = status_body;
+    if review.get("apiVersion").is_none() {
+        review["apiVersion"] = json!("authorization.k8s.io/v1");
+    }
+    if review.get("kind").is_none() {
+        review["kind"] = json!("SelfSubjectRulesReview");
     }
     json_code(StatusCode::CREATED, review)
 }
