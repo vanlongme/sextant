@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Outlet, useOutletContext } from "react-router";
+import { PaneHandle } from "../../design";
 import type { ApiResourceInfo } from "../../ipc/generated/ApiResourceInfo";
 import type { KubeObject } from "../../kinds/objects";
+import { NAV_PANE, usePaneSize } from "../../stores/paneSize";
 import {
   findResource,
   useApiResources,
@@ -122,15 +124,31 @@ export function ClusterLayout(props: { clusterId: string }) {
     resourcesLoading: loading,
     resourcesError: error,
   };
+  const [navWidth, setNavWidth] = usePaneSize(NAV_PANE);
   return (
-    <div className={styles.layout}>
-      <Sidebar
-        clusterId={clusterId}
-        resources={resources}
-        loading={loading}
-        error={error}
-        onRetry={() => void refresh()}
-      />
+    <div
+      className={styles.layout}
+      style={{ gridTemplateColumns: `${navWidth}px minmax(0, 1fr)` }}
+    >
+      <div className={styles.nav}>
+        <Sidebar
+          clusterId={clusterId}
+          resources={resources}
+          loading={loading}
+          error={error}
+          onRetry={() => void refresh()}
+        />
+        <PaneHandle
+          label="Resize navigation"
+          edge="right"
+          value={navWidth}
+          min={NAV_PANE.min}
+          max={NAV_PANE.max}
+          initial={NAV_PANE.initial}
+          onChange={setNavWidth}
+          testId="nav-resize"
+        />
+      </div>
       <div className={styles.main}>
         <div className={styles.content}>
           <Outlet context={context} />

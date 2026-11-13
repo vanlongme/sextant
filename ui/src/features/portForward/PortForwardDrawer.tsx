@@ -4,8 +4,10 @@ import { Link } from "react-router";
 import { ErrorNotice, IconButton, Tabs } from "../../design";
 import type { PortForward } from "../../ipc/generated/PortForward";
 import { resourcePath } from "../../kinds/nav";
+import { DRAWER_PANE, usePaneSize } from "../../stores/paneSize";
 import { CopyRow } from "../details/CopyRow";
 import styles from "../details/DetailDrawer.module.css";
+import { DrawerResize } from "../details/DrawerResize";
 import { ForwardStatus } from "./ForwardStatus";
 import { forwardActions } from "./forwardActions";
 import { localAddress, portText, STATE_LOOK, targetText } from "./forwardText";
@@ -25,6 +27,7 @@ export function PortForwardDrawer(props: {
   const { clusterId, forward, onClose } = props;
   const { kind, namespace, name } = forward.target;
   const drawerRef = useRef<HTMLElement>(null);
+  const [drawerWidth, setDrawerWidth] = usePaneSize(DRAWER_PANE);
 
   // As in the object drawer: focus comes in on open and goes back where it was.
   useEffect(() => {
@@ -57,7 +60,9 @@ export function PortForwardDrawer(props: {
         e.stopPropagation();
         onClose();
       }}
+      style={{ flexBasis: drawerWidth }}
     >
+      <DrawerResize width={drawerWidth} onChange={setDrawerWidth} />
       <header className={styles.header}>
         <h3
           className={styles.title}

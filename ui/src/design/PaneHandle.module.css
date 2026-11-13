@@ -1,0 +1,39 @@
+/* A 9px hit area centred on the pane's border, with a 2px line that shows on hover. */
+.handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 3;
+  display: flex;
+  justify-content: center;
+  width: 9px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.right {
+  right: -5px;
+}
+
+.left {
+  left: -5px;
+}
+
+.line {
+  flex: 0 0 2px;
+  background: transparent;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.handle:hover .line {
+  background: var(--border-strong-color);
+}
+
+.handle[data-active="true"] .line {
+  background: var(--border-accent);
+}
+
+.handle:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}

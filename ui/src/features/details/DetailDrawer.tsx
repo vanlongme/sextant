@@ -12,6 +12,7 @@ import type { ApiResourceInfo } from "../../ipc/generated/ApiResourceInfo";
 import type { ResourceRef } from "../../ipc/generated/ResourceRef";
 import { type KubeObject, objectKey } from "../../kinds/objects";
 import { kindSpec } from "../../kinds/registry";
+import { DRAWER_PANE, usePaneSize } from "../../stores/paneSize";
 import { rowsAreTrimmed, useResourceList } from "../../stores/resources";
 import { DrawerMap, hasDrawerMap } from "../map/DrawerMap";
 import { DrawerMetrics } from "../metrics/DrawerMetrics";
@@ -19,6 +20,7 @@ import { metricsTargetOf } from "../metrics/targets";
 import { ConditionsSection } from "./ConditionsSection";
 import { CopyRow } from "./CopyRow";
 import styles from "./DetailDrawer.module.css";
+import { DrawerResize } from "./DrawerResize";
 import { EventsSection } from "./EventsSection";
 import { FieldTree } from "./FieldTree";
 import { MetadataSection } from "./MetadataSection";
@@ -188,6 +190,7 @@ export function DetailDrawer(props: {
   const [tab, setTab] = useState("overview");
   const drawerRef = useRef<HTMLElement>(null);
   const lastSeen = useRef<{ key: string; object: KubeObject } | null>(null);
+  const [drawerWidth, setDrawerWidth] = usePaneSize(DRAWER_PANE);
   const open = wanted !== null;
 
   // Another object starts on its overview, with no render showing the old tab.
@@ -257,7 +260,9 @@ export function DetailDrawer(props: {
         if (e.target instanceof HTMLTextAreaElement) return;
         onClose();
       }}
+      style={{ flexBasis: drawerWidth }}
     >
+      <DrawerResize width={drawerWidth} onChange={setDrawerWidth} />
       <header className={styles.header}>
         <h3 className={styles.title} data-testid="detail-title" title={name}>
           {shown?.metadata.name ?? name}

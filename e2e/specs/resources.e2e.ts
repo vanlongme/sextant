@@ -343,6 +343,69 @@ describe("resource browsing on a real cluster", () => {
     await gone("detail-drawer");
   });
 
+  it("resizes the navigation and the drawer, and keeps their widths", async () => {
+    /** Focuses a resize handle and presses `key` `times` times. */
+    const press = async (testId: string, key: string, times: number) => {
+      await browser.execute(
+        (id) => document.querySelector<HTMLElement>(`[data-testid="${id}"]`)?.focus(),
+        testId,
+      );
+      for (let i = 0; i < times; i += 1) await browser.keys(key);
+    };
+    const widthOf = async (testId: string) =>
+      (await byTestId(testId).getSize()).width;
+    const valueOf = async (testId: string) =>
+      Number(await byTestId(testId).getAttribute("aria-valuenow"));
+
+    await openResource(PODS, "Pod");
+    await searchResources("app=web");
+    await expectRows("the two web pods", (ids) => ids.length === 2);
+    const [row] = await rowIds();
+
+    const nav = await valueOf("nav-resize");
+    await press("nav-resize", "ArrowRight", 2);
+    await browser.waitUntil(async () => (await valueOf("nav-resize")) === nav + 32, {
+      timeoutMsg: "the navigation never grew by two steps",
+    });
+    expect(Math.round(await widthOf("cluster-sidebar"))).toBe(nav + 32);
+
+    await byTestId(row).click();
+    await shown("detail-drawer");
+    const drawer = await valueOf("drawer-resize");
+    // The drawer's handle is on its left border, so ArrowLeft widens it.
+    await press("drawer-resize", "ArrowLeft", 3);
+    await browser.waitUntil(
+      async () => (await valueOf("drawer-resize")) === drawer + 48,
+      { timeoutMsg: "the drawer never grew by three steps" },
+    );
+    expect(Math.round(await widthOf("detail-drawer"))).toBe(drawer + 48);
+
+    // A drawer opened again comes back at the width it was given.
+    await clickWhenShown("detail-close");
+    await gone("detail-drawer");
+    await byTestId(row).click();
+    await shown("detail-drawer");
+    expect(await valueOf("drawer-resize")).toBe(drawer + 48);
+
+    // Double-click puts both back to their defaults. WebKitWebDriver's doubleClick sends two
+    // single clicks and no dblclick event, so the test sends that event itself.
+    await browser.execute(() => {
+      for (const id of ["drawer-resize", "nav-resize"]) {
+        document
+          .querySelector(`[data-testid="${id}"]`)
+          ?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, detail: 2 }));
+      }
+    });
+    await browser.waitUntil(
+      async () =>
+        (await valueOf("drawer-resize")) === 420 &&
+        (await valueOf("nav-resize")) === 220,
+      { timeoutMsg: "a double-click never reset the widths" },
+    );
+    await clickWhenShown("detail-close");
+    await gone("detail-drawer");
+  });
+
   it("back and forward navigate between resource views", async () => {
     await openResource(PODS, "Pod");
     await openResource(CONFIGMAPS, "ConfigMap");

@@ -10,6 +10,7 @@ export { ErrorNotice } from "./ErrorNotice";
 export { IconButton } from "./IconButton";
 export { Input } from "./Input";
 export { CheckMenu, Menu } from "./Menu";
+export { PaneHandle } from "./PaneHandle";
 export { ProgressBar } from "./ProgressBar";
 export { RadioGroup, type RadioOption } from "./RadioGroup";
 export { Segmented } from "./Segmented";

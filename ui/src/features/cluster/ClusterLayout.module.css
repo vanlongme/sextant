@@ -6,6 +6,19 @@
   min-height: 0;
 }
 
+/* Holds the sidebar and its resize handle, which sits on the right border. */
+.nav {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.nav > nav {
+  flex: 1;
+}
+
 .main {
   display: flex;
   flex-direction: column;

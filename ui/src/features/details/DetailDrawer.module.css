@@ -1,4 +1,6 @@
+/* The width comes from the resize handle on the left border (`DRAWER_PANE`). */
 .drawer {
+  position: relative;
   display: flex;
   flex-direction: column;
   flex: 0 0 420px;
