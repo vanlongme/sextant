@@ -5,6 +5,7 @@ import {
   expectHotbar,
   gone,
   hotbarItem,
+  pointerClick,
   rowMenu,
   shown,
 } from "../helpers/ui";
@@ -22,6 +23,14 @@ async function expectCount(selector: string, n: number): Promise<void> {
   await browser.waitUntil(async () => (await count(selector)) === n, {
     timeout: 30000,
     timeoutMsg: `${selector} never counted ${n}`,
+  });
+}
+
+/** Waits for at least one match; `$` refuses a selector that matches several. */
+async function expectSome(selector: string, timeout: number): Promise<void> {
+  await browser.waitUntil(async () => (await count(selector)) > 0, {
+    timeout,
+    timeoutMsg: `${selector} never matched`,
   });
 }
 
@@ -116,9 +125,7 @@ describe("the Workspace", () => {
     await tab.waitForDisplayed({ timeout: 15000 });
     expect(await tab.getAttribute("data-view")).toBe("pods");
     await shown("workspace-pods", 60000);
-    await browser
-      .$('[data-testid="workspace-pod"]')
-      .waitForDisplayed({ timeout: 60000 });
+    await expectSome('[data-testid="workspace-pod"]', 60000);
   });
 
   it("opens a second pane with Shift-click and a third with Ctrl+\\", async () => {
@@ -149,11 +156,12 @@ describe("the Workspace", () => {
     await tabMenu((await browser.$$(TAB).getElements())[1], "others");
 
     await expectCount(TAB, 2);
-    const pinned = await browser.$(`${TAB}[data-pinned="true"]`);
-    await pinned.waitForExist({ timeout: 15000 });
-    const close = await (await pinned.parentElement()).$(
-      '[data-testid="workspace-tab-close"]',
+    // The close button sits in the pinned tab's row. The selector goes through the
+    // row, because parentElement() returns nothing under WebKitWebDriver.
+    const close = await browser.$(
+      '[role="presentation"][data-pinned="true"] [data-testid="workspace-tab-close"]',
     );
+    await close.waitForExist({ timeout: 15000 });
     expect(await close.isEnabled()).toBe(false);
     expect(await summary()).toBe("1 pane · 1 cluster · 2 tabs · 1 pinned");
   });
@@ -170,7 +178,10 @@ describe("the Workspace", () => {
 
     await clickWhenShown("nav-workspace");
     await shown("workspace-summary");
-    await clickWhenShown("workspace-split");
+    // Split right focuses the new pane. A mouse press focuses the button before the
+    // click, as a person's does; WebKitWebDriver's element click focuses it after the
+    // click, which would hand the focus back to the first pane.
+    await pointerClick(await shown("workspace-split"));
     await expectCount(PANE, 2);
     await (await hotbarItem(DEAD)).click();
 
@@ -179,9 +190,10 @@ describe("the Workspace", () => {
     expect(await (await shown("workspace-failed")).getText()).toContain(
       "Cannot reach the cluster",
     );
-    await browser
-      .$(`${PANE}[data-pane="0"] [data-testid="workspace-pod"]`)
-      .waitForDisplayed({ timeout: 30000 });
+    await expectSome(
+      `${PANE}[data-pane="0"] [data-testid="workspace-pod"]`,
+      30000,
+    );
   });
 
   it("restores the panes, tabs and pins after a reload, and Reset layout empties it", async () => {

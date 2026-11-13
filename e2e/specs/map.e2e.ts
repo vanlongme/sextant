@@ -64,12 +64,35 @@ function edge(from: string, rel: string, to: string) {
 }
 
 /**
+ * Waits until an element stays put for one poll. Opening the details pane narrows the
+ * canvas, and the view refits on resize (spec E §8.2), so the nodes move just after a
+ * selection; a click measured before that lands where the node was.
+ */
+async function stopped(element: WebdriverIO.Element): Promise<void> {
+  let last = "";
+  await browser.waitUntil(
+    async () => {
+      const now = JSON.stringify([
+        await element.getLocation(),
+        await element.getSize(),
+      ]);
+      const same = now === last;
+      last = now;
+      return same;
+    },
+    { timeout: 10000, interval: 250, timeoutMsg: "the node kept moving" },
+  );
+}
+
+/**
  * Clicks a node's ring, so the click lands on the node and not between its parts,
  * and waits for the details pane of "‹Kind› ‹name›".
  */
 async function select(id: string, label: string): Promise<void> {
   await node(id).waitForExist({ timeout: 30000 });
-  await pointerClick(await node(id).$("circle"));
+  const ring = await node(id).$("circle");
+  await stopped(ring);
+  await pointerClick(ring);
   await until(
     async () => {
       const details = byTestId("map-details");
