@@ -2,6 +2,7 @@ import type { TableColumn } from "../../design/VirtualTable";
 import { baseColumns, statusColumn, textColumn } from "../columns";
 import type { KubeObject } from "../objects";
 import { registerKind } from "../registry";
+import { ApplicationDetail } from "./ApplicationDetail";
 import {
   healthStatus,
   revisionText,
@@ -59,6 +60,7 @@ registerKind(ARGO_GROUP, "applications", {
       statusColumn(healthStatus, { id: "health", header: "Health" }),
       titledColumn("revision", "Revision", revisionText, revisionTitle),
     ),
+  detail: ApplicationDetail,
 });
 
 registerKind(ARGO_GROUP, "applicationsets", {

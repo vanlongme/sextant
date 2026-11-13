@@ -84,7 +84,7 @@ export function SimpleTable(props: {
   );
 }
 
-/** `<kind> <name>`, linked to the object's list when the kind is served. */
+/** `<kind> <name>`, or `label`, linked to the object's list when the kind is served. */
 export function ObjectLink(props: {
   clusterId: string;
   resources: ApiResourceInfo[];
@@ -92,13 +92,14 @@ export function ObjectLink(props: {
   name: string;
   namespace?: string;
   apiVersion?: string;
+  label?: string;
 }) {
   const target = ownerTarget(
     { kind: props.kind, name: props.name, apiVersion: props.apiVersion },
     props.namespace,
     props.resources,
   );
-  const label = `${props.kind} ${props.name}`;
+  const label = props.label ?? `${props.kind} ${props.name}`;
   if (!target) return <>{label}</>;
   return (
     <Link
