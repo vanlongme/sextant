@@ -1,7 +1,10 @@
+/* The layout's content box is a block, not a flex column, so `flex: 1` alone leaves the
+   page as tall as its content and the canvas at the SVG default of 150px. */
 .page {
   display: flex;
   flex: 1;
   flex-direction: column;
+  height: 100%;
   min-height: 0;
   min-width: 0;
 }

@@ -179,6 +179,14 @@ describe("resource map", () => {
     }
   });
 
+  it("fills the page under the toolbar", async () => {
+    const canvas = await shown("map-canvas");
+    const { height } = await canvas.getSize();
+    const viewport = await browser.execute(() => window.innerHeight);
+    // The toolbar, chips and window chrome take well under half of the window.
+    expect(height).toBeGreaterThan(viewport / 2);
+  });
+
   it("shows the Gateway and its class waiting for a controller", async () => {
     expect(await node(GATEWAY).getAttribute("data-status")).toBe("warning");
     await select(GATEWAY, "Gateway edge");
