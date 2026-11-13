@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useWorkspace } from "../../stores/workspace";
 import { tabLabel, useClusterName } from "./clusters";
+import { DropZones } from "./DropZones";
 import { activeTab, type WorkspacePane as Pane } from "./layout";
 import { TabStrip } from "./TabStrip";
 import styles from "./WorkspaceScreen.module.css";
@@ -68,7 +69,9 @@ export function WorkspacePane(props: {
       {tab ? (
         <>
           <TabStrip pane={pane} index={index} />
-          <div className={styles.body} />
+          <div className={styles.body}>
+            <DropZones paneId={pane.id} />
+          </div>
         </>
       ) : (
         <EmptyPane />

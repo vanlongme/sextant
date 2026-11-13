@@ -35,6 +35,10 @@
   background: var(--surface-hover);
 }
 
+.tab[data-dragging="true"] {
+  opacity: 0.4;
+}
+
 .tab[data-selected="true"] {
   border-color: var(--border-subtle);
   background: var(--surface-page);

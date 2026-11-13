@@ -1,8 +1,19 @@
+import {
+  DndContext,
+  type DragEndEvent,
+  DragOverlay,
+  type DragStartEvent,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
 import { RotateCcw } from "lucide-react";
-import { Fragment, useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { IS_MAC, matchesShortcut } from "../../app/shortcuts";
 import { Button, Spinner } from "../../design";
 import { restoreWorkspace, useWorkspace } from "../../stores/workspace";
+import { DragGhost } from "./DropZones";
+import { collide, dropAction, parseTarget } from "./drag";
 import { activeTab, focusedPane, layoutSummary } from "./layout";
 import { Splitter } from "./Splitter";
 import { WorkspacePane } from "./WorkspacePane";
@@ -38,12 +49,53 @@ function useSplitKey(root: React.RefObject<HTMLDivElement | null>): void {
   }, [root]);
 }
 
+/** The id of the tab a dnd-kit id names, or null. */
+function draggedTab(id: string | number): string | null {
+  const target = parseTarget(String(id));
+  return target?.kind === "tab" ? target.tabId : null;
+}
+
+/**
+ * Tabs drag with the pointer, as the hotbar's tiles do; Esc cancels (spec E §15.3).
+ * The tab strips and drop zones register as targets inside.
+ */
+function useTabDrag() {
+  const [dragging, setDragging] = useState<string | null>(null);
+  const sensors = useSensors(
+    // A small threshold, so a plain click still picks the tab.
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  );
+  function onDragStart({ active }: DragStartEvent): void {
+    setDragging(draggedTab(active.id));
+  }
+  function onDragEnd({ active, over }: DragEndEvent): void {
+    setDragging(null);
+    const tabId = draggedTab(active.id);
+    const target = over ? parseTarget(String(over.id)) : null;
+    if (!tabId || !target) return;
+    const { layout, dispatch } = useWorkspace.getState();
+    const action = dropAction(layout, tabId, target);
+    if (action) dispatch(action);
+  }
+  return {
+    dragging,
+    context: {
+      sensors,
+      collisionDetection: collide,
+      onDragStart,
+      onDragEnd,
+      onDragCancel: () => setDragging(null),
+    },
+  };
+}
+
 /** Several clusters side by side, at /workspace (spec E §15). */
 export function WorkspaceScreen() {
   const restored = useWorkspace((s) => s.restored);
   const layout = useWorkspace((s) => s.layout);
   const dispatch = useWorkspace((s) => s.dispatch);
   const root = useRef<HTMLDivElement>(null);
+  const drag = useTabDrag();
 
   useEffect(() => {
     void restoreWorkspace();
@@ -69,21 +121,26 @@ export function WorkspaceScreen() {
               Reset layout
             </Button>
           </header>
-          <div className={styles.panes}>
-            {layout.panes.map((pane, index) => (
-              <Fragment key={pane.id}>
-                <WorkspacePane
-                  pane={pane}
-                  index={index}
-                  count={layout.panes.length}
-                  width={layout.widths[index]}
-                />
-                {index < layout.panes.length - 1 ? (
-                  <Splitter index={index} width={layout.widths[index]} />
-                ) : null}
-              </Fragment>
-            ))}
-          </div>
+          <DndContext {...drag.context}>
+            <div className={styles.panes}>
+              {layout.panes.map((pane, index) => (
+                <Fragment key={pane.id}>
+                  <WorkspacePane
+                    pane={pane}
+                    index={index}
+                    count={layout.panes.length}
+                    width={layout.widths[index]}
+                  />
+                  {index < layout.panes.length - 1 ? (
+                    <Splitter index={index} width={layout.widths[index]} />
+                  ) : null}
+                </Fragment>
+              ))}
+            </div>
+            <DragOverlay>
+              {drag.dragging ? <DragGhost tabId={drag.dragging} /> : null}
+            </DragOverlay>
+          </DndContext>
         </>
       ) : (
         <div className={styles.loading}>

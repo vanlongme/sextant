@@ -1,3 +1,10 @@
+import { useDroppable } from "@dnd-kit/core";
+import {
+  horizontalListSortingStrategy,
+  SortableContext,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { Columns2, Pin, PinOff, X } from "lucide-react";
 import type { KeyboardEvent, MouseEvent, ReactElement } from "react";
 import { flushSync } from "react-dom";
@@ -8,6 +15,7 @@ import { ContextMenu, IconButton, StatusDot, Tooltip } from "../../design";
 import type { ContextMenuItem } from "../../design/ContextMenu";
 import { useWorkspace } from "../../stores/workspace";
 import { tabLabel, useClusterName, useWorkspaceClusterState } from "./clusters";
+import { targetId } from "./drag";
 import {
   activeTab,
   MAX_PANES,
@@ -171,6 +179,9 @@ function TabItem(props: {
   const dispatch = useWorkspace((s) => s.dispatch);
   const selected = pane.active === tab.id;
   const label = tabLabel(name, tab.view);
+  const sortable = useSortable({
+    id: targetId({ kind: "tab", tabId: tab.id }),
+  });
 
   function onAuxClick(event: MouseEvent<HTMLButtonElement>): void {
     if (event.button !== 1 || tab.pinned) return;
@@ -191,6 +202,7 @@ function TabItem(props: {
       data-cluster={tab.clusterId}
       data-view={tab.view}
       data-pinned={tab.pinned}
+      {...sortable.listeners}
       onClick={() => dispatch({ type: "activate", tabId: tab.id })}
       onMouseDown={(e) => {
         if (e.button === 1) e.preventDefault();
@@ -242,10 +254,16 @@ function TabItem(props: {
       items={menuItems(pane, index, tab, can)}
     >
       <div
+        ref={sortable.setNodeRef}
         role="presentation"
         className={styles.tab}
+        style={{
+          transform: CSS.Translate.toString(sortable.transform),
+          transition: sortable.transition,
+        }}
         data-selected={selected}
         data-pinned={tab.pinned}
+        data-dragging={sortable.isDragging}
       >
         {tab.pinned ? <Tooltip content={label}>{button}</Tooltip> : button}
         <span className={styles.actions}>
@@ -306,30 +324,42 @@ function SplitButton(props: { pane: WorkspacePane; full: boolean }) {
   );
 }
 
-/** The tabs of one pane, then the split button (spec E §15.3). */
+/**
+ * The tabs of one pane, then the split button (spec E §15.3). A tab drags along its
+ * strip or onto another pane's strip.
+ */
 export function TabStrip(props: { pane: WorkspacePane; index: number }) {
   const { pane, index } = props;
   const layout = useWorkspace((s) => s.layout);
+  const strip = useDroppable({
+    id: targetId({ kind: "strip", paneId: pane.id }),
+  });
   return (
     <div className={styles.strip}>
       <div
+        ref={strip.setNodeRef}
         role="tablist"
         aria-label={`Tabs in pane ${index + 1}`}
         className={styles.tabs}
         data-testid="workspace-strip"
       >
-        {pane.tabs.map((tab) => {
-          const can = tabActions(layout, tab.id);
-          return can ? (
-            <TabItem
-              key={tab.id}
-              pane={pane}
-              index={index}
-              tab={tab}
-              can={can}
-            />
-          ) : null;
-        })}
+        <SortableContext
+          items={pane.tabs.map((t) => targetId({ kind: "tab", tabId: t.id }))}
+          strategy={horizontalListSortingStrategy}
+        >
+          {pane.tabs.map((tab) => {
+            const can = tabActions(layout, tab.id);
+            return can ? (
+              <TabItem
+                key={tab.id}
+                pane={pane}
+                index={index}
+                tab={tab}
+                can={can}
+              />
+            ) : null;
+          })}
+        </SortableContext>
       </div>
       <SplitButton pane={pane} full={layout.panes.length >= MAX_PANES} />
     </div>
