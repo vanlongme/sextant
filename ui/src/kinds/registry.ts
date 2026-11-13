@@ -44,6 +44,16 @@ export interface DetailProps {
   resources: ApiResourceInfo[];
 }
 
+/** The props of a delete dialog: the generic one, or a kind's own (`deleteDialog`). */
+export interface DeleteDialogProps {
+  clusterId: string;
+  resource: ResourceRef;
+  objects: KubeObject[];
+  onCancel(): void;
+  /** Called after trying them all, with the keys of the objects that are gone. */
+  onDeleted(keys: string[]): void;
+}
+
 export interface KindSpec {
   /**
    * The whole set of columns for this kind, in place of the defaults. `usage` is the
@@ -57,6 +67,11 @@ export interface KindSpec {
   actions?: KindAction[];
   /** The kind's own part of the detail drawer, in place of the generic field tree. */
   detail?: ComponentType<DetailProps>;
+  /**
+   * A dialog of the kind's own in place of the generic Delete dialog, for one object
+   * or many. The row menu, the drawer and bulk delete all open it.
+   */
+  deleteDialog?: ComponentType<DeleteDialogProps>;
 }
 
 const specs = new Map<string, KindSpec>();

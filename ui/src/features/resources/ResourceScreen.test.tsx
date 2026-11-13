@@ -14,7 +14,7 @@ import type { ApiResourceInfo } from "../../ipc/generated/ApiResourceInfo";
 import type { ResourceRef } from "../../ipc/generated/ResourceRef";
 import type { WatchEvent } from "../../ipc/generated/WatchEvent";
 import type { KubeObject } from "../../kinds/objects";
-import { registerKind } from "../../kinds/registry";
+import { type DeleteDialogProps, registerKind } from "../../kinds/registry";
 import { resetDockForTest, useDock } from "../../stores/dock";
 import { resetResourcesForTest } from "../../stores/resources";
 import { flush, mockBackend } from "../../test/ipc";
@@ -946,4 +946,52 @@ test.each([
 test("a cluster-scoped row's checkbox names the object, not a path", async () => {
   await show(fakeBackend(), [{ metadata: { name: "node-1" } }], NODES);
   expect(screen.getByRole("checkbox", { name: "Select node-1" })).toBeTruthy();
+});
+const opened: string[][] = [];
+
+function OwnDelete(props: DeleteDialogProps) {
+  opened.push(props.objects.map((o) => o.metadata.name));
+  return (
+    <div data-testid="own-delete">
+      <button type="button" onClick={props.onCancel}>
+        Close own
+      </button>
+    </div>
+  );
+}
+
+test("a kind's own delete dialog serves the row menu, the drawer and bulk delete", async () => {
+  opened.length = 0;
+  registerKind("kinds.test", "deletables", { deleteDialog: OwnDelete });
+  const deletables = info({
+    group: "kinds.test",
+    plural: "deletables",
+    kind: "Deletable",
+  });
+  const fake = fakeBackend();
+  await show(fake, [pod("a"), pod("b")], deletables);
+
+  openMenu("row-menu-a");
+  fireEvent.click(screen.getByTestId("menu-item-delete"));
+  expect(screen.getByTestId("own-delete")).toBeTruthy();
+  expect(screen.queryByTestId("delete-confirm")).toBeNull();
+  expect(opened.at(-1)).toEqual(["a"]);
+  fireEvent.click(screen.getByText("Close own"));
+  expect(screen.queryByTestId("own-delete")).toBeNull();
+
+  fireEvent.click(row("default", "a") as HTMLElement);
+  openMenu("detail-more-actions");
+  fireEvent.click(screen.getByTestId("menu-item-delete"));
+  expect(screen.getByTestId("own-delete")).toBeTruthy();
+  expect(opened.at(-1)).toEqual(["a"]);
+  fireEvent.click(screen.getByText("Close own"));
+
+  for (const name of ["a", "b"]) {
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: `Select default/${name}` }),
+    );
+  }
+  fireEvent.click(screen.getByTestId("bulk-delete"));
+  expect(screen.getByTestId("own-delete")).toBeTruthy();
+  expect(opened.at(-1)).toEqual(["a", "b"]);
 });

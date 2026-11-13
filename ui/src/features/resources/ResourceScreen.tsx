@@ -172,6 +172,8 @@ export function ResourceScreen(props: {
   }, [info, crd, resource, context, usage]);
 
   const kindActions = kindSpec(resource.group, resource.plural)?.actions ?? [];
+  const KindDeleteDialog =
+    kindSpec(resource.group, resource.plural)?.deleteDialog ?? DeleteDialog;
 
   const isHidden = (c: TableColumn<KubeObject>) =>
     choices[c.id] ? choices[c.id] === "hidden" : Boolean(c.defaultHidden);
@@ -350,7 +352,7 @@ export function ResourceScreen(props: {
       </div>
 
       {deleting ? (
-        <DeleteDialog
+        <KindDeleteDialog
           clusterId={clusterId}
           resource={resource}
           objects={deleting}

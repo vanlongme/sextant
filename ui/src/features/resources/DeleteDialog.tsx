@@ -3,8 +3,8 @@ import { Button, Dialog, toast } from "../../design";
 import { api } from "../../ipc/api";
 import { failureMessage } from "../../ipc/client";
 import type { Propagation } from "../../ipc/generated/Propagation";
-import type { ResourceRef } from "../../ipc/generated/ResourceRef";
 import { type KubeObject, objectKey } from "../../kinds/objects";
+import type { DeleteDialogProps } from "../../kinds/registry";
 import styles from "./ResourceScreen.module.css";
 
 /** How many deletes run at once, so a bulk delete cannot flood the backend. */
@@ -24,30 +24,25 @@ const PROPAGATION: { value: Propagation; label: string; help: string }[] = [
   { value: "orphan", label: "Orphan", help: "Keep the objects it owns." },
 ];
 
-function displayName(o: KubeObject): string {
+export function displayName(o: KubeObject): string {
   const { namespace, name } = o.metadata;
   return namespace ? `${namespace}/${name}` : name;
 }
 
-/** Runs every delete, and gives what failed with the API server's message. */
-async function deleteAll(
-  clusterId: string,
-  resource: ResourceRef,
+/**
+ * Runs `run` for every object, at most 8 at once, and gives what failed with the
+ * backend's message.
+ */
+export async function runEach(
   objects: KubeObject[],
-  propagation: Propagation,
+  run: (o: KubeObject) => Promise<unknown>,
 ): Promise<{ object: KubeObject; message: string }[]> {
   const queue = [...objects];
   const failures: { object: KubeObject; message: string }[] = [];
   async function worker(): Promise<void> {
     for (let o = queue.shift(); o; o = queue.shift()) {
       try {
-        await api.resourceDelete(
-          clusterId,
-          resource,
-          o.metadata.namespace ?? null,
-          o.metadata.name,
-          propagation,
-        );
+        await run(o);
       } catch (error) {
         failures.push({ object: o, message: failureMessage(error) });
       }
@@ -57,18 +52,27 @@ async function deleteAll(
   return failures;
 }
 
+/** One toast for what could not be deleted, naming each object. */
+export function reportDeleteFailures(
+  subject: string,
+  single: boolean,
+  failures: { object: KubeObject; message: string }[],
+): void {
+  if (failures.length === 1 && single) {
+    toast.error(`Could not delete ${subject}`, failures[0].message);
+  } else if (failures.length > 0) {
+    toast.error(
+      `Could not delete ${failures.length} of ${subject}`,
+      failures.map((f) => `${displayName(f.object)}: ${f.message}`).join("\n"),
+    );
+  }
+}
+
 /**
  * Asks before deleting, naming every target, and then deletes. It closes when that
  * is done, and a failure of any object shows in a toast with the API's message.
  */
-export function DeleteDialog(props: {
-  clusterId: string;
-  resource: ResourceRef;
-  objects: KubeObject[];
-  onCancel(): void;
-  /** Called after trying them all, with the keys of the objects that are gone. */
-  onDeleted(keys: string[]): void;
-}) {
+export function DeleteDialog(props: DeleteDialogProps) {
   const { clusterId, resource, objects } = props;
   const [propagation, setPropagation] = useState<Propagation>("background");
   const [busy, setBusy] = useState(false);
@@ -81,17 +85,16 @@ export function DeleteDialog(props: {
 
   async function confirm(): Promise<void> {
     setBusy(true);
-    const failures = await deleteAll(clusterId, resource, objects, propagation);
-    if (failures.length === 1 && single) {
-      toast.error(`Could not delete ${subject}`, failures[0].message);
-    } else if (failures.length > 0) {
-      toast.error(
-        `Could not delete ${failures.length} of ${subject}`,
-        failures
-          .map((f) => `${displayName(f.object)}: ${f.message}`)
-          .join("\n"),
-      );
-    }
+    const failures = await runEach(objects, (o) =>
+      api.resourceDelete(
+        clusterId,
+        resource,
+        o.metadata.namespace ?? null,
+        o.metadata.name,
+        propagation,
+      ),
+    );
+    reportDeleteFailures(subject, single, failures);
     const failed = new Set(failures.map((f) => f.object));
     props.onDeleted(
       objects.filter((o) => !failed.has(o)).map((o) => objectKey(o)),
