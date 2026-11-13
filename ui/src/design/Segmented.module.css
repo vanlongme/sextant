@@ -61,3 +61,8 @@
 .input:checked:focus-visible + .segment {
   box-shadow: var(--shadow-1), var(--focus-ring);
 }
+
+.option .input:disabled + .segment {
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}

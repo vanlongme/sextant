@@ -5,12 +5,13 @@ import styles from "./Segmented.module.css";
  * Mutually exclusive options in a row. Native radio inputs carry the choice. A native
  * `change` listener on the group catches the arrow-key choice, because WebKitGTK fires
  * `change` without `click` and React's radio onChange listens only to `click`. Each option's test id, `<testId>-<value>`,
- * is on its label, the part a pointer can click.
+ * is on its label, the part a pointer can click. A disabled option cannot be chosen and
+ * shows its `hint` as the label's native tooltip.
  */
 export function Segmented<T extends string>(props: {
   label: string;
   value: T;
-  options: { value: T; label: string }[];
+  options: { value: T; label: string; disabled?: boolean; hint?: string }[];
   size?: "sm" | "md";
   onChange(v: T): void;
   testId?: string;
@@ -43,6 +44,7 @@ export function Segmented<T extends string>(props: {
           key={o.value}
           className={styles.option}
           data-testid={props.testId ? `${props.testId}-${o.value}` : undefined}
+          title={o.hint}
         >
           <input
             type="radio"
@@ -50,6 +52,7 @@ export function Segmented<T extends string>(props: {
             name={name}
             value={o.value}
             checked={o.value === props.value}
+            disabled={o.disabled}
             onChange={() => props.onChange(o.value)}
           />
           <span className={styles.segment}>{o.label}</span>

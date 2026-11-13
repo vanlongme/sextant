@@ -64,6 +64,28 @@ test("choosing an option reports its value, and each option has its test id", ()
   expect(onChange).toHaveBeenCalledWith("light");
 });
 
+test("a disabled option cannot be chosen and shows its hint", () => {
+  const onChange = vi.fn();
+  render(
+    <Segmented
+      label="Layout"
+      value="a"
+      options={[
+        { value: "a", label: "A" },
+        { value: "b", label: "B", disabled: true, hint: "Not here." },
+      ]}
+      onChange={onChange}
+      testId="t"
+    />,
+  );
+  const b = screen.getByTestId("t-b");
+  expect(b.getAttribute("title")).toBe("Not here.");
+  expect((b.querySelector("input") as HTMLInputElement).disabled).toBe(true);
+  expect(screen.getByTestId("t-a").getAttribute("title")).toBeNull();
+  fireEvent.click(b);
+  expect(onChange).not.toHaveBeenCalled();
+});
+
 test("an arrow-key choice (a native change with no click) reports its value", () => {
   const onChange = vi.fn();
   render(

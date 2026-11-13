@@ -1,0 +1,38 @@
+.panes {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.canvas {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.handle {
+  flex: none;
+  width: 6px;
+  margin: 0 -3px;
+  z-index: 1;
+  cursor: col-resize;
+  background: transparent;
+}
+
+.handle:hover {
+  background: var(--border-default);
+}
+
+.handle:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.details {
+  flex: none;
+  min-height: 0;
+  border-left: 1px solid var(--border-subtle);
+}
