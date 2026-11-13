@@ -36,12 +36,15 @@ function r(label: string, group: string, plural: string): NavResource {
   return { type: "resource", label, group, plural };
 }
 
+const GATEWAY = "gateway.networking.k8s.io";
+const ARGO = "argoproj.io";
+
 /**
  * The sidebar sections of F4, in order. Overview is the cluster home route and not
  * a resource. The Workloads Overview entry is in the sidebar, but its page is
  * a placeholder until the overview screens (F17). Port Forwarding and Helm's
  * Charts and Releases are routes of the cluster screen, not resource kinds. Custom Resources starts with Definitions; the
- * entries for each CRD are added by `customResourceGroups`.
+ * entries for each CRD are added by `customResourceGroups`. The Gateway API kinds are under Network and Argo CD has its own section (spec G §3); their items hide where the cluster does not serve them.
  */
 export const NAV_SECTIONS: NavSection[] = [
   { id: "nodes", label: "Nodes", items: [r("Nodes", "", "nodes")] },
@@ -93,6 +96,11 @@ export const NAV_SECTIONS: NavSection[] = [
       r("Ingresses", "networking.k8s.io", "ingresses"),
       r("IngressClasses", "networking.k8s.io", "ingressclasses"),
       r("NetworkPolicies", "networking.k8s.io", "networkpolicies"),
+      r("GatewayClasses", GATEWAY, "gatewayclasses"),
+      r("Gateways", GATEWAY, "gateways"),
+      r("HTTPRoutes", GATEWAY, "httproutes"),
+      r("GRPCRoutes", GATEWAY, "grpcroutes"),
+      r("ReferenceGrants", GATEWAY, "referencegrants"),
       { type: "route", label: "Port Forwarding", path: "port-forwards" },
     ],
   },
@@ -117,6 +125,15 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { type: "route", label: "Charts", path: "helm/charts" },
       { type: "route", label: "Releases", path: "helm/releases" },
+    ],
+  },
+  {
+    id: "argocd",
+    label: "Argo CD",
+    items: [
+      r("Applications", ARGO, "applications"),
+      r("ApplicationSets", ARGO, "applicationsets"),
+      r("AppProjects", ARGO, "appprojects"),
     ],
   },
   {
@@ -193,12 +210,28 @@ export function visibleSections(resources: ApiResourceInfo[]): NavSection[] {
   })).filter((section) => section.items.length > 0);
 }
 
-/** Listable custom resources grouped by API group, with groups and items sorted. */
+/** `group/plural` of every resource a section lists; Custom Resources leaves them out. */
+const NAV_RESOURCE_KEYS: ReadonlySet<string> = new Set(
+  NAV_SECTIONS.flatMap((s) =>
+    s.items.filter((i) => i.type === "resource").map(navItemKey),
+  ),
+);
+
+/**
+ * Listable custom resources grouped by API group, with groups and items sorted.
+ * Resources that a section lists are left out, one by one, so other kinds of their group stay.
+ */
 export function customResourceGroups(resources: ApiResourceInfo[]): CrdGroup[] {
   const groups = new Map<string, CrdGroup>();
   for (const info of resources) {
     const { group, plural, kind } = info.resource;
-    if (BUILTIN_GROUPS.has(group) || !info.canList) continue;
+    if (
+      BUILTIN_GROUPS.has(group) ||
+      !info.canList ||
+      NAV_RESOURCE_KEYS.has(`${group}/${plural}`)
+    ) {
+      continue;
+    }
     const entry = groups.get(group) ?? { group, items: [] };
     entry.items.push({ label: kind, plural });
     groups.set(group, entry);

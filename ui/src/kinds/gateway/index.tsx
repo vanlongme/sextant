@@ -46,7 +46,7 @@ function listColumn(
   };
 }
 
-// The Gateway API kinds stay under Custom Resources (spec E §13).
+// The Gateway API kinds are listed under Network (spec G §3.2).
 registerKind(GROUP, "gatewayclasses", {
   columns: (info) =>
     baseColumns(

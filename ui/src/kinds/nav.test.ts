@@ -68,6 +68,11 @@ const EXPECTED: [string, string[]][] = [
       "networking.k8s.io/ingresses",
       "networking.k8s.io/ingressclasses",
       "networking.k8s.io/networkpolicies",
+      "gateway.networking.k8s.io/gatewayclasses",
+      "gateway.networking.k8s.io/gateways",
+      "gateway.networking.k8s.io/httproutes",
+      "gateway.networking.k8s.io/grpcroutes",
+      "gateway.networking.k8s.io/referencegrants",
       "route:port-forwards",
     ],
   ],
@@ -82,6 +87,14 @@ const EXPECTED: [string, string[]][] = [
   ["namespaces", ["/namespaces"]],
   ["events", ["/events"]],
   ["helm", ["route:helm/charts", "route:helm/releases"]],
+  [
+    "argocd",
+    [
+      "argoproj.io/applications",
+      "argoproj.io/applicationsets",
+      "argoproj.io/appprojects",
+    ],
+  ],
   [
     "access",
     [
@@ -112,6 +125,7 @@ test("NAV_SECTIONS covers every F4 resource", () => {
     "Namespaces",
     "Events",
     "Helm",
+    "Argo CD",
     "Access Control",
     "Custom Resources",
   ]);
@@ -151,11 +165,12 @@ test("sections with no visible items disappear; routes need no listable resource
   expect(shape([])).toEqual([["network", ["route:port-forwards"]], helm]);
 });
 
-test("the Helm section sits between Events and Access Control with Charts and Releases", () => {
+test("Helm and Argo CD sit between Events and Access Control", () => {
   const ids = NAV_SECTIONS.map((s) => s.id);
-  expect(ids.slice(ids.indexOf("events"), ids.indexOf("events") + 3)).toEqual([
+  expect(ids.slice(ids.indexOf("events"), ids.indexOf("events") + 4)).toEqual([
     "events",
     "helm",
+    "argocd",
     "access",
   ]);
   expect(NAV_SECTIONS.find((s) => s.id === "helm")).toEqual({
@@ -216,4 +231,49 @@ test("Workloads has an Overview entry and no other section does", () => {
   expect(
     visibleSections(allServed()).find((s) => s.id === "workloads")?.overview,
   ).toBe("workloads");
+});
+
+test("each Argo CD page shows only when its kind is served", () => {
+  const argo = (resources: ApiResourceInfo[]) =>
+    visibleSections(resources)
+      .find((s) => s.id === "argocd")
+      ?.items.map(navItemKey);
+  expect(argo([info("", "pods")])).toBeUndefined();
+  expect(
+    argo([
+      info("argoproj.io", "applications"),
+      info("argoproj.io", "appprojects"),
+    ]),
+  ).toEqual(["argoproj.io/applications", "argoproj.io/appprojects"]);
+});
+
+test("the Gateway API kinds sit in Network between NetworkPolicies and Port Forwarding", () => {
+  const keys =
+    NAV_SECTIONS.find((s) => s.id === "network")?.items.map(navItemKey) ?? [];
+  const at = keys.indexOf("networking.k8s.io/networkpolicies");
+  expect(keys.slice(at + 1)).toEqual([
+    "gateway.networking.k8s.io/gatewayclasses",
+    "gateway.networking.k8s.io/gateways",
+    "gateway.networking.k8s.io/httproutes",
+    "gateway.networking.k8s.io/grpcroutes",
+    "gateway.networking.k8s.io/referencegrants",
+    "route:port-forwards",
+  ]);
+});
+
+test("custom resources leave out the kinds a section lists, matched per resource", () => {
+  const groups = customResourceGroups([
+    info("argoproj.io", "applications", {}, "Application"),
+    info("argoproj.io", "appprojects", {}, "AppProject"),
+    info("argoproj.io", "rollouts", {}, "Rollout"),
+    info("gateway.networking.k8s.io", "gateways", {}, "Gateway"),
+    info("gateway.networking.k8s.io", "tlsroutes", {}, "TLSRoute"),
+  ]);
+  expect(groups).toEqual([
+    { group: "argoproj.io", items: [{ label: "Rollout", plural: "rollouts" }] },
+    {
+      group: "gateway.networking.k8s.io",
+      items: [{ label: "TLSRoute", plural: "tlsroutes" }],
+    },
+  ]);
 });
