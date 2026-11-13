@@ -56,6 +56,7 @@ test("the groups and rows follow the table, with words off macOS", () => {
     "Dialogs and lists",
     "Charts",
     "Resource map",
+    "Workspace",
   ]);
   expect(rows()).toEqual([
     "shortcut-palette",
@@ -80,6 +81,9 @@ test("the groups and rows follow the table, with words off macOS", () => {
     "shortcut-mapZoom",
     "shortcut-mapFit",
     "shortcut-mapClear",
+    "shortcut-workspaceSplit",
+    "shortcut-workspaceTabs",
+    "shortcut-workspaceClose",
   ]);
   expect(chips("palette")).toEqual(["Ctrl+Shift+P"]);
   expect(chips("shortcuts")).toEqual(["Ctrl+/"]);
@@ -238,4 +242,28 @@ test("the dialog opens with the focus in the filter, and Close gives it back", a
   await waitFor(() =>
     expect(document.activeElement).toBe(screen.getByTestId("opener")),
   );
+});
+
+test("the Workspace group lists its keys", () => {
+  body("linux");
+  filter("workspace");
+
+  expect(groups()).toEqual(["Workspace"]);
+  expect(rows()).toEqual([
+    "shortcut-workspaceSplit",
+    "shortcut-workspaceTabs",
+    "shortcut-workspaceClose",
+  ]);
+  expect(chips("workspaceSplit")).toEqual(["Ctrl+\\"]);
+  expect(chips("workspaceTabs")).toEqual(["Left", "Right"]);
+  expect(screen.getByTestId("shortcut-workspaceClose").textContent).toBe(
+    "Close the tabDelete",
+  );
+});
+
+test("on macOS the Workspace split reads ⌘\\", () => {
+  body("macos");
+
+  expect(chips("workspaceSplit")).toEqual(["⌘\\"]);
+  expect(chips("workspaceTabs")).toEqual(["←", "→"]);
 });

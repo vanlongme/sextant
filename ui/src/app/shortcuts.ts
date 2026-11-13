@@ -41,6 +41,7 @@ export const SHORTCUT_GROUPS = [
   "Dialogs and lists",
   "Charts",
   "Resource map",
+  "Workspace",
 ] as const;
 export type ShortcutGroup = (typeof SHORTCUT_GROUPS)[number];
 
@@ -66,7 +67,10 @@ export type ShortcutId =
   | "mapMove"
   | "mapZoom"
   | "mapFit"
-  | "mapClear";
+  | "mapClear"
+  | "workspaceSplit"
+  | "workspaceTabs"
+  | "workspaceClose";
 
 export interface ShortcutRow {
   id: ShortcutId;
@@ -243,6 +247,24 @@ export const SHORTCUTS: readonly ShortcutRow[] = [
     group: "Resource map",
     action: "Clear the selection",
     keys: one("Esc"),
+  },
+  {
+    id: "workspaceSplit",
+    group: "Workspace",
+    action: "Open the tab to the side",
+    keys: one("Mod+\\"),
+  },
+  {
+    id: "workspaceTabs",
+    group: "Workspace",
+    action: "Previous or next tab",
+    keys: pair("Left", "Right"),
+  },
+  {
+    id: "workspaceClose",
+    group: "Workspace",
+    action: "Close the tab",
+    keys: one("Delete"),
   },
 ];
 

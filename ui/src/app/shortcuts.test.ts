@@ -33,6 +33,9 @@ const ELSEWHERE: Record<ShortcutId, string> = {
   mapZoom: "+ / -",
   mapFit: "0",
   mapClear: "Esc",
+  workspaceSplit: "Ctrl+\\",
+  workspaceTabs: "Left / Right",
+  workspaceClose: "Delete",
 };
 
 /** Spec C §7.2, the On macOS column ("same" written out). */
@@ -59,6 +62,9 @@ const MAC: Record<ShortcutId, string> = {
   mapZoom: "+ / -",
   mapFit: "0",
   mapClear: "Esc",
+  workspaceSplit: "⌘\\",
+  workspaceTabs: "← / →",
+  workspaceClose: "Delete",
 };
 
 function key(init: KeyboardEventInit): KeyboardEvent {
@@ -74,6 +80,7 @@ test("the table holds the spec's rows in order", () => {
     "Dialogs and lists",
     "Charts",
     "Resource map",
+    "Workspace",
   ]);
   expect(SHORTCUTS.map((row) => [row.group, row.id, row.action])).toEqual([
     ["General", "palette", "Command palette"],
@@ -98,6 +105,9 @@ test("the table holds the spec's rows in order", () => {
     ["Resource map", "mapZoom", "Zoom in or out"],
     ["Resource map", "mapFit", "Fit to view"],
     ["Resource map", "mapClear", "Clear the selection"],
+    ["Workspace", "workspaceSplit", "Open the tab to the side"],
+    ["Workspace", "workspaceTabs", "Previous or next tab"],
+    ["Workspace", "workspaceClose", "Close the tab"],
   ]);
 });
 
@@ -238,4 +248,17 @@ test("the chart keys are the arrows, Home, End and Escape, without modifiers", (
       false,
     ),
   ]).toEqual([true, true, true, true, true, false, false]);
+});
+
+test("the Workspace keys: Mod+\\ to split, the arrows and Delete without modifiers", () => {
+  expect([
+    matchesShortcut("workspaceSplit", key({ key: "\\", ctrlKey: true }), false),
+    matchesShortcut("workspaceSplit", key({ key: "\\", metaKey: true }), true),
+    matchesShortcut("workspaceSplit", key({ key: "\\", ctrlKey: true }), true),
+    matchesShortcut("workspaceSplit", key({ key: "\\" }), false),
+    matchesShortcut("workspaceTabs", key({ key: "ArrowLeft" }), false),
+    matchesShortcut("workspaceTabs", key({ key: "ArrowRight" }), true),
+    matchesShortcut("workspaceClose", key({ key: "Delete" }), false),
+    matchesShortcut("workspaceClose", key({ key: "Backspace" }), false),
+  ]).toEqual([true, true, false, false, true, true, true, false]);
 });
