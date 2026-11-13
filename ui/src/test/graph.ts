@@ -246,6 +246,26 @@ export function demoGraph(): { nodes: GraphNode[]; edges: GraphEdge[] } {
   return { nodes, edges };
 }
 
+/**
+ * `size` ReplicaSets in namespace `loop` that own each other in a ring (one that owns
+ * itself when `size` is 1), and a Pod the first one owns. Kubernetes allows such owner
+ * references, so the map must still draw them.
+ */
+export function ownsCycle(size: number): {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+} {
+  const sets = Array.from({ length: size }, (_, i) =>
+    gnode(`ReplicaSet/loop/rs-${i}`),
+  );
+  const pod = gnode("Pod/loop/pod");
+  const edges = sets.map((s, i) =>
+    gedge(s.id, "owns", sets[(i + 1) % size].id),
+  );
+  edges.push(gedge(sets[0].id, "owns", pod.id));
+  return { nodes: [...sets, pod], edges };
+}
+
 export function demoSnapshot(over: Partial<SnapshotEvent> = {}): SnapshotEvent {
   const { nodes, edges } = demoGraph();
   return snapshotOf(nodes, edges, over);
