@@ -17,6 +17,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import {
   CircleHelp,
+  Columns2,
   Command,
   Info,
   Keyboard,
@@ -34,9 +35,11 @@ import {
   StatusDot,
   Tooltip,
 } from "../design";
+import { focusedClusterId } from "../features/workspace/layout";
 import type { ClusterEntry } from "../ipc/generated/ClusterEntry";
 import { useCatalog } from "../stores/catalog";
 import { useShell } from "../stores/shell";
+import { openInWorkspace, useWorkspace } from "../stores/workspace";
 import { clusterStatus } from "./clusterStatus";
 import { clusterColor, clusterInitials } from "./clusterVisual";
 import styles from "./Hotbar.module.css";
@@ -44,7 +47,13 @@ import styles from "./Hotbar.module.css";
 function HotbarItem({ cluster }: { cluster: ClusterEntry }) {
   const navigate = useNavigate();
   const unpin = useCatalog((s) => s.unpin);
-  const active = useMatch(`/cluster/${encodeURIComponent(cluster.id)}`);
+  const onCluster = useMatch(`/cluster/${encodeURIComponent(cluster.id)}`);
+  const onWorkspace = useMatch("/workspace") !== null;
+  const focused = useWorkspace(
+    (s) => focusedClusterId(s.layout) === cluster.id,
+  );
+  // On the Workspace, the focused pane's cluster is the active tile (spec E §15.1).
+  const active = onWorkspace ? focused : onCluster !== null;
   const { attributes, listeners, setNodeRef, transform, transition } =
     useSortable({ id: cluster.id });
   const status = clusterStatus(cluster.state);
@@ -84,9 +93,16 @@ function HotbarItem({ cluster }: { cluster: ClusterEntry }) {
               aria-label={cluster.name}
               aria-current={active ? "page" : undefined}
               data-testid={`hotbar-item-${cluster.id}`}
-              onClick={() =>
-                navigate(`/cluster/${encodeURIComponent(cluster.id)}`)
-              }
+              onClick={(event) => {
+                // Spec E §15.1: on the Workspace a click opens the cluster in the
+                // focused pane; Shift-click anywhere opens it to the side there.
+                if (onWorkspace || event.shiftKey) {
+                  void openInWorkspace(cluster.id, event.shiftKey);
+                  if (!onWorkspace) navigate("/workspace");
+                  return;
+                }
+                navigate(`/cluster/${encodeURIComponent(cluster.id)}`);
+              }}
             >
               {cluster.icon ? (
                 <img src={cluster.icon} alt="" className={styles.icon} />
@@ -216,6 +232,12 @@ export function Hotbar() {
         label="Catalog"
         testId="nav-catalog"
         icon={<LayoutGrid size={18} aria-hidden="true" />}
+      />
+      <RailLink
+        to="/workspace"
+        label="Workspace"
+        testId="nav-workspace"
+        icon={<Columns2 size={18} aria-hidden="true" />}
       />
       <DndContext
         sensors={sensors}

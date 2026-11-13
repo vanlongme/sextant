@@ -5,6 +5,7 @@ import type { ClusterInfo } from "../ipc/generated/ClusterInfo";
 import type { ConnectionState } from "../ipc/generated/ConnectionState";
 import { resetPrefsForTest } from "../stores/prefs";
 import { resetShellForTest, useShell } from "../stores/shell";
+import { resetWorkspaceForTest, useWorkspace } from "../stores/workspace";
 import { mockBackend } from "../test/ipc";
 import {
   COMMANDS,
@@ -60,11 +61,13 @@ test("the registry lists the spec's commands in order", () => {
       ["theme-system", "Theme: System", null],
       ["back", "Go back", "back"],
       ["forward", "Go forward", "forward"],
+      ["workspace", "Workspace", null],
+      ["workspace-open", "Open prod in the Workspace", null],
     ],
   );
 });
 
-test("terminal, disconnect, install-chart and resource-map need the current cluster connected; cluster-settings any cluster", () => {
+test("terminal, disconnect, install-chart and resource-map need the current cluster connected; cluster-settings and workspace-open any cluster", () => {
   const available = (ctx: CommandContext) =>
     COMMANDS.filter((c) => c.available(ctx)).map((c) => c.id);
   const all = COMMANDS.map((c) => c.id);
@@ -75,7 +78,9 @@ test("terminal, disconnect, install-chart and resource-map need the current clus
       id !== "install-chart" &&
       id !== "resource-map",
   );
-  const always = onCluster.filter((id) => id !== "cluster-settings");
+  const always = onCluster.filter(
+    (id) => id !== "cluster-settings" && id !== "workspace-open",
+  );
   expect(available(context())).toEqual(always);
   expect(
     available(context({ cluster: on({ status: "disconnected" }) })),
@@ -124,6 +129,35 @@ test("catalog, back and forward navigate", () => {
   runCommand("back", ctx);
   runCommand("forward", ctx);
   expect(ctx.navigate.mock.calls).toEqual([["/catalog"], [-1], [1]]);
+});
+
+test("workspace goes to the Workspace, once", () => {
+  const ctx = context({ cluster: on(CONNECTED) });
+  runCommand("workspace", ctx);
+  expect(ctx.navigate.mock.calls).toEqual([["/workspace"]]);
+
+  const there = context({ pathname: "/workspace" });
+  runCommand("workspace", there);
+  expect(there.navigate).not.toHaveBeenCalled();
+});
+
+test("workspace-open opens the current cluster in the Workspace and goes there", async () => {
+  resetWorkspaceForTest();
+  mockBackend({ ui_state_get: () => null, ui_state_set: () => null });
+  const ctx = context({ pathname: "/cluster/c1", cluster: on(CONNECTED) });
+
+  runCommand("workspace-open", ctx);
+
+  expect(ctx.navigate.mock.calls).toEqual([["/workspace"]]);
+  await vi.waitFor(() =>
+    expect(useWorkspace.getState().layout.panes[0].tabs).toEqual([
+      { id: "t2", clusterId: "c1", view: "pods", pinned: false },
+    ]),
+  );
+
+  const nowhere = context();
+  runCommand("workspace-open", nowhere);
+  expect(nowhere.navigate).not.toHaveBeenCalled();
 });
 
 test("preferences closes a shell dialog and does not navigate where it is", () => {
