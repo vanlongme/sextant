@@ -3,6 +3,8 @@ import { call } from "./client";
 import type { ApiResourceInfo } from "./generated/ApiResourceInfo";
 import type { AppInfo } from "./generated/AppInfo";
 import type { ApplyResult } from "./generated/ApplyResult";
+import type { ArgoRollbackOptions } from "./generated/ArgoRollbackOptions";
+import type { ArgoSyncOptions } from "./generated/ArgoSyncOptions";
 import type { ChartSearch } from "./generated/ChartSearch";
 import type { ChartVersion } from "./generated/ChartVersion";
 import type { ClusterEntry } from "./generated/ClusterEntry";
@@ -160,6 +162,32 @@ export const api = {
       name,
       propagation,
     }),
+  argocdSync: (
+    clusterId: string,
+    namespace: string,
+    name: string,
+    options: ArgoSyncOptions,
+  ) => call<void>("argocd_sync", { clusterId, namespace, name, options }),
+  argocdRefresh: (
+    clusterId: string,
+    namespace: string,
+    name: string,
+    hard: boolean,
+  ) => call<void>("argocd_refresh", { clusterId, namespace, name, hard }),
+  argocdTerminate: (clusterId: string, namespace: string, name: string) =>
+    call<void>("argocd_terminate", { clusterId, namespace, name }),
+  argocdRollback: (
+    clusterId: string,
+    namespace: string,
+    name: string,
+    options: ArgoRollbackOptions,
+  ) => call<void>("argocd_rollback", { clusterId, namespace, name, options }),
+  argocdDelete: (
+    clusterId: string,
+    namespace: string,
+    name: string,
+    cascade: boolean,
+  ) => call<void>("argocd_delete", { clusterId, namespace, name, cascade }),
   resourceForceFinalize: (
     clusterId: string,
     resource: ResourceRef,
