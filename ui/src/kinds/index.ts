@@ -3,6 +3,7 @@ import "./workloads";
 import "./nodes";
 import "./network";
 import "./gateway";
+import "./argocd";
 import "./config";
 import "./storage";
 import "./policy";
