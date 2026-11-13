@@ -5,6 +5,7 @@ import { registerKind } from "../registry";
 import { ApplicationDetail } from "./ApplicationDetail";
 import { ApplicationSetDetail } from "./ApplicationSetDetail";
 import { AppProjectDetail } from "./AppProjectDetail";
+import { APPLICATION_ACTIONS } from "./actions";
 import {
   healthStatus,
   revisionText,
@@ -62,6 +63,7 @@ registerKind(ARGO_GROUP, "applications", {
       statusColumn(healthStatus, { id: "health", header: "Health" }),
       titledColumn("revision", "Revision", revisionText, revisionTitle),
     ),
+  actions: APPLICATION_ACTIONS,
   detail: ApplicationDetail,
 });
 
