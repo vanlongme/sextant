@@ -264,6 +264,53 @@ describe("MapCanvas", () => {
     expect(ty + y * k).toBeCloseTo(300, 3);
   });
 
+  it("compact: fits the width at most 100%, is as tall as the drawing, with no controls", () => {
+    draw({ compact: true, page: "object", flow: "v", focusId: DEMO.podA });
+    expect(screen.queryByTestId("map-zoom-in")).toBeNull();
+    expect(screen.queryByTestId("map-fit")).toBeNull();
+    expect(screen.queryByTestId("map-legend-toggle")).toBeNull();
+    const canvas = screen.getByTestId("map-canvas");
+    expect(canvas.getAttribute("aria-label")).toBe(
+      "Resource map. Select a resource to see its connections.",
+    );
+    const svg = canvas.querySelector("svg") as SVGSVGElement;
+    const [tx, ty, k] =
+      svg
+        .querySelector("g")
+        ?.getAttribute("transform")
+        ?.match(/-?[\d.]+/g)
+        ?.map(Number) ?? [];
+    expect(k).toBeLessThanOrEqual(1);
+    expect(tx).toBeGreaterThanOrEqual(24 - 1e-6);
+    expect(ty).toBeDefined();
+    expect(Number(svg.getAttribute("height"))).toBeGreaterThan(48);
+  });
+
+  it("compact: a click selects, but drags, the wheel and zoom keys do nothing", () => {
+    const { props } = draw({ compact: true, page: "object", flow: "v" });
+    const canvas = screen.getByTestId("map-canvas");
+    const world = () =>
+      canvas.querySelector("svg > g")?.getAttribute("transform");
+    const before = node(DEMO.podA).getAttribute("transform");
+    const view = world();
+    fireEvent.pointerDown(node(DEMO.podA), {
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+    });
+    fireEvent.pointerMove(window, { clientX: 110, clientY: 60 });
+    fireEvent.pointerUp(window);
+    fireEvent.pointerDown(canvas, { button: 0, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(window, { clientX: 110, clientY: 60 });
+    fireEvent.pointerUp(window);
+    fireEvent.wheel(canvas, { deltaY: -200 });
+    fireEvent.keyDown(canvas, { key: "+" });
+    expect(node(DEMO.podA).getAttribute("transform")).toBe(before);
+    expect(world()).toBe(view);
+    fireEvent.click(node(DEMO.podA));
+    expect(props.onSelect).toHaveBeenCalledWith(DEMO.podA);
+  });
+
   it("shows the legend on demand", () => {
     draw();
     expect(screen.queryByTestId("map-legend")).toBeNull();

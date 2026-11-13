@@ -13,6 +13,7 @@ import type { ResourceRef } from "../../ipc/generated/ResourceRef";
 import { type KubeObject, objectKey } from "../../kinds/objects";
 import { kindSpec } from "../../kinds/registry";
 import { rowsAreTrimmed, useResourceList } from "../../stores/resources";
+import { DrawerMap, hasDrawerMap } from "../map/DrawerMap";
 import { DrawerMetrics } from "../metrics/DrawerMetrics";
 import { metricsTargetOf } from "../metrics/targets";
 import { ConditionsSection } from "./ConditionsSection";
@@ -40,6 +41,11 @@ const METRICS_TAB = {
   value: "metrics",
   label: "Metrics",
   testId: "detail-tab-metrics",
+};
+const MAP_TAB = {
+  value: "map",
+  label: "Resource map",
+  testId: "detail-tab-map",
 };
 const EVENTS_TAB = {
   value: "events",
@@ -96,9 +102,18 @@ function Body(props: {
   const Detail = kindSpec(resource.group, resource.plural)?.detail;
   const { metadata: _metadata, ...rest } = object;
   // The overview stays mounted under the other tabs, so unsaved edits survive a
-  // tab switch. The metrics panel polls, so it is mounted only while it is shown.
+  // tab switch. The metrics panel polls and the map watches the cluster, so each is
+  // mounted only while it is shown.
   return (
     <>
+      {tab === "map" ? (
+        <DrawerMap
+          clusterId={clusterId}
+          kind={resource.kind}
+          namespace={object.metadata.namespace ?? ""}
+          name={object.metadata.name}
+        />
+      ) : null}
       {tab === "events" ? (
         <EventsSection
           clusterId={clusterId}
@@ -216,9 +231,13 @@ export function DetailDrawer(props: {
     found !== undefined &&
     metricsTargetOf(resource, shown) !== null;
   if (tab === "metrics" && shown !== null && !metrics) setTab("overview");
-  const tabs = metrics
-    ? [OVERVIEW_TAB, METRICS_TAB, EVENTS_TAB]
-    : [OVERVIEW_TAB, EVENTS_TAB];
+  // The Resource map is for the kinds an object map can focus on (spec E §11).
+  const tabs = [
+    OVERVIEW_TAB,
+    ...(metrics ? [METRICS_TAB] : []),
+    ...(hasDrawerMap(resource) ? [MAP_TAB] : []),
+    EVENTS_TAB,
+  ];
 
   return (
     <aside

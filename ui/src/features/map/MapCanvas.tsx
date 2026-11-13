@@ -54,6 +54,11 @@ export interface MapCanvasProps {
   resetSignal?: number;
   /** Each new `n` centres the view on `id` at the current zoom (spec E §12.2). */
   centre?: { id: string; n: number };
+  /**
+   * The drawer tab's canvas (spec E §11): fitted to the width at most 100%, as tall
+   * as the drawing so the drawer scrolls, with no zoom, no legend and no dragging.
+   */
+  compact?: boolean;
 }
 
 const LEGEND_STATUS = [
@@ -111,6 +116,7 @@ export function MapCanvas({
   onSelect,
   resetSignal = 0,
   centre,
+  compact = false,
 }: MapCanvasProps) {
   const options = useMemo(
     () => ({ layout, page, flow, focusId }),
@@ -147,6 +153,16 @@ export function MapCanvas({
     const h = el.clientHeight;
     const ew = Math.max(extent.x1 - extent.x0, 1);
     const eh = Math.max(extent.y1 - extent.y0, 1);
+    if (compact) {
+      if (!w) return;
+      const k = clampZoom(Math.min((w - 2 * FIT_PAD) / ew, 1));
+      setView({
+        k,
+        tx: (w - ew * k) / 2 - extent.x0 * k,
+        ty: FIT_PAD - extent.y0 * k,
+      });
+      return;
+    }
     if (!w || !h) return;
     const k = clampZoom(
       Math.min((w - 2 * FIT_PAD) / ew, (h - 2 * FIT_PAD) / eh, 1),
@@ -156,7 +172,7 @@ export function MapCanvas({
       tx: (w - ew * k) / 2 - extent.x0 * k,
       ty: (h - eh * k) / 2 - extent.y0 * k,
     });
-  }, [extent.x0, extent.y0, extent.x1, extent.y1]);
+  }, [extent.x0, extent.y0, extent.x1, extent.y1, compact]);
 
   // Fit on load and whenever the drawing changes, until the user pans or zooms.
   useLayoutEffect(() => {
@@ -219,7 +235,7 @@ export function MapCanvas({
   // React's wheel listener is passive, so the zoom needs its own to stop the page scroll.
   useEffect(() => {
     const el = root.current;
-    if (!el) return;
+    if (!el || compact) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const box = el.getBoundingClientRect();
@@ -231,7 +247,7 @@ export function MapCanvas({
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [zoomAt]);
+  }, [zoomAt, compact]);
 
   const viewRef = useRef(view);
   viewRef.current = view;
@@ -353,6 +369,11 @@ export function MapCanvas({
     if (arrows[e.key]) {
       e.preventDefault();
       moveSelection(arrows[e.key]);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      onSelect(null);
+    } else if (compact) {
+      return;
     } else if (e.key === "+" || e.key === "=") {
       e.preventDefault();
       zoomCentre(STEP);
@@ -363,9 +384,6 @@ export function MapCanvas({
       e.preventDefault();
       userMoved.current = false;
       fitView();
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      onSelect(null);
     }
   };
 
@@ -398,7 +416,7 @@ export function MapCanvas({
   const hit = (target: EventTarget | null, selector: string) =>
     target instanceof Element ? target.closest(selector) : null;
   const onPointerDown = (e: ReactPointerEvent) => {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || compact) return;
     const el = hit(e.target, "[data-id], [data-box], [data-hull]");
     const hull = el?.getAttribute("data-hull");
     const box = el?.getAttribute("data-box");
@@ -431,17 +449,31 @@ export function MapCanvas({
     <div className={styles.frame}>
       <div
         ref={root}
-        className={styles.canvas}
+        className={
+          compact ? `${styles.canvas} ${styles.compact}` : styles.canvas
+        }
         data-testid="map-canvas"
         role="application"
         // biome-ignore lint/a11y/noNoninteractiveTabindex: the canvas is one tab stop that reads its own keys (spec E §8.3).
         tabIndex={0}
-        aria-label="Resource map. Drag to pan, scroll to zoom, select a resource to see its connections."
+        aria-label={
+          compact
+            ? "Resource map. Select a resource to see its connections."
+            : "Resource map. Drag to pan, scroll to zoom, select a resource to see its connections."
+        }
         onKeyDown={onKeyDown}
         onPointerDown={onPointerDown}
         onClick={onClick}
       >
-        <svg className={styles.svg} aria-hidden="true">
+        <svg
+          className={compact ? styles.compactSvg : styles.svg}
+          aria-hidden="true"
+          height={
+            compact
+              ? Math.ceil((extent.y1 - extent.y0) * view.k + 2 * FIT_PAD)
+              : undefined
+          }
+        >
           <g transform={`translate(${view.tx} ${view.ty}) scale(${view.k})`}>
             {scene.hulls.map((h) => (
               <g
@@ -586,68 +618,72 @@ export function MapCanvas({
           </g>
         </svg>
       </div>
-      <div className={styles.controls}>
-        <IconButton
-          label="Zoom in"
-          icon={<ZoomIn size={16} />}
-          data-testid="map-zoom-in"
-          onClick={() => zoomCentre(STEP)}
-        />
-        <IconButton
-          label="Zoom out"
-          icon={<ZoomOut size={16} />}
-          data-testid="map-zoom-out"
-          onClick={() => zoomCentre(1 / STEP)}
-        />
-        <IconButton
-          label="Fit to view"
-          icon={<Scan size={16} />}
-          data-testid="map-fit"
-          onClick={() => {
-            userMoved.current = false;
-            fitView();
-          }}
-        />
-        <span className={styles.zoom} data-testid="map-zoom-label">
-          {`${Math.round(view.k * 100)}%`}
-        </span>
-        <IconButton
-          label="Show or hide the legend"
-          icon={<Info size={16} />}
-          data-testid="map-legend-toggle"
-          aria-pressed={legend}
-          onClick={() => setLegend((v) => !v)}
-        />
-      </div>
-      {legend ? (
-        <section
-          className={styles.legend}
-          data-testid="map-legend"
-          aria-label="Legend"
-        >
-          <h2 className={styles.legendTitle}>Legend</h2>
-          <ul className={styles.legendList}>
-            {LEGEND_STATUS.map(([status, text]) => (
-              <li key={status}>
-                <span
-                  className={`${styles.swatch} ${styles[`dot-${status}`]}`}
-                />
-                {text}
-              </li>
-            ))}
-          </ul>
-          <ul className={styles.legendList}>
-            {LEGEND_EDGES.map(([style, text]) => (
-              <li key={style}>
-                <span
-                  className={`${styles.swatch} ${styles[`key-${style}`]}`}
-                />
-                {text}
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
+      {compact ? null : (
+        <>
+          <div className={styles.controls}>
+            <IconButton
+              label="Zoom in"
+              icon={<ZoomIn size={16} />}
+              data-testid="map-zoom-in"
+              onClick={() => zoomCentre(STEP)}
+            />
+            <IconButton
+              label="Zoom out"
+              icon={<ZoomOut size={16} />}
+              data-testid="map-zoom-out"
+              onClick={() => zoomCentre(1 / STEP)}
+            />
+            <IconButton
+              label="Fit to view"
+              icon={<Scan size={16} />}
+              data-testid="map-fit"
+              onClick={() => {
+                userMoved.current = false;
+                fitView();
+              }}
+            />
+            <span className={styles.zoom} data-testid="map-zoom-label">
+              {`${Math.round(view.k * 100)}%`}
+            </span>
+            <IconButton
+              label="Show or hide the legend"
+              icon={<Info size={16} />}
+              data-testid="map-legend-toggle"
+              aria-pressed={legend}
+              onClick={() => setLegend((v) => !v)}
+            />
+          </div>
+          {legend ? (
+            <section
+              className={styles.legend}
+              data-testid="map-legend"
+              aria-label="Legend"
+            >
+              <h2 className={styles.legendTitle}>Legend</h2>
+              <ul className={styles.legendList}>
+                {LEGEND_STATUS.map(([status, text]) => (
+                  <li key={status}>
+                    <span
+                      className={`${styles.swatch} ${styles[`dot-${status}`]}`}
+                    />
+                    {text}
+                  </li>
+                ))}
+              </ul>
+              <ul className={styles.legendList}>
+                {LEGEND_EDGES.map(([style, text]) => (
+                  <li key={style}>
+                    <span
+                      className={`${styles.swatch} ${styles[`key-${style}`]}`}
+                    />
+                    {text}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+        </>
+      )}
       <div className={styles.live} aria-live="polite" data-testid="map-live">
         {selectedNode
           ? `${selectedNode.kind} ${selectedNode.name}, ${statusLine(nodeOf(model, selectedNode.id))}`

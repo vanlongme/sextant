@@ -46,7 +46,8 @@ export const REL_IN: Readonly<Record<GraphRel, string>> = {
   class: "Class of",
 };
 
-const TONE: Readonly<Record<GraphStatus, Tone>> = {
+/** The status dot's tone of a node's status. */
+export const STATUS_TONE: Readonly<Record<GraphStatus, Tone>> = {
   nominal: "ok",
   warning: "warn",
   critical: "danger",
@@ -154,33 +155,21 @@ function ConnectionRow({
   );
 }
 
-/** The details pane of a selected node (spec E §12). */
-export function MapDetails({
+/**
+ * The "Connections" heading and rows of a node (spec E §12.2), for the details pane
+ * and the drawer tab. Several Pods of one owner on one relation make one row that
+ * expands on click.
+ */
+export function Connections({
   model,
   id,
-  clusterId,
-  resources,
-  focusId,
   onSelect,
-  onClose,
-  onFocus,
-}: MapDetailsProps) {
-  const navigate = useNavigate();
+}: {
+  model: MapModel;
+  id: string;
+  onSelect(id: string): void;
+}) {
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
-  const node = nodeOf(model, id);
-  const target =
-    node.plural === ""
-      ? null
-      : ownerTarget(
-          {
-            kind: node.kind,
-            name: node.name,
-            apiVersion: node.group === "" ? "v1" : `${node.group}/v1`,
-          },
-          node.namespace,
-          resources,
-        );
-  const status = statusLine(node);
   const toggle = (key: string) =>
     setOpen((was) => {
       const next = new Set(was);
@@ -188,70 +177,8 @@ export function MapDetails({
       else next.add(key);
       return next;
     });
-
   return (
-    <aside
-      className={styles.pane}
-      data-testid="map-details"
-      aria-label={`${node.kind} ${node.name}`}
-    >
-      <header className={styles.head}>
-        <KindIcon kind={node.kind} size={40} />
-        <div className={styles.headText}>
-          <span className={styles.place}>{placeLine(node)}</span>
-          <h2 className={styles.name}>{node.name}</h2>
-          <span className={styles.status}>
-            <StatusDot tone={TONE[node.status]} label={status} />
-            {status}
-          </span>
-        </div>
-        <IconButton
-          label="Close details"
-          icon={<X size={16} />}
-          data-testid="map-details-close"
-          onClick={onClose}
-        />
-      </header>
-      <div className={styles.actions}>
-        {FOCUSABLE.has(node.kind) && id !== focusId ? (
-          <Button
-            size="sm"
-            data-testid="map-details-focus"
-            onClick={() => onFocus(id)}
-          >
-            {`Show map for this ${node.kind}`}
-          </Button>
-        ) : null}
-        {target !== null ? (
-          <Button
-            size="sm"
-            variant="ghost"
-            data-testid="map-details-open"
-            onClick={() => navigate(`/cluster/${clusterId}${target}`)}
-          >
-            {`Open in ${listLabel(node.plural, node.kind)}`}
-          </Button>
-        ) : null}
-      </div>
-      <dl className={styles.facts}>
-        {node.facts.map(([label, value]) => (
-          <div
-            key={label}
-            className={styles.fact}
-            data-testid="map-fact"
-            data-label={label}
-          >
-            <dt>{label}</dt>
-            <dd>{value}</dd>
-          </div>
-        ))}
-        {node.created !== null ? (
-          <div className={styles.fact} data-testid="map-fact" data-label="Age">
-            <dt>Age</dt>
-            <dd>{ageCell(node.created)}</dd>
-          </div>
-        ) : null}
-      </dl>
+    <>
       <h3 className={styles.heading}>Connections</h3>
       <ul className={styles.rows}>
         {connectionRows(model, id).map((row) => {
@@ -305,6 +232,101 @@ export function MapDetails({
           );
         })}
       </ul>
+    </>
+  );
+}
+
+/** The details pane of a selected node (spec E §12). */
+export function MapDetails({
+  model,
+  id,
+  clusterId,
+  resources,
+  focusId,
+  onSelect,
+  onClose,
+  onFocus,
+}: MapDetailsProps) {
+  const navigate = useNavigate();
+  const node = nodeOf(model, id);
+  const target =
+    node.plural === ""
+      ? null
+      : ownerTarget(
+          {
+            kind: node.kind,
+            name: node.name,
+            apiVersion: node.group === "" ? "v1" : `${node.group}/v1`,
+          },
+          node.namespace,
+          resources,
+        );
+  const status = statusLine(node);
+
+  return (
+    <aside
+      className={styles.pane}
+      data-testid="map-details"
+      aria-label={`${node.kind} ${node.name}`}
+    >
+      <header className={styles.head}>
+        <KindIcon kind={node.kind} size={40} />
+        <div className={styles.headText}>
+          <span className={styles.place}>{placeLine(node)}</span>
+          <h2 className={styles.name}>{node.name}</h2>
+          <span className={styles.status}>
+            <StatusDot tone={STATUS_TONE[node.status]} label={status} />
+            {status}
+          </span>
+        </div>
+        <IconButton
+          label="Close details"
+          icon={<X size={16} />}
+          data-testid="map-details-close"
+          onClick={onClose}
+        />
+      </header>
+      <div className={styles.actions}>
+        {FOCUSABLE.has(node.kind) && id !== focusId ? (
+          <Button
+            size="sm"
+            data-testid="map-details-focus"
+            onClick={() => onFocus(id)}
+          >
+            {`Show map for this ${node.kind}`}
+          </Button>
+        ) : null}
+        {target !== null ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            data-testid="map-details-open"
+            onClick={() => navigate(`/cluster/${clusterId}${target}`)}
+          >
+            {`Open in ${listLabel(node.plural, node.kind)}`}
+          </Button>
+        ) : null}
+      </div>
+      <dl className={styles.facts}>
+        {node.facts.map(([label, value]) => (
+          <div
+            key={label}
+            className={styles.fact}
+            data-testid="map-fact"
+            data-label={label}
+          >
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+        {node.created !== null ? (
+          <div className={styles.fact} data-testid="map-fact" data-label="Age">
+            <dt>Age</dt>
+            <dd>{ageCell(node.created)}</dd>
+          </div>
+        ) : null}
+      </dl>
+      <Connections model={model} id={id} onSelect={onSelect} />
     </aside>
   );
 }

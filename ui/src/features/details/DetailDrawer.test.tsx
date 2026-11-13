@@ -17,6 +17,7 @@ import type { KubeObject } from "../../kinds/objects";
 import { JOBS } from "../../kinds/refs";
 import { registerKind } from "../../kinds/registry";
 import { resetCatalogForTest } from "../../stores/catalog";
+import { resetGraphForTest } from "../../stores/graph";
 import { resetMetricsForTest } from "../../stores/metrics";
 import { resetResourcesForTest } from "../../stores/resources";
 import { CSS_FILES, cssRules } from "../../test/css";
@@ -830,14 +831,14 @@ test("a row's copy button is transparent at rest and shows on hover and focus, w
 const tabNames = () =>
   screen.getAllByRole("tab").map((t) => t.textContent ?? "");
 
-test("a Pod gets Overview, Metrics and Events; the panel mounts only while its tab is open", async () => {
+test("a Pod gets Overview, Metrics, Resource map and Events; the panel mounts only while its tab is open", async () => {
   const f = fake(undefined, undefined, {
     metrics_provider: () => noProvider("setting"),
   });
   render(drawer());
   await act(flush);
   await f.snapshot([pod()]);
-  expect(tabNames()).toEqual(["Overview", "Metrics", "Events"]);
+  expect(tabNames()).toEqual(["Overview", "Metrics", "Resource map", "Events"]);
   expect(screen.getByTestId("detail-tab-overview")).toBeTruthy();
   expect(screen.getByTestId("detail-tab-events")).toBeTruthy();
   expect(f.backend.callsTo("metrics_provider")).toHaveLength(0);
@@ -860,7 +861,7 @@ test("a Pod gets Overview, Metrics and Events; the panel mounts only while its t
   expect(screen.queryByTestId("detail-metrics")).toBeNull();
 });
 
-test("a Job has no Metrics tab", async () => {
+test("a Job has no Metrics tab but has a Resource map", async () => {
   const f = fake();
   render(
     <MemoryRouter>
@@ -874,8 +875,64 @@ test("a Job has no Metrics tab", async () => {
   );
   await act(flush);
   await f.snapshot([pod()]);
-  expect(tabNames()).toEqual(["Overview", "Events"]);
+  expect(tabNames()).toEqual(["Overview", "Resource map", "Events"]);
   expect(screen.queryByTestId("detail-tab-metrics")).toBeNull();
+});
+
+test("the Resource map tab watches the graph only while it is open, and links to the object map", async () => {
+  resetGraphForTest();
+  const f = fake(undefined, undefined, {
+    resource_graph_subscribe: () => "g1",
+    resource_graph_unsubscribe: () => null,
+  });
+  render(drawer());
+  await act(flush);
+  await f.snapshot([pod()]);
+  expect(f.backend.callsTo("resource_graph_subscribe")).toHaveLength(0);
+  fireEvent.mouseDown(screen.getByTestId("detail-tab-map"), { button: 0 });
+  await act(flush);
+  expect(screen.getByTestId("drawer-map").textContent).toContain(
+    "Owner references, selectors and mounts, 2 hops out.",
+  );
+  expect(
+    f.backend.callsTo("resource_graph_subscribe").map((a) => a.namespaces),
+  ).toEqual([["team-a"]]);
+  const open = screen.getByTestId("drawer-map-open");
+  expect(open.getAttribute("aria-label")).toBe(
+    "Open the full map for this pod",
+  );
+  expect(open.getAttribute("href")).toBe(
+    "/cluster/c1/map?focus=Pod%2Fteam-a%2Fweb",
+  );
+  fireEvent.mouseDown(screen.getByTestId("detail-tab-events"), { button: 0 });
+  await act(flush);
+  expect(screen.queryByTestId("drawer-map")).toBeNull();
+  expect(f.backend.callsTo("resource_graph_unsubscribe")).toEqual([
+    { subscriptionId: "g1" },
+  ]);
+});
+
+test("a ConfigMap has no Resource map tab", async () => {
+  const f = fake();
+  render(
+    <MemoryRouter>
+      <DetailDrawer
+        clusterId="c1"
+        resource={{
+          group: "",
+          version: "v1",
+          plural: "configmaps",
+          kind: "ConfigMap",
+          namespaced: true,
+        }}
+        objectKey="team-a/web"
+        onClose={() => {}}
+      />
+    </MemoryRouter>,
+  );
+  await act(flush);
+  await f.snapshot([pod()]);
+  expect(tabNames()).toEqual(["Overview", "Events"]);
 });
 
 test("a deleted object loses the Metrics tab and the drawer goes back to the overview", async () => {
@@ -891,7 +948,7 @@ test("a deleted object loses the Metrics tab and the drawer goes back to the ove
 
   await f.batch([], [{ namespace: "team-a", name: "web" }]);
   expect(screen.getByTestId("detail-removed")).toBeTruthy();
-  expect(tabNames()).toEqual(["Overview", "Events"]);
+  expect(tabNames()).toEqual(["Overview", "Resource map", "Events"]);
   expect(
     screen.getByTestId("detail-tab-overview").getAttribute("data-state"),
   ).toBe("active");

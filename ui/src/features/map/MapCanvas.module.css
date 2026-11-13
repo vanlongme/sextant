@@ -28,6 +28,18 @@
   user-select: none;
 }
 
+/* The drawer tab: as tall as the drawing, so the drawer scrolls (spec E §11). */
+.compact {
+  cursor: default;
+  touch-action: auto;
+}
+
+.compactSvg {
+  display: block;
+  width: 100%;
+  user-select: none;
+}
+
 .node {
   cursor: pointer;
 }
