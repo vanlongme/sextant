@@ -3,6 +3,8 @@ import { baseColumns, statusColumn, textColumn } from "../columns";
 import type { KubeObject } from "../objects";
 import { registerKind } from "../registry";
 import { ApplicationDetail } from "./ApplicationDetail";
+import { ApplicationSetDetail } from "./ApplicationSetDetail";
+import { AppProjectDetail } from "./AppProjectDetail";
 import {
   healthStatus,
   revisionText,
@@ -70,6 +72,7 @@ registerKind(ARGO_GROUP, "applicationsets", {
       textColumn("generators", "Generators", generatorText),
       generatedColumn,
     ),
+  detail: ApplicationSetDetail,
 });
 
 registerKind(ARGO_GROUP, "appprojects", {
@@ -84,4 +87,5 @@ registerKind(ARGO_GROUP, "appprojects", {
       ),
       titledColumn("sources", "Sources", sourceReposText, sourceReposTitle),
     ),
+  detail: AppProjectDetail,
 });
