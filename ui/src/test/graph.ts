@@ -1,4 +1,5 @@
 import { act } from "@testing-library/react";
+import type { ApiResourceInfo } from "../ipc/generated/ApiResourceInfo";
 import type { GraphEdge } from "../ipc/generated/GraphEdge";
 import type { GraphEvent } from "../ipc/generated/GraphEvent";
 import type { GraphNamespaceCount } from "../ipc/generated/GraphNamespaceCount";
@@ -244,6 +245,26 @@ export function demoGraph(): { nodes: GraphNode[]; edges: GraphEdge[] } {
     gedge(d.jobPod, "env", d.token),
   ];
   return { nodes, edges };
+}
+
+/** A served resource the current user may do anything with, as discovery lists it. */
+export function servedResource(
+  kind: string,
+  group: string,
+  plural: string,
+  namespaced = true,
+): ApiResourceInfo {
+  return {
+    resource: { group, version: "v1", plural, kind, namespaced },
+    verbs: [],
+    shortNames: [],
+    canList: true,
+    canWatch: true,
+    canCreate: true,
+    canUpdate: true,
+    canPatch: true,
+    canDelete: true,
+  };
 }
 
 /**
