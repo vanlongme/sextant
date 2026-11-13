@@ -6,3 +6,7 @@ packages:
 # is the patched release on the same minor line.
 overrides:
   dompurify: 3.4.17
+  # e2e only: mocha 12.0.3 still pins glob 13, and archiver 8.0.0 (via readdir-glob 3)
+  # still pins minimatch 10. Both ranges have advisories; lift them to the patched majors.
+  "glob@>=9 <14.0.2": 14.0.6
+  "minimatch@>=7 <11.0.1": 11.0.8
