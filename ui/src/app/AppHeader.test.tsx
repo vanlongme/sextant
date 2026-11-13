@@ -121,6 +121,16 @@ test("the Settings route is titled with the cluster's name and Settings", async 
   expect(text("where")).toBe("/cluster/c1/settings");
 });
 
+test("the cluster map is titled with the cluster's name and Resource map", async () => {
+  await show(["/cluster/c1/map"]);
+  expect(text("header-title")).toBe("prod · Resource map");
+});
+
+test("an object map keeps the cluster map's title", async () => {
+  await show(["/cluster/c1/map?focus=Pod%2Fshop%2Fweb&depth=1"]);
+  expect(text("header-title")).toBe("prod · Resource map");
+});
+
 test("a connected cluster: the distribution, Terminal and Disconnect", async () => {
   const ipc = await show(["/cluster/c1/r/core/pods"]);
 

@@ -185,6 +185,18 @@ test("every nav section id is distinct", () => {
   expect(new Set(ids).size).toBe(ids.length);
 });
 
+test("Resource map follows Overview, links to the cluster's map and is active there", async () => {
+  await show({}, "/cluster/c1/map");
+  const link = screen.getByTestId("nav-map");
+  expect(link.textContent).toBe("Resource map");
+  expect(link.getAttribute("href")).toBe("/cluster/c1/map");
+  expect(link.getAttribute("aria-current")).toBe("page");
+  expect(screen.getByTestId("nav-overview").nextElementSibling).toBe(link);
+  expect(
+    screen.getByTestId("nav-overview").getAttribute("aria-current"),
+  ).toBeNull();
+});
+
 test("Port Forwarding links to the cluster's port forwards and is active there", async () => {
   await show({}, "/cluster/c1/port-forwards");
   const link = screen.getByTestId("nav-port-forwards");

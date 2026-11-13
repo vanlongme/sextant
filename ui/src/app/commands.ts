@@ -7,6 +7,7 @@ import {
   type LucideIcon,
   Monitor,
   Moon,
+  Network,
   Package,
   Plus,
   Power,
@@ -19,6 +20,7 @@ import { useMemo } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { openTerminal } from "../features/dock/openTerminal";
 import { chartsPath } from "../features/helm/helmText";
+import { mapPath } from "../features/map/paths";
 import { settingsPath } from "../features/settings/paths";
 import type { Theme } from "../ipc/generated/Theme";
 import { disconnectCluster } from "../stores/clusters";
@@ -43,6 +45,7 @@ export type CommandId =
   | "terminal"
   | "disconnect"
   | "cluster-settings"
+  | "resource-map"
   | "shortcuts"
   | "about"
   | "theme-dark"
@@ -167,6 +170,15 @@ export const COMMANDS: readonly AppCommand[] = [
     available: onCluster,
     run: (ctx) => {
       if (ctx.cluster) go(ctx, settingsPath(ctx.cluster.id));
+    },
+  },
+  {
+    id: "resource-map",
+    label: (ctx) => `Resource map of ${clusterName(ctx)}`,
+    icon: Network,
+    available: connected,
+    run: (ctx) => {
+      if (ctx.cluster) go(ctx, mapPath(ctx.cluster.id));
     },
   },
   {

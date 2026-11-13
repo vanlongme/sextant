@@ -52,6 +52,7 @@ test("the registry lists the spec's commands in order", () => {
       ["terminal", "Open a terminal in prod", "terminal"],
       ["disconnect", "Disconnect prod", null],
       ["cluster-settings", "Cluster settings for prod", null],
+      ["resource-map", "Resource map of prod", null],
       ["shortcuts", "Show keyboard shortcuts", "shortcuts"],
       ["about", "About SkoposIDE", null],
       ["theme-dark", "Theme: Dark", null],
@@ -63,12 +64,16 @@ test("the registry lists the spec's commands in order", () => {
   );
 });
 
-test("terminal, disconnect and install-chart need the current cluster connected; cluster-settings any cluster", () => {
+test("terminal, disconnect, install-chart and resource-map need the current cluster connected; cluster-settings any cluster", () => {
   const available = (ctx: CommandContext) =>
     COMMANDS.filter((c) => c.available(ctx)).map((c) => c.id);
   const all = COMMANDS.map((c) => c.id);
   const onCluster = all.filter(
-    (id) => id !== "terminal" && id !== "disconnect" && id !== "install-chart",
+    (id) =>
+      id !== "terminal" &&
+      id !== "disconnect" &&
+      id !== "install-chart" &&
+      id !== "resource-map",
   );
   const always = onCluster.filter((id) => id !== "cluster-settings");
   expect(available(context())).toEqual(always);
@@ -79,6 +84,12 @@ test("terminal, disconnect and install-chart need the current cluster connected;
     onCluster,
   );
   expect(available(context({ cluster: on(CONNECTED) }))).toEqual(all);
+});
+
+test("resource-map opens the cluster's map", () => {
+  const ctx = context({ cluster: on(CONNECTED) });
+  runCommand("resource-map", ctx);
+  expect(ctx.navigate.mock.calls).toEqual([["/cluster/c1/map"]]);
 });
 
 test("install-chart opens the cluster's Charts", () => {

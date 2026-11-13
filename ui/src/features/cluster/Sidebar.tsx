@@ -201,6 +201,16 @@ export function Sidebar(props: {
       >
         Overview
       </NavLink>
+      <NavLink
+        to={`/cluster/${encodeURIComponent(clusterId)}/map`}
+        className={({ isActive }) =>
+          isActive ? `${styles.link} ${styles.active}` : styles.link
+        }
+        data-testid="nav-map"
+        title="Resource map"
+      >
+        Resource map
+      </NavLink>
       {/* A failed refresh keeps the last resources, so the error sits above them. */}
       {props.error !== null ? (
         <div className={styles.state}>

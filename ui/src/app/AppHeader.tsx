@@ -19,9 +19,14 @@ import { IS_MAC, shortKeys } from "./shortcuts";
 
 function title(pathname: string, cluster: CurrentCluster | null): string {
   if (cluster !== null) {
-    return matchPath("/cluster/:id/settings", pathname) !== null
-      ? `${cluster.name} · Settings`
-      : cluster.name;
+    if (matchPath("/cluster/:id/settings", pathname) !== null) {
+      return `${cluster.name} · Settings`;
+    }
+    // The cluster map and the object maps share the path (spec E §5).
+    if (matchPath("/cluster/:id/map", pathname) !== null) {
+      return `${cluster.name} · Resource map`;
+    }
+    return cluster.name;
   }
   if (pathname === "/catalog") return "Catalog";
   if (pathname === "/preferences") return "Preferences";

@@ -9,6 +9,7 @@ import {
   HelmUpgradeRoute,
 } from "../features/helm/HelmFormScreen";
 import { HelmReleasesRoute } from "../features/helm/HelmReleasesScreen";
+import { MapRoute } from "../features/map/MapRoute";
 import { PortForwardsRoute } from "../features/portForward/PortForwardsScreen";
 import { PreferencesScreen } from "../features/prefs/PreferencesScreen";
 import { ResourceRoute } from "../features/resources/ResourceScreen";
@@ -40,6 +41,7 @@ export function createAppRouter() {
               element: <HelmUpgradeRoute />,
             },
             { path: "settings", element: <ClusterSettingsRoute /> },
+            { path: "map", element: <MapRoute /> },
           ],
         },
         { path: "preferences", element: <PreferencesScreen /> },
