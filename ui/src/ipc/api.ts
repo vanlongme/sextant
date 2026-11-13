@@ -12,6 +12,7 @@ import type { ConnectionState } from "./generated/ConnectionState";
 import type { DataChange } from "./generated/DataChange";
 import type { DrainEvent } from "./generated/DrainEvent";
 import type { DrainOptions } from "./generated/DrainOptions";
+import type { GraphEvent } from "./generated/GraphEvent";
 import type { HelmInfo } from "./generated/HelmInfo";
 import type { HelmInstallRequest } from "./generated/HelmInstallRequest";
 import type { HelmPreview } from "./generated/HelmPreview";
@@ -88,6 +89,22 @@ export const api = {
     }),
   resourcesUnsubscribe: (subscriptionId: string) =>
     call<void>("resources_unsubscribe", { subscriptionId }),
+  /**
+   * Returns the subscription id. Graph snapshots of `namespaces` (null: every
+   * namespace) go to `onEvent` until unsubscribed or until a `failure` ends it.
+   */
+  resourceGraphSubscribe: (
+    clusterId: string,
+    namespaces: string[] | null,
+    onEvent: (event: GraphEvent) => void,
+  ) =>
+    call<string>("resource_graph_subscribe", {
+      clusterId,
+      namespaces,
+      onEvent: new Channel<GraphEvent>(onEvent),
+    }),
+  resourceGraphUnsubscribe: (subscriptionId: string) =>
+    call<void>("resource_graph_unsubscribe", { subscriptionId }),
   resourceGet: (
     clusterId: string,
     resource: ResourceRef,

@@ -2,6 +2,7 @@ import { Channel } from "@tauri-apps/api/core";
 import { expect, test } from "vitest";
 import { mockBackend } from "../test/ipc";
 import { api } from "./api";
+import type { GraphEvent } from "./generated/GraphEvent";
 import type { HelmInstallRequest } from "./generated/HelmInstallRequest";
 import type { HelmRepoAdd } from "./generated/HelmRepoAdd";
 import type { HelmUpgradeRequest } from "./generated/HelmUpgradeRequest";
@@ -311,4 +312,32 @@ test.each<[string, () => Promise<unknown>, Record<string, unknown>]>([
   const backend = mockBackend({ [cmd]: () => null });
   await run();
   expect(backend.calls).toEqual([{ cmd, args }]);
+});
+
+test("resource_graph_subscribe gets the cluster, the namespaces and a channel, and gives the id", async () => {
+  const events: GraphEvent[] = [];
+  const backend = mockBackend({ resource_graph_subscribe: () => "g1" });
+  await expect(
+    api.resourceGraphSubscribe("c1", ["shop"], (event) => events.push(event)),
+  ).resolves.toBe("g1");
+  const sent = backend.callsTo("resource_graph_subscribe")[0];
+  expect(sent).toMatchObject({ clusterId: "c1", namespaces: ["shop"] });
+  const channel = sent?.onEvent as Channel<GraphEvent>;
+  expect(channel).toBeInstanceOf(Channel);
+  channel.onmessage({ type: "failure", message: "boom" });
+  expect(events).toEqual([{ type: "failure", message: "boom" }]);
+});
+
+test("resource_graph_subscribe sends null for every namespace", async () => {
+  const backend = mockBackend({ resource_graph_subscribe: () => "g1" });
+  await api.resourceGraphSubscribe("c1", null, () => {});
+  expect(backend.callsTo("resource_graph_subscribe")[0]?.namespaces).toBeNull();
+});
+
+test("resource_graph_unsubscribe names the subscription", async () => {
+  const backend = mockBackend({ resource_graph_unsubscribe: () => null });
+  await api.resourceGraphUnsubscribe("g1");
+  expect(backend.calls).toEqual([
+    { cmd: "resource_graph_unsubscribe", args: { subscriptionId: "g1" } },
+  ]);
 });
