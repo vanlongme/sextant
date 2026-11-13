@@ -56,3 +56,10 @@
   width: 14px;
   color: var(--text-accent);
 }
+
+.hint {
+  margin-left: auto;
+  padding-left: var(--space-8);
+  font: var(--type-caption);
+  color: var(--text-secondary);
+}

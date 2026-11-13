@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useWorkspace } from "../../stores/workspace";
 import { tabLabel, useClusterName } from "./clusters";
 import { activeTab, type WorkspacePane as Pane } from "./layout";
+import { TabStrip } from "./TabStrip";
 import styles from "./WorkspaceScreen.module.css";
 
 function EmptyPane() {
@@ -64,7 +65,14 @@ export function WorkspacePane(props: {
       data-pane={index}
       data-focused={focused}
     >
-      {tab ? <div className={styles.body} /> : <EmptyPane />}
+      {tab ? (
+        <>
+          <TabStrip pane={pane} index={index} />
+          <div className={styles.body} />
+        </>
+      ) : (
+        <EmptyPane />
+      )}
     </section>
   );
 }

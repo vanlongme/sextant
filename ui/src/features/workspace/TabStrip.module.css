@@ -1,0 +1,115 @@
+.strip {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) 0;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-sunken);
+}
+
+.tabs {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-1);
+  min-width: 0;
+  overflow-x: auto;
+}
+
+/* 30 px high (spec E §15.3). */
+.tab {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: 30px;
+  max-width: 220px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  color: var(--text-secondary);
+}
+
+.tab:hover {
+  background: var(--surface-hover);
+}
+
+.tab[data-selected="true"] {
+  border-color: var(--border-subtle);
+  background: var(--surface-page);
+  color: var(--text-primary);
+}
+
+.button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  height: 100%;
+  padding: 0 var(--space-4);
+  border: none;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: none;
+  color: inherit;
+  font: var(--type-body-sm);
+  cursor: pointer;
+}
+
+.button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.tile {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-xs);
+  color: var(--gray-0);
+  font: var(--type-caption);
+  font-weight: 600;
+}
+
+.dot {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: inline-flex;
+}
+
+.label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Pin and Close show on hover and on the active tab. */
+.actions {
+  display: none;
+  align-items: center;
+  padding-right: var(--space-2);
+}
+
+.tab:hover .actions,
+.tab[data-selected="true"] .actions {
+  display: inline-flex;
+}
+
+.action {
+  width: 20px;
+  height: 20px;
+}
+
+.blocked {
+  display: inline-flex;
+}
+
+.split {
+  flex: none;
+  margin-bottom: var(--space-2);
+}
