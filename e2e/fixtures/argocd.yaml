@@ -1,0 +1,269 @@
+# Argo CD objects for e2e/specs/argocd.e2e.ts. No Argo CD controller runs, so each
+# Application carries the status the controller would write. The Application CRD has
+# no status subresource; the ApplicationSet status is patched by the spec.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: default
+  namespace: skopos-test-argocd
+spec:
+  sourceRepos: ["*"]
+  destinations:
+    - server: "*"
+      namespace: "*"
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: restricted
+  namespace: skopos-test-argocd
+spec:
+  sourceRepos: ["https://git.example.test/platform/*"]
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: edge
+  syncWindows:
+    - kind: allow
+      schedule: "0 22 * * *"
+      duration: 1h
+      applications: ["*"]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: guestbook
+  namespace: skopos-test-argocd
+spec:
+  project: default
+  source:
+    repoURL: https://git.example.test/apps.git
+    path: guestbook
+    targetRevision: main
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: guestbook
+status:
+  sync:
+    status: Synced
+    revision: 4f2c9a1d0b6e8f7a3c5d9e1b2a4c6e8f0a1b3c5d
+  health:
+    status: Healthy
+  operationState:
+    phase: Succeeded
+    message: successfully synced (all tasks run)
+    startedAt: "2026-11-01T10:00:00Z"
+    finishedAt: "2026-11-01T10:00:30Z"
+    operation:
+      sync:
+        revision: 4f2c9a1d0b6e8f7a3c5d9e1b2a4c6e8f0a1b3c5d
+      initiatedBy:
+        username: admin
+  resources:
+    - group: apps
+      version: v1
+      kind: Deployment
+      namespace: guestbook
+      name: guestbook-ui
+      status: Synced
+      health:
+        status: Healthy
+    - version: v1
+      kind: Service
+      namespace: guestbook
+      name: guestbook-ui
+      status: Synced
+  history:
+    - id: 1
+      revision: 0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d
+      deployedAt: "2026-10-30T10:00:00Z"
+      source:
+        repoURL: https://git.example.test/apps.git
+        path: guestbook
+        targetRevision: main
+      initiatedBy:
+        username: admin
+    - id: 2
+      revision: 9b07e3d2c4a6b8d0e2f4a6c8e0b2d4f6a8c0e2b4
+      deployedAt: "2026-10-31T10:00:00Z"
+      source:
+        repoURL: https://git.example.test/apps.git
+        path: guestbook
+        targetRevision: main
+      initiatedBy:
+        automated: true
+    - id: 3
+      revision: 4f2c9a1d0b6e8f7a3c5d9e1b2a4c6e8f0a1b3c5d
+      deployedAt: "2026-11-01T10:00:30Z"
+      source:
+        repoURL: https://git.example.test/apps.git
+        path: guestbook
+        targetRevision: main
+      initiatedBy:
+        username: admin
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: busy
+  namespace: skopos-test-argocd
+spec:
+  project: default
+  source:
+    repoURL: https://git.example.test/apps.git
+    path: busy
+    targetRevision: main
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: busy
+operation:
+  sync:
+    revision: main
+  initiatedBy:
+    username: ci-bot
+status:
+  sync:
+    status: OutOfSync
+  health:
+    status: Progressing
+  operationState:
+    phase: Running
+    message: waiting for healthy state
+    startedAt: "2026-11-14T00:00:00Z"
+    operation:
+      sync:
+        revision: main
+      initiatedBy:
+        username: ci-bot
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform
+  namespace: skopos-test-argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://charts.example.test
+      chart: redis
+      targetRevision: 19.0.1
+    - repoURL: https://git.example.test/values.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: autopilot
+  namespace: skopos-test-argocd
+spec:
+  project: default
+  source:
+    repoURL: https://git.example.test/apps.git
+    path: autopilot
+    targetRevision: main
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: autopilot
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+status:
+  sync:
+    status: Synced
+  health:
+    status: Healthy
+  history:
+    - id: 1
+      revision: 0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d
+      deployedAt: "2026-10-30T10:00:00Z"
+    - id: 2
+      revision: 9b07e3d2c4a6b8d0e2f4a6c8e0b2d4f6a8c0e2b4
+      deployedAt: "2026-10-31T10:00:00Z"
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: windowed
+  namespace: skopos-test-argocd
+spec:
+  project: restricted
+  source:
+    repoURL: https://git.example.test/platform/edge.git
+    path: edge
+    targetRevision: main
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: edge
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: drop-a
+  namespace: skopos-test-argocd
+spec:
+  project: default
+  source:
+    repoURL: https://git.example.test/teams.git
+    path: teams/a
+    targetRevision: main
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: team-a
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: drop-b
+  namespace: skopos-test-argocd
+spec:
+  project: default
+  source:
+    repoURL: https://git.example.test/teams.git
+    path: teams/b
+    targetRevision: main
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: team-b
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: keep-me
+  namespace: skopos-test-argocd
+spec:
+  project: default
+  source:
+    repoURL: https://git.example.test/apps.git
+    path: keep-me
+    targetRevision: main
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: keep-me
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: teams
+  namespace: skopos-test-argocd
+spec:
+  generators:
+    - list:
+        elements:
+          - team: a
+          - team: b
+  template:
+    metadata:
+      name: "drop-{{team}}"
+    spec:
+      project: default
+      source:
+        repoURL: https://git.example.test/teams.git
+        path: "teams/{{team}}"
+        targetRevision: main
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "team-{{team}}"

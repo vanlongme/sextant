@@ -36,17 +36,17 @@ done
 kubectl --kubeconfig "$config" --request-timeout=5s get nodes >/dev/null
 # A run that died in the middle of a drain must not break the next one.
 kubectl --kubeconfig "$config" --request-timeout=30s uncordon skopos-e2e-worker >/dev/null
-# The Argo CD Application and AppProject CRDs, for the tests that write Applications. The
-# commit is tag v3.6.1; keep it in step with scripts/argocd-up.sh.
+# The Argo CD Application, ApplicationSet and AppProject CRDs, for the tests that write them.
+# The commit is tag v3.6.1; keep it in step with scripts/argocd-up.sh.
 crds=https://raw.githubusercontent.com/argoproj/argo-cd/94037c4d4e1af4bd0651d37a179fbd9e347e668c/manifests/crds
 kubectl --kubeconfig "$config" --request-timeout=60s apply --server-side --force-conflicts \
-  --field-manager=skopos-e2e -f "$crds/application-crd.yaml" -f "$crds/appproject-crd.yaml" >/dev/null
+  --field-manager=skopos-e2e -f "$crds/application-crd.yaml" -f "$crds/applicationset-crd.yaml" -f "$crds/appproject-crd.yaml" >/dev/null
 # A CRD just created has no status.conditions yet, and kubectl wait then fails at once instead
 # of waiting (seen on CI), so try again before the last, loud attempt.
 for _ in $(seq 1 30); do
   kubectl --kubeconfig "$config" wait --for=condition=Established --timeout=60s \
-    crd/applications.argoproj.io crd/appprojects.argoproj.io >/dev/null 2>&1 && break
+    crd/applications.argoproj.io crd/applicationsets.argoproj.io crd/appprojects.argoproj.io >/dev/null 2>&1 && break
   sleep 2
 done
 kubectl --kubeconfig "$config" wait --for=condition=Established --timeout=60s \
-  crd/applications.argoproj.io crd/appprojects.argoproj.io >/dev/null
+  crd/applications.argoproj.io crd/applicationsets.argoproj.io crd/appprojects.argoproj.io >/dev/null

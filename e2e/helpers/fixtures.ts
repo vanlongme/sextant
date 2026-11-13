@@ -181,6 +181,7 @@ const FIXTURES: Record<string, SpecFixture> = {
   "config-kinds": { kubeconfigs: {}, start: startKindFixture },
   drain: { kubeconfigs: {}, start: startKindFixture },
   actions: { kubeconfigs: {}, start: startKindFixture },
+  argocd: { kubeconfigs: {}, start: startKindFixture },
   logs: { kubeconfigs: {}, start: startKindFixture },
   "dock-restart-1-save": {
     kubeconfigs: {},
