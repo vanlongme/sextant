@@ -1,3 +1,8 @@
 packages:
   - ui
   - e2e
+
+# monaco-editor 0.57.0 pins dompurify 3.4.15, which has known advisories; 3.4.17
+# is the patched release on the same minor line.
+overrides:
+  dompurify: 3.4.17
