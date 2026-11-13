@@ -221,6 +221,25 @@ describe("MapCanvas", () => {
     expect(props.onSelect).not.toHaveBeenCalled();
   });
 
+  it("fits afresh when the layout (memoryKey) changes after a pan or zoom", () => {
+    const first = draw();
+    fireEvent.click(screen.getByTestId("map-zoom-in"));
+    fireEvent.click(screen.getByTestId("map-zoom-in"));
+    const zoomed = zoom();
+    first.rerender(
+      <MapCanvas
+        {...first.props}
+        layout="layered"
+        memoryKey="c1|cluster|layered"
+      />,
+    );
+    const after = zoom();
+    expect(after).not.toBe(zoomed);
+    first.unmount();
+    draw({ layout: "layered", memoryKey: "c1|cluster|layered" });
+    expect(after).toBe(zoom());
+  });
+
   it("does not refit the view while a node is dragged", () => {
     draw();
     const fitted = zoom();

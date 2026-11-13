@@ -174,10 +174,20 @@ export function MapCanvas({
     });
   }, [extent.x0, extent.y0, extent.x1, extent.y1, compact]);
 
+  // A new memoryKey (cluster, page, focus or layout) is a new drawing: forget the
+  // old pan and zoom. Declared before the fit effect so it runs first.
+  const lastKey = useRef(memoryKey);
+  useLayoutEffect(() => {
+    if (lastKey.current === memoryKey) return;
+    lastKey.current = memoryKey;
+    userMoved.current = false;
+  }, [memoryKey]);
+
   // Fit on load and whenever the drawing changes, until the user pans or zooms.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: memoryKey re-fits a new drawing with an identical extent
   useLayoutEffect(() => {
     if (!userMoved.current) fitView();
-  }, [fitView]);
+  }, [fitView, memoryKey]);
 
   useEffect(() => {
     const el = root.current;
