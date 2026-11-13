@@ -2,6 +2,7 @@
 import "./workloads";
 import "./nodes";
 import "./network";
+import "./gateway";
 import "./config";
 import "./storage";
 import "./policy";
