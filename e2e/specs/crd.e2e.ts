@@ -92,6 +92,11 @@ describe("custom resources", () => {
     await kubectl(["apply", "-f", "-"], CRD);
 
     await shown(`nav-crd-group-${GROUP}`, 30000);
+    // CRD groups start closed (spec G §3.3); a saved state may already have it open.
+    const toggle = await shown(`nav-crd-toggle-${GROUP}`);
+    if ((await toggle.getAttribute("aria-expanded")) !== "true") {
+      await toggle.click();
+    }
     await shown(NAV_ITEM);
   });
 

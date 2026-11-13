@@ -157,6 +157,7 @@ test("a failed refresh keeps the navigation and shows the error with a retry", a
 
 test("Custom Resources lists Definitions before the CRD groups", async () => {
   await show();
+  fireEvent.click(screen.getByTestId("nav-crd-toggle-acme.io"));
   const section = screen.getByTestId("nav-section-custom");
   const links = within(section).getAllByRole("link");
   expect(links.map((l) => l.getAttribute("data-testid"))).toEqual([
@@ -206,4 +207,79 @@ test("Port Forwarding links to the cluster's port forwards and is active there",
   expect(
     screen.getByTestId("nav-overview").getAttribute("aria-current"),
   ).toBeNull();
+});
+
+const MANY = [
+  ...SERVED,
+  info("acme.io", "bolts", "Bolt"),
+  info("zeta.example.with.a.very.long.group.name.io", "widgets", "Widget"),
+];
+
+function crdToggle(group: string): HTMLElement {
+  return screen.getByTestId(`nav-crd-toggle-${group}`);
+}
+
+test("a CRD group starts closed and shows its name, a tooltip and its kind count", async () => {
+  await show({ resources: MANY });
+  const toggle = crdToggle("acme.io");
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(toggle.textContent).toContain("acme.io");
+  expect(toggle.textContent).toContain("2");
+  const long = "zeta.example.with.a.very.long.group.name.io";
+  expect(crdToggle(long).getAttribute("title")).toBe(long);
+  const panel = document.getElementById(
+    toggle.getAttribute("aria-controls") ?? "",
+  );
+  expect(panel?.hidden).toBe(true);
+  expect(
+    within(screen.getByTestId("nav-section-custom"))
+      .queryAllByRole("link")
+      .map((l) => l.getAttribute("data-testid")),
+  ).toEqual(["nav-item-apiextensions.k8s.io-customresourcedefinitions"]);
+});
+
+test("opening a CRD group is saved per cluster", async () => {
+  const backend = await show({ resources: MANY });
+  vi.useFakeTimers();
+  fireEvent.click(crdToggle("acme.io"));
+  act(() => {
+    vi.advanceTimersByTime(300);
+  });
+  vi.useRealTimers();
+  expect(crdToggle("acme.io").getAttribute("aria-expanded")).toBe("true");
+  expect(backend.callsTo("ui_state_set")).toContainEqual({
+    key: "cluster.c1.nav.custom.acme.io",
+    value: true,
+  });
+});
+
+test("a saved open CRD group stays open", async () => {
+  await show({ resources: MANY }, "/cluster/c1", {
+    ui_state_get: ((a: { key: string }) =>
+      a.key === "cluster.c1.nav.custom.acme.io" ? true : null) as never,
+  });
+  expect(crdToggle("acme.io").getAttribute("aria-expanded")).toBe("true");
+});
+
+test("the group of the page on screen opens and is marked", async () => {
+  await show({ resources: MANY }, "/cluster/c1/r/acme.io/bolts");
+  const toggle = crdToggle("acme.io");
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  expect(toggle.getAttribute("data-active")).toBe("true");
+  expect(
+    screen.getByTestId("nav-item-acme.io-bolts").getAttribute("aria-current"),
+  ).toBe("page");
+  expect(
+    crdToggle("zeta.example.with.a.very.long.group.name.io").getAttribute(
+      "data-active",
+    ),
+  ).toBeNull();
+});
+
+test("a group the user closes on its own page stays closed", async () => {
+  await show({ resources: MANY }, "/cluster/c1/r/acme.io/bolts");
+  fireEvent.click(crdToggle("acme.io"));
+  await act(flush);
+  expect(crdToggle("acme.io").getAttribute("aria-expanded")).toBe("false");
+  expect(crdToggle("acme.io").getAttribute("data-active")).toBe("true");
 });

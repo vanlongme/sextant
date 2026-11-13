@@ -98,11 +98,48 @@
   font-weight: var(--weight-semibold);
 }
 
-.group {
+.groupToggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-width: 0;
   padding: var(--space-3) var(--space-7);
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: none;
   color: var(--text-secondary);
   font: var(--type-caption);
-  overflow-wrap: anywhere;
+  text-align: left;
+  cursor: pointer;
+}
+
+.groupToggle:hover {
+  color: var(--text-primary);
+}
+
+.groupToggle:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.groupToggle[data-active="true"] {
+  color: var(--text-accent);
+  font-weight: var(--weight-semibold);
+}
+
+.groupName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.groupCount {
+  flex: none;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
 .state {

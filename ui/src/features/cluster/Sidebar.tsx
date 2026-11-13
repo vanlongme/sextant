@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
-import type { ReactNode } from "react";
-import { NavLink } from "react-router";
+import { type ReactNode, useEffect } from "react";
+import { NavLink, useLocation } from "react-router";
 import { ErrorNotice, Spinner } from "../../design";
 import type { ApiResourceInfo } from "../../ipc/generated/ApiResourceInfo";
 import {
@@ -51,6 +51,66 @@ function RouteItem(props: { clusterId: string; path: string; label: string }) {
       >
         {label}
       </NavLink>
+    </li>
+  );
+}
+
+/**
+ * One API group under Custom Resources: a button with the group's name and kind count
+ * that opens and closes its list. It starts closed, its state is kept per cluster, and
+ * it opens when the page on screen becomes one of its kinds. The user can close it
+ * again; it stays closed until the page changes.
+ */
+function CustomGroup(props: {
+  clusterId: string;
+  group: string;
+  items: { label: string; plural: string }[];
+}) {
+  const { clusterId, group, items } = props;
+  const [open, setOpen] = useUiState<boolean>(
+    `cluster.${clusterId}.nav.custom.${group}`,
+    false,
+  );
+  const { pathname } = useLocation();
+  const active = items.some((i) => {
+    const path = resourcePath(clusterId, group, i.plural);
+    return pathname === path || pathname.startsWith(`${path}/`);
+  });
+  // Runs when `active` changes (setOpen is stable for a key), not on every render,
+  // so a group the user closes on its own page stays closed.
+  useEffect(() => {
+    if (active) setOpen(true);
+  }, [active, setOpen]);
+  const panel = `nav-crd-panel-${groupSegment(group)}`;
+  return (
+    <li data-testid={`nav-crd-group-${group}`}>
+      <button
+        type="button"
+        className={styles.groupToggle}
+        data-active={active ? "true" : undefined}
+        aria-expanded={open}
+        aria-controls={panel}
+        title={group}
+        data-testid={`nav-crd-toggle-${group}`}
+        onClick={() => setOpen(!open)}
+      >
+        <span aria-hidden="true" className={styles.chevron}>
+          {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        </span>
+        <span className={styles.groupName}>{group}</span>
+        <span className={styles.groupCount}>{items.length}</span>
+      </button>
+      <ul id={panel} className={styles.list} hidden={!open}>
+        {items.map((i) => (
+          <Item
+            key={i.plural}
+            clusterId={clusterId}
+            group={group}
+            plural={i.plural}
+            label={i.label}
+          />
+        ))}
+      </ul>
     </li>
   );
 }
@@ -164,20 +224,12 @@ export function Sidebar(props: {
               <SectionItems clusterId={clusterId} section={custom} />
             ) : null}
             {crds.map((g) => (
-              <li key={g.group} data-testid={`nav-crd-group-${g.group}`}>
-                <div className={styles.group}>{g.group}</div>
-                <ul className={styles.list}>
-                  {g.items.map((i) => (
-                    <Item
-                      key={i.plural}
-                      clusterId={clusterId}
-                      group={g.group}
-                      plural={i.plural}
-                      label={i.label}
-                    />
-                  ))}
-                </ul>
-              </li>
+              <CustomGroup
+                key={g.group}
+                clusterId={clusterId}
+                group={g.group}
+                items={g.items}
+              />
             ))}
           </Section>
         ) : null}
