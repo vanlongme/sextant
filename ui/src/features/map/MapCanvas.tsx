@@ -255,6 +255,8 @@ export function MapCanvas({
           setView({ ...d.view, tx: d.view.tx + dx, ty: d.view.ty + dy });
           return;
         }
+        // A moved node changes the drawing's extent, so the view must not refit under it.
+        userMoved.current = true;
         const k = viewRef.current.k;
         const next: Positions = { ...(MOVED.get(memoryKey) ?? {}) };
         for (const id of d.ids) {

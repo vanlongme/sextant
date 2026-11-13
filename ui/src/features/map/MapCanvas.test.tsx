@@ -221,6 +221,20 @@ describe("MapCanvas", () => {
     expect(props.onSelect).not.toHaveBeenCalled();
   });
 
+  it("does not refit the view while a node is dragged", () => {
+    draw();
+    const fitted = zoom();
+    fireEvent.pointerDown(node(DEMO.podA), {
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+    });
+    fireEvent.pointerMove(window, { clientX: 810, clientY: 10 });
+    expect(zoom()).toBe(fitted);
+    fireEvent.pointerUp(window);
+    expect(zoom()).toBe(fitted);
+  });
+
   it("centres a node on demand at the same zoom", () => {
     const { rerender, props } = draw({
       layout: "layered",
