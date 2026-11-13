@@ -2,6 +2,7 @@ import type { TableColumn } from "../../design/VirtualTable";
 import { baseColumns, statusColumn, textColumn } from "../columns";
 import type { KubeObject } from "../objects";
 import { registerKind } from "../registry";
+import { ApplicationDeleteDialog } from "./ApplicationDeleteDialog";
 import { ApplicationDetail } from "./ApplicationDetail";
 import { ApplicationSetDetail } from "./ApplicationSetDetail";
 import { AppProjectDetail } from "./AppProjectDetail";
@@ -65,6 +66,7 @@ registerKind(ARGO_GROUP, "applications", {
     ),
   actions: APPLICATION_ACTIONS,
   detail: ApplicationDetail,
+  deleteDialog: ApplicationDeleteDialog,
 });
 
 registerKind(ARGO_GROUP, "applicationsets", {
