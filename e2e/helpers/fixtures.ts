@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { startFakeKube } from "./fakekube";
 import { findHelm } from "./helmCharts";
+import { kubectl } from "./kube";
 
 /** Unreachable, so nothing in these specs ever depends on a live cluster. */
 const DEAD_SERVER = "http://127.0.0.1:1";
@@ -105,6 +106,65 @@ async function startHelmFixture() {
   };
 }
 
+const MAP_NAMESPACE = "skopos-e2e-map";
+const MAP_OBJECTS = path.resolve(__dirname, "..", "fixtures", "map.yaml");
+const GATEWAY_API_CRDS =
+  "https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.7.0/standard-install.yaml";
+
+/**
+ * The kind cluster with the resource map's objects (spec E §18.3). The graph reads
+ * discovery once, when it starts, so the Gateway API CRDs and the objects are in
+ * place before the app connects. The CRDs stay installed, as the backend's kind
+ * test leaves them; the namespace is deleted when the run ends.
+ */
+async function startMapFixture() {
+  await kubectl([
+    "apply",
+    "--server-side",
+    "--force-conflicts",
+    "--field-manager=skopos-e2e",
+    "-f",
+    GATEWAY_API_CRDS,
+  ]);
+  await kubectl([
+    "wait",
+    "--for=condition=Established",
+    "--timeout=60s",
+    "crd/gatewayclasses.gateway.networking.k8s.io",
+    "crd/gateways.gateway.networking.k8s.io",
+    "crd/httproutes.gateway.networking.k8s.io",
+  ]);
+  await kubectl([
+    "delete",
+    "namespace",
+    MAP_NAMESPACE,
+    "--ignore-not-found",
+    "--wait=true",
+    "--timeout=120s",
+  ]);
+  await kubectl(["apply", "-f", MAP_OBJECTS]);
+  await kubectl([
+    "-n",
+    MAP_NAMESPACE,
+    "rollout",
+    "status",
+    "deployment/web",
+    "--timeout=120s",
+  ]);
+  return {
+    kubeconfigs: { kind: fs.readFileSync(KIND_KUBECONFIG, "utf8") },
+    async stop() {
+      await kubectl([
+        "delete",
+        "namespace",
+        MAP_NAMESPACE,
+        "--ignore-not-found",
+        "--wait=false",
+      ]);
+    },
+  };
+}
+
 const FIXTURES: Record<string, SpecFixture> = {
   catalog: { kubeconfigs: { config: kubeconfig(["alpha", "beta"]) } },
   "hotbar-restart-1-save": {
@@ -150,6 +210,7 @@ const FIXTURES: Record<string, SpecFixture> = {
   helm: { kubeconfigs: {}, start: startHelmFixture },
   // e2e/helpers/metrics.ts installs the providers in the spec, which needs a longer timeout.
   metrics: { kubeconfigs: {}, start: startKindFixture },
+  map: { kubeconfigs: {}, start: startMapFixture },
 };
 
 /** Specs with no entry start with an empty `~/.kube`. */
