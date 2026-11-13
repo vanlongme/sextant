@@ -48,6 +48,16 @@ export function wsLayout(
   };
 }
 
+/** A Node whose Ready condition is True or False. */
+export function wsNode(name: string, ready: boolean): KubeObject {
+  return {
+    metadata: { name, uid: `uid-${name}` },
+    status: {
+      conditions: [{ type: "Ready", status: ready ? "True" : "False" }],
+    },
+  };
+}
+
 /** The route and query the page navigated to. */
 export function Where() {
   const { pathname, search } = useLocation();

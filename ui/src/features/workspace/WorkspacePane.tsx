@@ -3,6 +3,8 @@ import { useWorkspace } from "../../stores/workspace";
 import { tabLabel, useClusterName } from "./clusters";
 import { DropZones } from "./DropZones";
 import { activeTab, type WorkspacePane as Pane } from "./layout";
+import { PaneBody } from "./PaneBody";
+import { PaneHead } from "./PaneHead";
 import { TabStrip } from "./TabStrip";
 import styles from "./WorkspaceScreen.module.css";
 
@@ -69,7 +71,9 @@ export function WorkspacePane(props: {
       {tab ? (
         <>
           <TabStrip pane={pane} index={index} />
+          <PaneHead key={tab.id} tab={tab} />
           <div className={styles.body}>
+            <PaneBody key={tab.id} tab={tab} />
             <DropZones paneId={pane.id} />
           </div>
         </>

@@ -146,3 +146,98 @@
   white-space: nowrap;
   cursor: grabbing;
 }
+
+.paneHead {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.paneTitleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.paneName {
+  margin: 0;
+  overflow: hidden;
+  font: var(--type-label);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.grow {
+  flex: 1 1 auto;
+}
+
+.paneMeta {
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font: var(--type-mono);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.state {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-10);
+}
+
+.failed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 480px;
+  margin: var(--space-10) auto;
+  padding: 0 var(--space-8);
+}
+
+.failedTitle {
+  margin: 0;
+  font: var(--type-subheading);
+}
+
+.failedMessage {
+  margin: 0;
+  color: var(--text-danger);
+  font: var(--type-mono);
+  overflow-wrap: anywhere;
+}
+
+.failedHint {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--type-body-sm);
+}
+
+.failedActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  margin-top: var(--space-3);
+}
+
+.link {
+  color: var(--text-link);
+  font: var(--type-body-sm);
+}
+
+.link:hover {
+  color: var(--text-link-hover);
+}
+
+.link:focus-visible {
+  outline: none;
+  border-radius: var(--radius-xs);
+  box-shadow: var(--focus-ring);
+}
