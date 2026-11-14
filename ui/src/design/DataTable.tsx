@@ -5,6 +5,8 @@ export interface Column<T> {
   id: string;
   header: string;
   width?: string;
+  /** "end" right-aligns the header and the cells, as for numbers. */
+  align?: "start" | "end";
   sortable?: boolean;
   sortValue?(row: T): string | number;
   render(row: T): ReactNode;
@@ -20,6 +22,10 @@ export function compare(a: string | number, b: string | number): number {
   return collator.compare(String(a), String(b));
 }
 
+function alignClass<T>(column: Column<T>): string | undefined {
+  return column.align === "end" ? styles.end : undefined;
+}
+
 export function DataTable<T>(props: {
   rows: T[];
   columns: Column<T>[];
@@ -27,6 +33,8 @@ export function DataTable<T>(props: {
   rowTestId?(row: T): string;
   onRowClick?(row: T): void;
   empty?: ReactNode;
+  /** The table's accessible name. */
+  label?: string;
   testId?: string;
 }) {
   const [sort, setSort] = useState<Sort | null>(null);
@@ -52,7 +60,11 @@ export function DataTable<T>(props: {
   }
 
   return (
-    <table className={styles.table} data-testid={props.testId}>
+    <table
+      className={styles.table}
+      aria-label={props.label}
+      data-testid={props.testId}
+    >
       <thead>
         <tr>
           {props.columns.map((c) => {
@@ -60,6 +72,7 @@ export function DataTable<T>(props: {
             return (
               <th
                 key={c.id}
+                className={alignClass(c)}
                 style={c.width ? { width: c.width } : undefined}
                 aria-sort={
                   active
@@ -99,7 +112,9 @@ export function DataTable<T>(props: {
             }
           >
             {props.columns.map((c) => (
-              <td key={c.id}>{c.render(row)}</td>
+              <td key={c.id} className={alignClass(c)}>
+                {c.render(row)}
+              </td>
             ))}
           </tr>
         ))}

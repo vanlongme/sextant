@@ -81,3 +81,23 @@ test("renders the empty slot with no rows", () => {
   );
   expect(screen.getByText("Nothing here")).toBeTruthy();
 });
+
+test("a table can be named and a column aligned to the end", () => {
+  render(
+    <DataTable
+      rows={rows}
+      columns={[
+        columns[0] as Column<Row>,
+        { ...(columns[1] as Column<Row>), align: "end" },
+      ]}
+      rowKey={(r) => r.id}
+      label="People"
+    />,
+  );
+  const table = screen.getByRole("table", { name: "People" });
+  const header = within(table).getByRole("columnheader", { name: /age/i });
+  expect(getComputedStyle(header).textAlign).toBe("right");
+  const [name, age] = within(table).getAllByRole("cell");
+  expect(getComputedStyle(age as HTMLElement).textAlign).toBe("right");
+  expect(getComputedStyle(name as HTMLElement).textAlign).not.toBe("right");
+});

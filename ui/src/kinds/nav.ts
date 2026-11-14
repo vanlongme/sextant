@@ -41,8 +41,7 @@ const ARGO = "argoproj.io";
 
 /**
  * The sidebar sections of F4, in order. Overview is the cluster home route and not
- * a resource. The Workloads Overview entry is in the sidebar, but its page is
- * a placeholder until the overview screens (F17). Port Forwarding and Helm's
+ * a resource. The Workloads Overview entry links to the Workloads overview (F17). Port Forwarding and Helm's
  * Charts and Releases are routes of the cluster screen, not resource kinds. Custom Resources starts with Definitions; the
  * entries for each CRD are added by `customResourceGroups`. The Gateway API kinds are under Network and Argo CD has its own section (spec G §3); their items hide where the cluster does not serve them.
  */

@@ -1,5 +1,11 @@
 import { expect, test } from "vitest";
-import { deploymentStatus, replicaStatus, strategyText } from "./rollouts";
+import {
+  daemonSetStatus,
+  deploymentStatus,
+  replicaSetStatus,
+  replicaStatus,
+  strategyText,
+} from "./rollouts";
 
 const meta = { name: "d" };
 const available = { type: "Available", status: "True" };
@@ -102,6 +108,39 @@ test("replicaStatus compares ready with desired", () => {
   expect(
     replicaStatus({ metadata: { ...meta, deletionTimestamp: "x" } }, 2, 2),
   ).toEqual({ label: "Terminating", tone: "neutral" });
+});
+
+test("a ReplicaSet or StatefulSet compares ready replicas with spec.replicas, 1 when unset", () => {
+  expect(
+    replicaSetStatus({ metadata: meta, status: { readyReplicas: 1 } }),
+  ).toEqual({ label: "Ready", tone: "ok" });
+  expect(
+    replicaSetStatus({
+      metadata: meta,
+      spec: { replicas: 3 },
+      status: { readyReplicas: 2 },
+    }),
+  ).toEqual({ label: "Updating", tone: "info" });
+  expect(replicaSetStatus({ metadata: meta, spec: { replicas: 0 } })).toEqual({
+    label: "ScaledDown",
+    tone: "neutral",
+  });
+});
+
+test("a DaemonSet compares ready pods with the nodes it is scheduled on", () => {
+  const ds = (desired: number, ready: number) => ({
+    metadata: meta,
+    status: { desiredNumberScheduled: desired, numberReady: ready },
+  });
+  expect(daemonSetStatus(ds(3, 3))).toEqual({ label: "Ready", tone: "ok" });
+  expect(daemonSetStatus(ds(3, 1))).toEqual({
+    label: "Updating",
+    tone: "info",
+  });
+  expect(daemonSetStatus(ds(0, 0))).toEqual({
+    label: "ScaledDown",
+    tone: "neutral",
+  });
 });
 
 test("strategyText", () => {

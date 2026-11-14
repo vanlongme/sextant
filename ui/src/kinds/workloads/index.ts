@@ -18,8 +18,10 @@ import { podStatus, podSummary } from "./pod";
 import { forceDeleteAction } from "./podActions";
 import { RolloutDetail } from "./RolloutDetail";
 import {
+  daemonSetStatus,
   deploymentStatus,
-  replicaStatus,
+  desiredReplicas,
+  replicaSetStatus,
   restartAction,
   scaleAction,
 } from "./rollouts";
@@ -68,11 +70,8 @@ registerKind("", "pods", {
 });
 
 const count = (n: unknown) => (typeof n === "number" ? n : 0);
-const desiredOf = (o: KubeObject) => count(o.spec?.replicas ?? 1);
 const readyOver = (o: KubeObject) =>
-  `${count(o.status?.readyReplicas)}/${desiredOf(o)}`;
-const replicaSetStatus = (o: KubeObject) =>
-  replicaStatus(o, desiredOf(o), count(o.status?.readyReplicas));
+  `${count(o.status?.readyReplicas)}/${desiredReplicas(o)}`;
 
 registerKind("apps", "deployments", {
   columns: (info) =>
@@ -113,13 +112,7 @@ registerKind("apps", "daemonsets", {
         count(o.status?.currentNumberScheduled),
       ),
       numberColumn("ready", "Ready", (o) => count(o.status?.numberReady)),
-      statusColumn((o) =>
-        replicaStatus(
-          o,
-          count(o.status?.desiredNumberScheduled),
-          count(o.status?.numberReady),
-        ),
-      ),
+      statusColumn(daemonSetStatus),
       numberColumn("upToDate", "Up-to-date", (o) =>
         count(o.status?.updatedNumberScheduled),
       ),
@@ -145,7 +138,7 @@ registerKind("apps", "replicasets", {
   columns: (info) =>
     baseColumns(
       info.resource,
-      numberColumn("desired", "Desired", desiredOf),
+      numberColumn("desired", "Desired", desiredReplicas),
       numberColumn("current", "Current", (o) => count(o.status?.replicas)),
       numberColumn("ready", "Ready", (o) => count(o.status?.readyReplicas)),
       statusColumn(replicaSetStatus),

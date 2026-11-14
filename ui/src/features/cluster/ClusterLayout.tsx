@@ -158,8 +158,3 @@ export function ClusterLayout(props: { clusterId: string }) {
     </div>
   );
 }
-
-/** Placeholder for the Workloads overview screen (F17). */
-export function WorkloadsOverview() {
-  return <h2 data-testid="workloads-overview-title">Workloads</h2>;
-}

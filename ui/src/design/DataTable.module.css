@@ -24,6 +24,10 @@
   text-overflow: ellipsis;
 }
 
+.table .end {
+  text-align: right;
+}
+
 .clickable {
   cursor: pointer;
 }

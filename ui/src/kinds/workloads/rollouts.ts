@@ -23,6 +23,27 @@ export function replicaStatus(
     : { label: "Updating", tone: "info" };
 }
 
+const count = (n: unknown) => (typeof n === "number" ? n : 0);
+
+/** The replicas a ReplicaSet or StatefulSet asks for: `spec.replicas`, 1 when unset. */
+export function desiredReplicas(o: KubeObject): number {
+  return count(o.spec?.replicas ?? 1);
+}
+
+/** A ReplicaSet's or StatefulSet's ready replicas against the ones it asks for. */
+export function replicaSetStatus(o: KubeObject): StatusInfo {
+  return replicaStatus(o, desiredReplicas(o), count(o.status?.readyReplicas));
+}
+
+/** A DaemonSet's ready pods against the nodes it should run on. */
+export function daemonSetStatus(o: KubeObject): StatusInfo {
+  return replicaStatus(
+    o,
+    count(o.status?.desiredNumberScheduled),
+    count(o.status?.numberReady),
+  );
+}
+
 export function deploymentStatus(o: KubeObject): StatusInfo {
   if (o.metadata.deletionTimestamp)
     return { label: "Terminating", tone: "neutral" };
