@@ -175,6 +175,7 @@ export const BUILTIN_GROUPS: ReadonlySet<string> = new Set([
   "discovery.k8s.io",
   "events.k8s.io",
   "flowcontrol.apiserver.k8s.io",
+  "internal.apiserver.k8s.io",
   "networking.k8s.io",
   "node.k8s.io",
   "policy",
@@ -182,6 +183,7 @@ export const BUILTIN_GROUPS: ReadonlySet<string> = new Set([
   "resource.k8s.io",
   "scheduling.k8s.io",
   "storage.k8s.io",
+  "storagemigration.k8s.io",
 ]);
 
 export interface CrdGroup {
