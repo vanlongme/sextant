@@ -1,38 +1,27 @@
 import { X } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
-import { Link } from "react-router";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   EmptyState,
   ErrorNotice,
   IconButton,
   Spinner,
+  type TableColumn,
   Tabs,
 } from "../../design";
 import type { ApiResourceInfo } from "../../ipc/generated/ApiResourceInfo";
 import type { ResourceRef } from "../../ipc/generated/ResourceRef";
+import { DrawerKindContext } from "../../kinds/detail/parts";
 import { type KubeObject, objectKey } from "../../kinds/objects";
-import { kindSpec } from "../../kinds/registry";
 import { DRAWER_PANE, usePaneSize } from "../../stores/paneSize";
 import { rowsAreTrimmed, useResourceList } from "../../stores/resources";
 import { DrawerMap, hasDrawerMap } from "../map/DrawerMap";
 import { DrawerMetrics } from "../metrics/DrawerMetrics";
 import { metricsTargetOf } from "../metrics/targets";
-import { ConditionsSection } from "./ConditionsSection";
-import { CopyRow } from "./CopyRow";
 import styles from "./DetailDrawer.module.css";
 import { DrawerResize } from "./DrawerResize";
 import { EventsSection } from "./EventsSection";
-import { FieldTree } from "./FieldTree";
-import { MetadataSection } from "./MetadataSection";
-import { ownerTarget } from "./ownerLinks";
+import { OverviewSections } from "./OverviewSections";
 import { useWholeObject } from "./useWholeObject";
-
-/** One line of a kind's table, shown at the top of the drawer. */
-export interface SummaryItem {
-  id: string;
-  label: string;
-  value: React.ReactNode;
-}
 
 const OVERVIEW_TAB = {
   value: "overview",
@@ -55,54 +44,17 @@ const EVENTS_TAB = {
   testId: "detail-tab-events",
 };
 
-function Owners(props: {
-  clusterId: string;
-  object: KubeObject;
-  resources: ApiResourceInfo[];
-}) {
-  const { clusterId, object, resources } = props;
-  const owners = object.metadata.ownerReferences ?? [];
-  if (owners.length === 0) return null;
-  return (
-    <section className={styles.section}>
-      <h4 className={styles.heading}>Owners</h4>
-      <ul className={styles.rows}>
-        {owners.map((o) => {
-          const target = ownerTarget(o, object.metadata.namespace, resources);
-          return (
-            <li key={o.uid}>
-              {target ? (
-                <Link
-                  className={styles.link}
-                  to={`/cluster/${encodeURIComponent(clusterId)}${target}`}
-                  data-testid="detail-owner-link"
-                >
-                  {o.kind} {o.name}
-                </Link>
-              ) : (
-                <span>
-                  {o.kind} {o.name}
-                </span>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-    </section>
-  );
-}
-
 function Body(props: {
   clusterId: string;
   resource: ResourceRef;
   object: KubeObject;
   resources: ApiResourceInfo[];
-  summary: SummaryItem[];
+  columns: readonly TableColumn<KubeObject>[];
   tab: string;
 }) {
-  const { clusterId, resource, object, resources, summary, tab } = props;
-  const Detail = kindSpec(resource.group, resource.plural)?.detail;
-  const { metadata: _metadata, ...rest } = object;
+  const { clusterId, resource, object, resources, columns, tab } = props;
+  const { group, plural } = resource;
+  const kind = useMemo(() => ({ group, plural }), [group, plural]);
   // The overview stays mounted under the other tabs, so unsaved edits survive a
   // tab switch. The metrics panel polls and the map watches the cluster, so each is
   // mounted only while it is shown.
@@ -133,33 +85,15 @@ function Body(props: {
         </section>
       ) : null}
       <div hidden={tab !== "overview"}>
-        {summary.length > 0 ? (
-          <section className={styles.section} data-testid="detail-summary">
-            <dl className={styles.facts}>
-              {summary.map((s) => (
-                <CopyRow key={s.id} label={s.label}>
-                  {s.value}
-                </CopyRow>
-              ))}
-            </dl>
-          </section>
-        ) : null}
-        <MetadataSection object={object} />
-        <Owners clusterId={clusterId} object={object} resources={resources} />
-        <ConditionsSection status={object.status} />
-        <section className={styles.section}>
-          <h4 className={styles.heading}>{Detail ? "Details" : "Fields"}</h4>
-          {Detail ? (
-            <Detail
-              clusterId={clusterId}
-              object={object}
-              resource={resource}
-              resources={resources}
-            />
-          ) : (
-            <FieldTree value={rest} />
-          )}
-        </section>
+        <DrawerKindContext.Provider value={kind}>
+          <OverviewSections
+            clusterId={clusterId}
+            resource={resource}
+            object={object}
+            resources={resources}
+            columns={columns}
+          />
+        </DrawerKindContext.Provider>
       </div>
     </>
   );
@@ -172,7 +106,7 @@ function Body(props: {
  * object stays as it last looked, with a notice.
  * It renders nothing without an `objectKey` (`<namespace>/<name>`). Escape closes it
  * and hands focus back to what had it before. `resources` lets owners link to their
- * lists, and `summary` adds the kind's table values. `actions` renders the header's
+ * lists, and `columns` are the kind's table columns, for the Summary. `actions` renders the header's
  * action bar. Opening moves focus to the drawer itself.
  */
 export function DetailDrawer(props: {
@@ -181,7 +115,7 @@ export function DetailDrawer(props: {
   objectKey: string | null;
   onClose(): void;
   resources?: ApiResourceInfo[];
-  summary?: SummaryItem[];
+  columns?: readonly TableColumn<KubeObject>[];
   /** The header's actions for the object shown; called only while it is in the live list. */
   actions?(object: KubeObject): ReactNode;
 }) {
@@ -313,7 +247,7 @@ export function DetailDrawer(props: {
               resource={resource}
               object={shown}
               resources={props.resources ?? []}
-              summary={props.summary ?? []}
+              columns={props.columns ?? []}
               tab={tab}
             />
           </div>

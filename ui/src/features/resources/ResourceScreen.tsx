@@ -22,7 +22,7 @@ import type { UsageView } from "../../kinds/usageColumns";
 import { findResource, useResourceList } from "../../stores/resources";
 import { useUiState } from "../../stores/uiState";
 import { useClusterContext } from "../cluster/ClusterLayout";
-import { DetailDrawer, type SummaryItem } from "../details/DetailDrawer";
+import { DetailDrawer } from "../details/DetailDrawer";
 import { useListUsage } from "../metrics/useListUsage";
 import { DeleteDialog } from "./DeleteDialog";
 import { matchesSearch } from "./filter";
@@ -34,13 +34,6 @@ import styles from "./ResourceScreen.module.css";
 
 const ACTIONS_COLUMN = "actions";
 /** Always shown, so a row can always be told apart. */
-/** Shown in the drawer's own sections already. */
-const SUMMARY_SKIP: ReadonlySet<string> = new Set([
-  "name",
-  "namespace",
-  "age",
-  ACTIONS_COLUMN,
-]);
 const FIXED_COLUMNS: ReadonlySet<string> = new Set(["name", ACTIONS_COLUMN]);
 
 /** A choice made in the columns menu, which wins over the column's default. */
@@ -193,16 +186,6 @@ export function ResourceScreen(props: {
       { replace: false },
     );
 
-  const opened =
-    openKey === null
-      ? undefined
-      : list.items.find((o) => objectKey(o) === openKey);
-  const summary: SummaryItem[] = opened
-    ? columns
-        .filter((c) => !SUMMARY_SKIP.has(c.id))
-        .map((c) => ({ id: c.id, label: c.header, value: c.render(opened) }))
-    : [];
-
   if (list.status === "notServed" || list.status === "forbidden") {
     return (
       <div className={styles.screen}>
@@ -336,7 +319,7 @@ export function ResourceScreen(props: {
           objectKey={openKey}
           onClose={() => openObject(null)}
           resources={resources}
-          summary={summary}
+          columns={columns}
           actions={(object) => (
             <ObjectActionBar
               items={objectActions({

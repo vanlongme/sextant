@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import type { TableColumn } from "../../design";
 import { Menu } from "../../design";
 import { copyText } from "../../design/clipboard";
 import type { ApiResourceInfo } from "../../ipc/generated/ApiResourceInfo";
@@ -174,12 +175,14 @@ test("opens from the URL param and shows metadata, labels, annotations", async (
   await f.snapshot([pod()]);
   expect(screen.getByTestId("detail-title").textContent).toBe("web");
   expect(
-    within(screen.getByTestId("detail-labels")).getByText("app=web"),
-  ).toBeTruthy();
+    within(screen.getByTestId("detail-labels")).getAllByText("app=web"),
+  ).toHaveLength(2);
   expect(
     within(screen.getByTestId("detail-annotations")).getByText("short"),
   ).toBeTruthy();
-  expect(screen.getByText("team-a")).toBeTruthy();
+  expect(
+    within(screen.getByTestId("detail-metadata")).getByText("team-a"),
+  ).toBeTruthy();
 });
 
 test("renders nothing without an object", async () => {
@@ -204,7 +207,7 @@ test("updates live when the object changes", async () => {
       },
     }),
   ]);
-  expect(screen.getByText("app=api")).toBeTruthy();
+  expect(screen.getAllByText("app=api").length).toBeGreaterThan(0);
 });
 
 test("shows a removed notice when the object is deleted while open and does not crash", async () => {
@@ -361,6 +364,7 @@ test("uses the kind's registered detail when there is one, otherwise the field t
   await act(flush);
   await f.snapshot([pod()]);
   expect(screen.getByTestId("detail-fields")).toBeTruthy();
+  expect(screen.getByTestId("detail-section-toggle-fields")).toBeTruthy();
   expect(screen.getByText("nodeName")).toBeTruthy();
   unmount();
   resetResourcesForTest();
@@ -434,6 +438,7 @@ test("long annotation values stay collapsed with an expand control", async () =>
       metadata: { ...pod().metadata, annotations: { big: long, small: "ok" } },
     }),
   ]);
+  fireEvent.click(screen.getByTestId("detail-expand-annotations"));
   const section = screen.getByTestId("detail-annotations");
   const expand = within(section).getByRole("button", {
     name: "Expand annotation big",
@@ -661,7 +666,7 @@ test("other kinds show their row and fetch nothing", async () => {
   );
   await act(flush);
   await f.snapshot([pod()]);
-  expect(screen.getByText("app=web")).toBeTruthy();
+  expect(screen.getAllByText("app=web").length).toBeGreaterThan(0);
   expect(f.backend.callsTo("resource_get")).toHaveLength(0);
 });
 
@@ -765,7 +770,7 @@ test("labels are rows that show and copy key=value", async () => {
   await act(flush);
   await f.snapshot([pod()]);
   const labels = screen.getByTestId("detail-labels");
-  expect(within(labels).getByText("app=web")).toBeTruthy();
+  expect(within(labels).getAllByText("app=web")).toHaveLength(2);
   expect(await copyFrom("copy-label-app")).toBe("app=web");
 });
 
@@ -777,6 +782,7 @@ test("a collapsed annotation copies its whole value", async () => {
   await f.snapshot([
     pod({ metadata: { ...pod().metadata, annotations: { big: long } } }),
   ]);
+  fireEvent.click(screen.getByTestId("detail-expand-annotations"));
   expect(
     screen
       .getByRole("button", { name: "Expand annotation big" })
@@ -785,8 +791,14 @@ test("a collapsed annotation copies its whole value", async () => {
   expect(await copyFrom("copy-annotation-big")).toBe(long);
 });
 
-test("a summary row copies what its cell shows", async () => {
+test("the summary is a stat grid of the kind's columns, with no copy buttons", async () => {
   const f = fake();
+  const column = (id: string, header: string): TableColumn<KubeObject> => ({
+    id,
+    header,
+    width: 80,
+    render: () => <strong>{`${header} cell`}</strong>,
+  });
   render(
     <MemoryRouter>
       <DetailDrawer
@@ -794,18 +806,23 @@ test("a summary row copies what its cell shows", async () => {
         resource={POD}
         objectKey="team-a/web"
         onClose={() => {}}
-        summary={[
-          { id: "status", label: "Status", value: <strong>Running</strong> },
+        columns={[
+          column("name", "Name"),
+          column("status", "Status"),
+          column("age", "Age"),
         ]}
       />
     </MemoryRouter>,
   );
   await act(flush);
   await f.snapshot([pod()]);
-  expect(
-    within(screen.getByTestId("detail-summary")).getByText("Running"),
-  ).toBeTruthy();
-  expect(await copyFrom("copy-status")).toBe("Running");
+  const summary = screen.getByTestId("detail-summary");
+  expect(within(summary).getByTestId("detail-stat-status").textContent).toBe(
+    "StatusStatus cell",
+  );
+  expect(within(summary).queryByTestId("detail-stat-name")).toBeNull();
+  expect(within(summary).queryByTestId("detail-stat-age")).toBeNull();
+  expect(screen.queryByTestId("copy-status")).toBeNull();
 });
 
 test("a row's copy button is transparent at rest and shows on hover and focus, without opacity", () => {
@@ -976,4 +993,42 @@ test("Escape on a chart hides its readout first and closes the drawer only the s
   expect(onClose).not.toHaveBeenCalled();
   fireEvent.keyDown(plot, { key: "Escape" });
   expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+test("the overview shows its cards in order, and the controller as Controlled by", async () => {
+  const f = fake();
+  render(drawer());
+  await act(flush);
+  await f.snapshot([
+    pod({
+      metadata: {
+        ...pod().metadata,
+        ownerReferences: [
+          {
+            apiVersion: "apps/v1",
+            kind: "ReplicaSet",
+            name: "web-1",
+            uid: "o1",
+            controller: true,
+          },
+        ],
+      },
+      status: { conditions: [{ type: "Ready", status: "True" }] },
+    }),
+  ]);
+  expect(
+    screen
+      .getAllByTestId(/^detail-section-toggle-/)
+      .map((t) => t.getAttribute("data-testid")),
+  ).toEqual([
+    "detail-section-toggle-relations",
+    "detail-section-toggle-conditions",
+    "detail-section-toggle-fields",
+    "detail-section-toggle-metadata",
+  ]);
+  const relations = screen.getByTestId("detail-relations");
+  expect(within(relations).getByText("Controlled by")).toBeTruthy();
+  expect(within(relations).getByTestId("detail-owner-link").textContent).toBe(
+    "web-1",
+  );
 });

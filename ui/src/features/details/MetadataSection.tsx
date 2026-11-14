@@ -1,6 +1,15 @@
+import { Tags } from "lucide-react";
 import { useState } from "react";
 import { CopyButton } from "../../design";
-import type { KubeObject } from "../../kinds/objects";
+import type { ApiResourceInfo } from "../../ipc/generated/ApiResourceInfo";
+import {
+  ExpandRow,
+  FactList,
+  FactRow,
+  ObjectLink,
+  Part,
+} from "../../kinds/detail/parts";
+import { formatCreated, type KubeObject } from "../../kinds/objects";
 import { CopyRow } from "./CopyRow";
 import styles from "./DetailDrawer.module.css";
 
@@ -43,78 +52,110 @@ function Annotation(props: { name: string; value: string }) {
   );
 }
 
+function None(props: { label: string; testId: string }) {
+  return (
+    <FactList>
+      <FactRow label={props.label} testId={props.testId}>
+        <span className={styles.muted}>None</span>
+      </FactRow>
+    </FactList>
+  );
+}
+
 function Labels(props: { labels?: Record<string, string> }) {
   const entries = Object.entries(props.labels ?? {});
+  if (entries.length === 0)
+    return <None label="Labels" testId="detail-labels" />;
   return (
-    <section className={styles.section} data-testid="detail-labels">
-      <h4 className={styles.heading}>Labels</h4>
-      {entries.length === 0 ? (
-        <p className={styles.muted}>None</p>
-      ) : (
-        <ul className={styles.labelRows}>
-          {entries.map(([k, v]) => (
-            <li key={k} className={`${styles.copyHost} ${styles.labelRow}`}>
-              <span className={styles.labelText}>
-                {k}={v}
-              </span>
-              <CopyButton
-                className={styles.copy}
-                what={`label ${k}`}
-                value={() => `${k}=${v}`}
-              />
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+    <ExpandRow
+      label="Labels"
+      count={entries.length}
+      summary={entries.map(([k, v]) => `${k}=${v}`).join(", ")}
+      testId="detail-labels"
+    >
+      <ul className={styles.labelRows}>
+        {entries.map(([k, v]) => (
+          <li key={k} className={`${styles.copyHost} ${styles.labelRow}`}>
+            <span className={styles.labelText}>
+              {k}={v}
+            </span>
+            <CopyButton
+              className={styles.copy}
+              what={`label ${k}`}
+              value={() => `${k}=${v}`}
+            />
+          </li>
+        ))}
+      </ul>
+    </ExpandRow>
   );
 }
 
 function Annotations(props: { annotations?: Record<string, string> }) {
   const entries = Object.entries(props.annotations ?? {});
+  if (entries.length === 0) {
+    return <None label="Annotations" testId="detail-annotations" />;
+  }
   return (
-    <section className={styles.section} data-testid="detail-annotations">
-      <h4 className={styles.heading}>Annotations</h4>
-      {entries.length === 0 ? (
-        <p className={styles.muted}>None</p>
-      ) : (
-        <dl className={styles.pairs}>
-          {entries.map(([k, v]) => (
-            <Annotation key={k} name={k} value={v} />
-          ))}
-        </dl>
-      )}
-    </section>
+    <ExpandRow
+      label="Annotations"
+      count={entries.length}
+      summary={entries.map(([k]) => k).join(", ")}
+      testId="detail-annotations"
+    >
+      <dl className={styles.pairs}>
+        {entries.map(([k, v]) => (
+          <Annotation key={k} name={k} value={v} />
+        ))}
+      </dl>
+    </ExpandRow>
   );
 }
 
-/** Identity, labels and annotations of an object, each row with a copy button. */
-export function MetadataSection(props: { object: KubeObject }) {
+/** Identity, labels and annotations of an object, each row with a copy button (spec H31). */
+export function MetadataSection(props: {
+  object: KubeObject;
+  clusterId: string;
+  resources: ApiResourceInfo[];
+}) {
   const { metadata } = props.object;
-  const facts: [string, string | undefined][] = [
-    ["Name", metadata.name],
-    ["Namespace", metadata.namespace],
-    ["Created", metadata.creationTimestamp],
+  const created = metadata.creationTimestamp;
+  const plain: [string, string | undefined][] = [
     ["UID", metadata.uid],
     ["Resource version", metadata.resourceVersion],
     ["Deleting since", metadata.deletionTimestamp],
   ];
   return (
-    <>
-      <section className={styles.section}>
-        <h4 className={styles.heading}>Metadata</h4>
-        <dl className={styles.facts}>
-          {facts
-            .filter(([, v]) => v !== undefined && v !== "")
-            .map(([k, v]) => (
-              <CopyRow key={k} label={k}>
-                {v}
-              </CopyRow>
-            ))}
-        </dl>
-      </section>
+    <Part title="Metadata" icon={Tags} testId="detail-metadata">
+      <dl className={styles.facts}>
+        <CopyRow label="Name">{metadata.name}</CopyRow>
+        {metadata.namespace ? (
+          <CopyRow label="Namespace" copy={metadata.namespace}>
+            <ObjectLink
+              clusterId={props.clusterId}
+              resources={props.resources}
+              kind="Namespace"
+              name={metadata.namespace}
+              apiVersion="v1"
+              label={metadata.namespace}
+            />
+          </CopyRow>
+        ) : null}
+        {created ? (
+          <CopyRow label="Created" copy={created}>
+            {formatCreated(created)}
+          </CopyRow>
+        ) : null}
+        {plain
+          .filter(([, v]) => v !== undefined && v !== "")
+          .map(([k, v]) => (
+            <CopyRow key={k} label={k}>
+              {v}
+            </CopyRow>
+          ))}
+      </dl>
       <Labels labels={metadata.labels} />
       <Annotations annotations={metadata.annotations} />
-    </>
+    </Part>
   );
 }

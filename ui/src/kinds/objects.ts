@@ -64,3 +64,10 @@ export function formatAge(fromIso: string | undefined, now: number): string {
   if (seconds < 2 * YEAR) return `${Math.floor(seconds / DAY)}d`;
   return pair(seconds, YEAR, "y", DAY, "d");
 }
+
+/** `YYYY-MM-DD HH:MM:SS UTC`; text that is not a time is returned as it is. */
+export function formatCreated(iso: string): string {
+  const time = Date.parse(iso);
+  if (Number.isNaN(time)) return iso;
+  return `${new Date(time).toISOString().slice(0, 19).replace("T", " ")} UTC`;
+}

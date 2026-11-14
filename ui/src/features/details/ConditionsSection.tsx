@@ -1,4 +1,6 @@
+import { ShieldCheck } from "lucide-react";
 import { Badge } from "../../design";
+import { Part } from "../../kinds/detail/parts";
 import styles from "./DetailDrawer.module.css";
 
 interface Condition {
@@ -23,8 +25,7 @@ export function ConditionsSection(props: { status: unknown }) {
   const conditions = conditionsOf(props.status);
   if (conditions.length === 0) return null;
   return (
-    <section className={styles.section} data-testid="detail-conditions">
-      <h4 className={styles.heading}>Conditions</h4>
+    <Part title="Conditions" icon={ShieldCheck} testId="detail-conditions">
       <ul className={styles.rows}>
         {conditions.map((c) => (
           <li key={c.type} className={styles.condition}>
@@ -53,6 +54,6 @@ export function ConditionsSection(props: { status: unknown }) {
           </li>
         ))}
       </ul>
-    </section>
+    </Part>
   );
 }

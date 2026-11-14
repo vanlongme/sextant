@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { formatAge, objectKey } from "./objects";
+import { formatAge, formatCreated, objectKey } from "./objects";
 
 const NOW = Date.parse("2026-01-10T12:00:00Z");
 const ago = (seconds: number) => new Date(NOW - seconds * 1000).toISOString();
@@ -34,4 +34,11 @@ test("objectKey joins namespace and name", () => {
 
 test("objectKey of a cluster-scoped object has an empty namespace", () => {
   expect(objectKey({ metadata: { name: "node-1" } })).toBe("/node-1");
+});
+test("formatCreated shows a UTC time to the second", () => {
+  expect(formatCreated("2026-01-01T00:00:00Z")).toBe("2026-01-01 00:00:00 UTC");
+  expect(formatCreated("2026-03-04T05:06:07.890+02:00")).toBe(
+    "2026-03-04 03:06:07 UTC",
+  );
+  expect(formatCreated("not a time")).toBe("not a time");
 });

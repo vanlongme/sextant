@@ -5,6 +5,7 @@ import type { ApiResourceInfo } from "../ipc/generated/ApiResourceInfo";
 import type { ResourceRef } from "../ipc/generated/ResourceRef";
 import { formatAge, type KubeObject } from "./objects";
 import type { UsageView } from "./usageColumns";
+import type { VolumeItem } from "./workloads/volumes";
 
 export interface KindAction {
   id: string;
@@ -54,6 +55,29 @@ export interface DeleteDialogProps {
   onDeleted(keys: string[]): void;
 }
 
+/** One stat of the drawer's Summary (spec H29). */
+export interface SummaryStat {
+  id: string;
+  label: string;
+  value: ReactNode;
+  title?: string;
+}
+
+/** One fact of the drawer's Relations after the generic ones (spec H30). */
+export interface RelationFact {
+  label: string;
+  value: ReactNode;
+}
+
+/** The Pod spec a kind runs, for its Volumes (spec H36, H39, H40). */
+export interface PodSpecSource {
+  spec: unknown;
+  /** The Pod's own name, so an ephemeral volume links to its claim; null for templates. */
+  podName: string | null;
+  /** A StatefulSet's claim templates, listed after the volumes. */
+  claimTemplates?: VolumeItem[];
+}
+
 export interface KindSpec {
   /**
    * The whole set of columns for this kind, in place of the defaults. `usage` is the
@@ -72,6 +96,21 @@ export interface KindSpec {
    * or many. The row menu, the drawer and bulk delete all open it.
    */
   deleteDialog?: ComponentType<DeleteDialogProps>;
+  /**
+   * The drawer's Summary in place of the columns. `cell(id)` renders that column's cell
+   * for the object, or returns null when the kind has no such column.
+   */
+  summary?(
+    object: KubeObject,
+    cell: (columnId: string) => ReactNode | null,
+    props: DetailProps,
+  ): SummaryStat[];
+  /** Facts added to Relations after Namespace, Controlled by and Owners. */
+  relations?(props: DetailProps): RelationFact[];
+  /** The Pod spec behind the object; it adds Volumes and "Controlled by: None". */
+  podSpec?(object: KubeObject): PodSpecSource;
+  /** True when the kind's detail shows `status.conditions` itself. */
+  ownConditions?: boolean;
 }
 
 const specs = new Map<string, KindSpec>();
