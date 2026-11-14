@@ -995,3 +995,52 @@ test("a kind's own delete dialog serves the row menu, the drawer and bulk delete
   expect(screen.getByTestId("own-delete")).toBeTruthy();
   expect(opened.at(-1)).toEqual(["a", "b"]);
 });
+
+test("a row click while a linked object is shown clears the history", async () => {
+  const fake = fakeBackend();
+  const NAMESPACES = info({
+    plural: "namespaces",
+    kind: "Namespace",
+    namespaced: false,
+  });
+  await show(
+    fake,
+    [pod("web", "team-a"), pod("db", "team-a")],
+    DEPLOYMENTS,
+    "c1",
+    [DEPLOYMENTS, NAMESPACES],
+  );
+  fireEvent.click(row("team-a", "web") as HTMLElement);
+  await act(flush);
+  const namespaceLink = () =>
+    within(screen.getByTestId("detail-relations")).getByRole("button", {
+      name: "team-a",
+    });
+  fireEvent.click(namespaceLink());
+  await act(flush);
+  await fake.send("namespaces", {
+    type: "snapshot",
+    items: [{ metadata: { name: "team-a" } }],
+  } as WatchEvent);
+  expect(screen.getByTestId("detail-kind").textContent).toBe("Namespace");
+  expect(screen.getByTestId("detail-back").getAttribute("aria-label")).toBe(
+    "Back to web",
+  );
+  // No row is active while the drawer shows another kind.
+  expect(row("team-a", "web")?.getAttribute("aria-current")).toBeNull();
+
+  fireEvent.click(row("team-a", "db") as HTMLElement);
+  await act(flush);
+  expect(screen.getByTestId("detail-title").textContent).toBe("db");
+  expect(screen.queryByTestId("detail-back")).toBeNull();
+  expect(row("team-a", "db")?.getAttribute("aria-current")).toBe("true");
+
+  // The root's own row shows the root again.
+  fireEvent.click(namespaceLink());
+  await act(flush);
+  fireEvent.click(row("team-a", "db") as HTMLElement);
+  await act(flush);
+  expect(screen.getByTestId("detail-kind").textContent).toBe("Deployment");
+  expect(screen.getByTestId("detail-title").textContent).toBe("db");
+  expect(screen.queryByTestId("detail-back")).toBeNull();
+});

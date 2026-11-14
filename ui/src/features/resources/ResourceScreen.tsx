@@ -21,6 +21,7 @@ import { findResource, useResourceList } from "../../stores/resources";
 import { useUiState } from "../../stores/uiState";
 import { useClusterContext } from "../cluster/ClusterLayout";
 import { DetailDrawer } from "../details/DetailDrawer";
+import { useDrawerHistory } from "../details/useDrawerHistory";
 import { useListUsage } from "../metrics/useListUsage";
 import { DeleteDialog } from "./DeleteDialog";
 import { matchesSearch } from "./filter";
@@ -69,6 +70,15 @@ export function ResourceScreen(props: {
 
   const [params, setParams] = useSearchParams();
   const openKey = params.get("object");
+  const history = useDrawerHistory(resource, openKey);
+  const shownTarget = history.shown?.target;
+  // The active row is the shown object's, while it belongs to this list (spec H18).
+  const activeKey =
+    shownTarget &&
+    shownTarget.group === resource.group &&
+    shownTarget.plural === resource.plural
+      ? `${shownTarget.namespace ?? ""}/${shownTarget.name}`
+      : undefined;
   const [search, setSearch] = useState("");
   // Kept here because the table unmounts while no row matches.
   const [sort, setSort] = useState<TableSort | null>(null);
@@ -269,15 +279,20 @@ export function ResourceScreen(props: {
               selected={selected}
               onSelectedChange={setSelected}
               testId="resource-table"
-              onRowClick={(o) => openObject(objectKey(o))}
-              activeKey={openKey ?? undefined}
+              onRowClick={(o) => {
+                const key = objectKey(o);
+                // The root's own row shows the root again (spec H18).
+                if (key === openKey) history.reset();
+                else openObject(key);
+              }}
+              activeKey={activeKey}
             />
           )}
         </div>
         <DetailDrawer
           clusterId={clusterId}
           resource={resource}
-          objectKey={openKey}
+          history={history}
           onClose={() => openObject(null)}
           resources={resources}
           columns={columns}

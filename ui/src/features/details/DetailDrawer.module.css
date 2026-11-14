@@ -64,6 +64,13 @@
   border-bottom: 1px solid var(--border-subtle);
 }
 
+.staticNote {
+  margin: 0;
+  padding: var(--space-4) var(--space-8);
+  color: var(--text-secondary);
+  font: var(--type-caption);
+}
+
 .fetchError {
   padding: var(--space-5) var(--space-7) 0;
 }

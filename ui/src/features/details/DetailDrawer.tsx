@@ -1,5 +1,11 @@
-import { X } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronLeft, X } from "lucide-react";
+import {
+  type ReactElement,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import {
   EmptyState,
   ErrorNotice,
@@ -10,21 +16,31 @@ import {
 } from "../../design";
 import type { ApiResourceInfo } from "../../ipc/generated/ApiResourceInfo";
 import type { ResourceRef } from "../../ipc/generated/ResourceRef";
+import {
+  DrawerLinkContext,
+  type DrawerTarget,
+  targetKey,
+} from "../../kinds/detail/links";
 import { DrawerKindContext } from "../../kinds/detail/parts";
-import { type KubeObject, objectKey } from "../../kinds/objects";
+import type { KubeObject } from "../../kinds/objects";
 import { DRAWER_PANE, usePaneSize } from "../../stores/paneSize";
-import { rowsAreTrimmed, useResourceList } from "../../stores/resources";
+import { findResource } from "../../stores/resources";
 import { DrawerMap, hasDrawerMap } from "../map/DrawerMap";
+import { listLabel } from "../map/model";
 import { DrawerMetrics } from "../metrics/DrawerMetrics";
 import { metricsTargetOf } from "../metrics/targets";
+import { DrawerObjectActions } from "../resources/DrawerObjectActions";
+import { useKindColumns } from "../resources/kindColumns";
 import styles from "./DetailDrawer.module.css";
 import { DrawerResize } from "./DrawerResize";
+import { OVERVIEW } from "./drawerHistory";
 import { EventsSection } from "./EventsSection";
 import { OverviewSections } from "./OverviewSections";
-import { useWholeObject } from "./useWholeObject";
+import type { DrawerHistoryApi } from "./useDrawerHistory";
+import { type DrawerObject, useDrawerObject } from "./useDrawerObject";
 
 const OVERVIEW_TAB = {
-  value: "overview",
+  value: OVERVIEW,
   label: "Overview",
   testId: "detail-tab-overview",
 };
@@ -44,6 +60,21 @@ const EVENTS_TAB = {
   testId: "detail-tab-events",
 };
 
+/** The screen's own kind is served and listable, even when `resources` leaves it out. */
+function ownInfo(resource: ResourceRef): ApiResourceInfo {
+  return {
+    resource,
+    verbs: [],
+    shortNames: [],
+    canList: true,
+    canWatch: true,
+    canCreate: false,
+    canUpdate: false,
+    canPatch: false,
+    canDelete: false,
+  };
+}
+
 function Body(props: {
   clusterId: string;
   resource: ResourceRef;
@@ -53,8 +84,6 @@ function Body(props: {
   tab: string;
 }) {
   const { clusterId, resource, object, resources, columns, tab } = props;
-  const { group, plural } = resource;
-  const kind = useMemo(() => ({ group, plural }), [group, plural]);
   // The overview stays mounted under the other tabs, so unsaved edits survive a
   // tab switch. The metrics panel polls and the map watches the cluster, so each is
   // mounted only while it is shown.
@@ -84,55 +113,120 @@ function Body(props: {
           />
         </section>
       ) : null}
-      <div hidden={tab !== "overview"}>
-        <DrawerKindContext.Provider value={kind}>
-          <OverviewSections
-            clusterId={clusterId}
-            resource={resource}
-            object={object}
-            resources={resources}
-            columns={columns}
-          />
-        </DrawerKindContext.Provider>
+      <div hidden={tab !== OVERVIEW}>
+        <OverviewSections
+          clusterId={clusterId}
+          resource={resource}
+          object={object}
+          resources={resources}
+          columns={columns}
+        />
       </div>
     </>
   );
 }
 
-/**
- * The right-hand drawer of one object, kept up to date from the resource's live list.
- * When that list holds trimmed rows (Pods), it shows the object from `resourceGet`
- * instead, fetched again each time the row's `resourceVersion` changes. A deleted
- * object stays as it last looked, with a notice.
- * It renders nothing without an `objectKey` (`<namespace>/<name>`). Escape closes it
- * and hands focus back to what had it before. `resources` lets owners link to their
- * lists, and `columns` are the kind's table columns, for the Summary. `actions` renders the header's
- * action bar. Opening moves focus to the drawer itself.
- */
-export function DetailDrawer(props: {
+/** What the drawer shows in place of an object (spec H50). */
+function StateNotice(props: {
+  read: DrawerObject;
+  kind: string;
+  target: DrawerTarget;
+}) {
+  const { read, kind, target } = props;
+  switch (read.status) {
+    case "notFound":
+      return (
+        <div data-testid="detail-not-found">
+          <EmptyState
+            title={`${kind} not found`}
+            body={
+              target.namespace
+                ? `There is no ${kind} ${target.name} in namespace ${target.namespace}.`
+                : `There is no ${kind} ${target.name} in the cluster.`
+            }
+          />
+        </div>
+      );
+    case "forbidden":
+      return (
+        <div className={styles.fetchError} data-testid="detail-forbidden">
+          <ErrorNotice
+            title={`No access to this ${kind}`}
+            message={read.message ?? "You do not have permission to read it."}
+          />
+        </div>
+      );
+    case "notServed":
+      return (
+        <div className={styles.fetchError} data-testid="detail-not-served">
+          <ErrorNotice
+            title={`${kind} objects are not available`}
+            message={
+              read.message ?? "The cluster does not serve this resource type."
+            }
+          />
+        </div>
+      );
+    case "loading":
+      return <Spinner label="Loading details" />;
+    default:
+      // "error" shows its notice above; the others show the object.
+      return null;
+  }
+}
+
+export interface DetailDrawerProps {
   clusterId: string;
+  /** The screen's resource. */
   resource: ResourceRef;
-  objectKey: string | null;
+  history: DrawerHistoryApi;
   onClose(): void;
   resources?: ApiResourceInfo[];
+  /** The screen's columns, for the Summary of its own objects. */
   columns?: readonly TableColumn<KubeObject>[];
-  /** The header's actions for the object shown; called only while it is in the live list. */
+  /** The header's actions for an object of the screen's resource. */
   actions?(object: KubeObject): ReactNode;
-}) {
-  const { clusterId, resource, objectKey: wanted, onClose } = props;
-  const list = useResourceList(clusterId, resource);
-  const [tab, setTab] = useState("overview");
-  const drawerRef = useRef<HTMLElement>(null);
-  const lastSeen = useRef<{ key: string; object: KubeObject } | null>(null);
-  const [drawerWidth, setDrawerWidth] = usePaneSize(DRAWER_PANE);
-  const open = wanted !== null;
+}
 
-  // Another object starts on its overview, with no render showing the old tab.
-  const [tabOwner, setTabOwner] = useState(wanted);
-  if (tabOwner !== wanted) {
-    setTabOwner(wanted);
-    setTab("overview");
-  }
+/**
+ * The drawer of the object the history shows: the row the URL names, or an object a link
+ * in it opened (spec H42–H53). It renders nothing while nothing is open. Links push onto
+ * the history and Back pops it; both move focus into the drawer. Escape closes it and
+ * hands focus back to what had it before.
+ */
+export function DetailDrawer(props: DetailDrawerProps): ReactElement | null {
+  const { clusterId, resource, history, onClose } = props;
+  const resources = props.resources ?? [];
+  const drawerRef = useRef<HTMLElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [drawerWidth, setDrawerWidth] = usePaneSize(DRAWER_PANE);
+  const target = history.shown?.target ?? null;
+  const open = target !== null;
+  const own =
+    target !== null &&
+    target.group === resource.group &&
+    target.plural === resource.plural;
+  const screenInfo = useMemo(() => ownInfo(resource), [resource]);
+  const listed = target
+    ? findResource(resources, target.group, target.plural)
+    : undefined;
+  const info = listed ?? (own ? screenInfo : undefined);
+  const lastSeen = target ? history.lastSeen(target) : null;
+  const read = useDrawerObject(clusterId, info, target, lastSeen);
+  const linkedColumns = useKindColumns(
+    clusterId,
+    own ? undefined : info,
+    resources,
+    target?.namespace ?? null,
+  );
+  const columns = own ? (props.columns ?? []) : linkedColumns;
+
+  const { remember, open: openLink, step } = history;
+  useEffect(() => {
+    if (target && read.status === "live" && read.object) {
+      remember(target, read.object);
+    }
+  }, [target, read.status, read.object, remember]);
 
   useEffect(() => {
     if (!open) return;
@@ -143,45 +237,64 @@ export function DetailDrawer(props: {
     };
   }, [open]);
 
-  const found =
-    wanted === null
-      ? undefined
-      : list.items.find((o) => objectKey(o) === wanted);
-  // A trimmed row lacks what the drawer shows, so the drawer shows the fetched object.
-  const whole = useWholeObject(clusterId, resource, wanted, found);
+  const shownKey = target ? targetKey(target) : null;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: another shown object starts at the top.
+  useEffect(() => {
+    if (contentRef.current) contentRef.current.scrollTop = 0;
+  }, [shownKey]);
+  // A link or Back removes the element that had focus (spec H20).
+  const firstStep = useRef(step);
+  useEffect(() => {
+    if (step !== firstStep.current) drawerRef.current?.focus();
+  }, [step]);
 
-  if (wanted === null) return null;
+  const group = target?.group ?? "";
+  const plural = target?.plural ?? "";
+  const kindKey = useMemo(() => ({ group, plural }), [group, plural]);
+  const links = useMemo(() => ({ open: openLink }), [openLink]);
 
-  if (found) lastSeen.current = { key: wanted, object: found };
-  const last =
-    lastSeen.current?.key === wanted ? lastSeen.current.object : null;
-  const trimmed = rowsAreTrimmed(resource);
-  // A row deleted before its first fetch came back still shows how it last looked.
-  const shown = trimmed
-    ? (whole.object ?? (found ? null : last))
-    : (found ?? last);
-  const name = wanted.slice(wanted.indexOf("/") + 1);
-  // Metrics are for a live Node, Pod, workload or PVC. A deleted object loses the
-  // tab, and a drawer showing it goes back to the overview.
+  if (target === null) return null;
+
+  const object = read.object;
+  const entryResource = info?.resource;
+  const kind = entryResource?.kind ?? lastSeen?.kind ?? target.plural;
+  const name = object?.metadata.name ?? target.name;
   const metrics =
-    shown !== null &&
-    found !== undefined &&
-    metricsTargetOf(resource, shown) !== null;
-  if (tab === "metrics" && shown !== null && !metrics) setTab("overview");
+    read.status === "live" &&
+    object !== null &&
+    entryResource !== undefined &&
+    metricsTargetOf(entryResource, object) !== null;
   // The Resource map is for the kinds an object map can focus on (spec E §11).
   const tabs = [
     OVERVIEW_TAB,
     ...(metrics ? [METRICS_TAB] : []),
-    ...(hasDrawerMap(resource) ? [MAP_TAB] : []),
+    ...(entryResource && hasDrawerMap(entryResource) ? [MAP_TAB] : []),
     EVENTS_TAB,
   ];
+  // Back restores the entry's tab, or the Overview when it is no longer offered.
+  const wanted = history.shown?.tab ?? OVERVIEW;
+  const tab = tabs.some((t) => t.value === wanted) ? wanted : OVERVIEW;
+
+  let actions: ReactNode = null;
+  if ((read.status === "live" || read.status === "fetched") && object) {
+    if (own) actions = props.actions?.(object) ?? null;
+    else if (info) {
+      actions = (
+        <DrawerObjectActions
+          clusterId={clusterId}
+          info={info}
+          object={object}
+        />
+      );
+    }
+  }
 
   return (
     <aside
       ref={drawerRef}
       tabIndex={-1}
       className={styles.drawer}
-      aria-label={`${resource.kind} details`}
+      aria-label={`${kind} details`}
       data-testid="detail-drawer"
       onKeyDown={(e) => {
         if (e.key !== "Escape") return;
@@ -198,14 +311,24 @@ export function DetailDrawer(props: {
     >
       <DrawerResize width={drawerWidth} onChange={setDrawerWidth} />
       <header className={styles.header}>
+        {history.previous ? (
+          <IconButton
+            label={`Back to ${history.previous.target.name}`}
+            icon={<ChevronLeft size={16} aria-hidden="true" />}
+            onClick={history.back}
+            data-testid="detail-back"
+          />
+        ) : null}
         <h3 className={styles.title} data-testid="detail-title" title={name}>
-          {shown?.metadata.name ?? name}
+          {name}
         </h3>
-        <span className={styles.kind}>{resource.kind}</span>
+        <span className={styles.kind} data-testid="detail-kind">
+          {kind}
+        </span>
         <div className={styles.grow} />
-        {found && shown && props.actions ? (
+        {actions ? (
           <>
-            {props.actions(shown)}
+            {actions}
             <span className={styles.divider} aria-hidden="true" />
           </>
         ) : null}
@@ -216,49 +339,53 @@ export function DetailDrawer(props: {
           data-testid="detail-close"
         />
       </header>
-      {!found && shown ? (
+      {read.status === "deleted" ? (
         <p
           className={styles.removed}
           role="status"
           data-testid="detail-removed"
         >
-          This {resource.kind} was deleted. What is shown is how it last looked.
+          This {kind} was deleted. What is shown is how it last looked.
         </p>
       ) : null}
-      {whole.error ? (
+      {read.status === "fetched" ? (
+        <p className={styles.staticNote} data-testid="detail-static-note">
+          Not updated live: you cannot watch{" "}
+          {listLabel(target.plural, entryResource?.kind)}.
+        </p>
+      ) : null}
+      {read.status === "error" ? (
         <div className={styles.fetchError} data-testid="detail-fetch-error">
           <ErrorNotice
             title={
-              shown
-                ? `Could not load the latest ${resource.kind}`
-                : `Could not load this ${resource.kind}`
+              object
+                ? `Could not load the latest ${kind}`
+                : `Could not load this ${kind}`
             }
-            message={whole.error}
-            onRetry={whole.retry}
+            message={read.message ?? ""}
+            onRetry={read.retry}
           />
         </div>
       ) : null}
-      {shown ? (
-        <>
-          <Tabs value={tab} onChange={setTab} tabs={tabs} />
-          <div className={styles.content}>
-            <Body
-              clusterId={clusterId}
-              resource={resource}
-              object={shown}
-              resources={props.resources ?? []}
-              columns={props.columns ?? []}
-              tab={tab}
-            />
-          </div>
-        </>
-      ) : whole.error ? null : list.loading || found ? (
-        <Spinner label="Loading details" />
+      {object && entryResource ? (
+        <DrawerLinkContext.Provider value={links}>
+          <DrawerKindContext.Provider value={kindKey}>
+            <Tabs value={tab} onChange={history.setTab} tabs={tabs} />
+            <div ref={contentRef} className={styles.content}>
+              <Body
+                key={targetKey(target)}
+                clusterId={clusterId}
+                resource={entryResource}
+                object={object}
+                resources={resources}
+                columns={columns}
+                tab={tab}
+              />
+            </div>
+          </DrawerKindContext.Provider>
+        </DrawerLinkContext.Provider>
       ) : (
-        <EmptyState
-          title={`${resource.kind} not found`}
-          body={`There is no ${resource.kind} ${name} in the list.`}
-        />
+        <StateNotice read={read} kind={kind} target={target} />
       )}
     </aside>
   );

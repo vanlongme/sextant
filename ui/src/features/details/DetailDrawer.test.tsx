@@ -30,7 +30,8 @@ import {
   prometheus,
 } from "../../test/metrics";
 import { connectClusters } from "../../test/terminal";
-import { DetailDrawer } from "./DetailDrawer";
+import { DetailDrawer, type DetailDrawerProps } from "./DetailDrawer";
+import { useDrawerHistory } from "./useDrawerHistory";
 
 vi.mock("../../design/clipboard", () => ({ copyText: vi.fn(async () => {}) }));
 const copied = vi.mocked(copyText);
@@ -75,6 +76,52 @@ function pod(over: Partial<KubeObject> = {}): KubeObject {
     ...over,
   };
 }
+
+/** The drawer with the history `ResourceScreen` would own for `objectKey`. */
+function Harness(
+  props: Omit<DetailDrawerProps, "history"> & { objectKey: string | null },
+) {
+  const { objectKey, ...rest } = props;
+  const history = useDrawerHistory(rest.resource, objectKey);
+  return <DetailDrawer {...rest} history={history} />;
+}
+
+const NAMESPACES: ApiResourceInfo = {
+  ...RS,
+  resource: {
+    group: "",
+    version: "v1",
+    plural: "namespaces",
+    kind: "Namespace",
+    namespaced: false,
+  },
+};
+
+const owned = () =>
+  pod({
+    metadata: {
+      ...pod().metadata,
+      ownerReferences: [
+        {
+          apiVersion: "apps/v1",
+          kind: "ReplicaSet",
+          name: "web-1",
+          uid: "o1",
+          controller: true,
+        },
+      ],
+    },
+  });
+
+const replicaSet: KubeObject = {
+  metadata: {
+    name: "web-1",
+    namespace: "team-a",
+    uid: "r1",
+    resourceVersion: "4",
+  },
+  spec: { replicas: 2 },
+};
 
 type Get = (a: {
   clusterId: string;
@@ -145,7 +192,7 @@ function fake(
 function drawer(onClose = () => {}, key: string | null = "team-a/web") {
   return (
     <MemoryRouter>
-      <DetailDrawer
+      <Harness
         clusterId="c1"
         resource={POD}
         objectKey={key}
@@ -225,7 +272,11 @@ test("an object that is not in the list says so", async () => {
   render(drawer(() => {}, "team-a/ghost"));
   await act(flush);
   await f.snapshot([pod()]);
+  expect(screen.getByTestId("detail-not-found")).toBeTruthy();
   expect(screen.getByText("Pod not found")).toBeTruthy();
+  expect(
+    screen.getByText("There is no Pod ghost in namespace team-a."),
+  ).toBeTruthy();
 });
 
 test("conditions render type, status, reason and message when present", async () => {
@@ -263,7 +314,7 @@ test("a object without conditions shows no conditions section", async () => {
   expect(screen.queryByTestId("detail-conditions")).toBeNull();
 });
 
-test("owner references link to the owner's list when the kind is known", async () => {
+test("owner references open the owner in the drawer when the kind is known", async () => {
   const f = fake();
   render(drawer());
   await act(flush);
@@ -285,8 +336,9 @@ test("owner references link to the owner's list when the kind is known", async (
   ]);
   const links = screen.getAllByTestId("detail-owner-link");
   expect(links).toHaveLength(1);
-  expect(links[0].getAttribute("href")).toBe(
-    "/cluster/c1/r/apps/replicasets?object=team-a%2Fweb-1",
+  expect(links[0].tagName).toBe("BUTTON");
+  expect(links[0].getAttribute("data-target")).toBe(
+    "apps/replicasets/team-a/web-1",
   );
   expect(screen.getByText("Widget w")).toBeTruthy();
 });
@@ -392,7 +444,7 @@ function Host(props: { open: boolean; onClose(): void }) {
       <button type="button" data-testid="row">
         row
       </button>
-      <DetailDrawer
+      <Harness
         clusterId="c1"
         resource={POD}
         objectKey={props.open ? "team-a/web" : null}
@@ -622,6 +674,8 @@ test("opening the pod again fetches it again", async () => {
   await act(flush);
   view.rerender(drawer());
   await act(flush);
+  // The drawer subscribes to the list only while it is open, so reopening gets a new snapshot.
+  await f.snapshot([trimmedRow()]);
   expect(f.backend.callsTo("resource_get")).toHaveLength(2);
   expect(screen.getByText("whole")).toBeTruthy();
 });
@@ -656,7 +710,7 @@ test("other kinds show their row and fetch nothing", async () => {
   const f = fake();
   render(
     <MemoryRouter>
-      <DetailDrawer
+      <Harness
         clusterId="c1"
         resource={CM}
         objectKey="team-a/web"
@@ -676,7 +730,7 @@ function withActions(
 ) {
   return (
     <MemoryRouter>
-      <DetailDrawer
+      <Harness
         clusterId="c1"
         resource={POD}
         objectKey="team-a/web"
@@ -801,7 +855,7 @@ test("the summary is a stat grid of the kind's columns, with no copy buttons", a
   });
   render(
     <MemoryRouter>
-      <DetailDrawer
+      <Harness
         clusterId="c1"
         resource={POD}
         objectKey="team-a/web"
@@ -882,7 +936,7 @@ test("a Job has no Metrics tab but has a Resource map", async () => {
   const f = fake();
   render(
     <MemoryRouter>
-      <DetailDrawer
+      <Harness
         clusterId="c1"
         resource={JOBS}
         objectKey="team-a/web"
@@ -933,7 +987,7 @@ test("a ConfigMap has no Resource map tab", async () => {
   const f = fake();
   render(
     <MemoryRouter>
-      <DetailDrawer
+      <Harness
         clusterId="c1"
         resource={{
           group: "",
@@ -1031,4 +1085,169 @@ test("the overview shows its cards in order, and the controller as Controlled by
   expect(within(relations).getByTestId("detail-owner-link").textContent).toBe(
     "web-1",
   );
+});
+
+test("a link opens its object in the drawer, and Back returns with focus in the drawer", async () => {
+  const f = fake();
+  render(drawer());
+  await act(flush);
+  await f.snapshot([owned()]);
+  expect(screen.queryByTestId("detail-back")).toBeNull();
+  fireEvent.click(screen.getByTestId("detail-owner-link"));
+  await act(flush);
+  await f.snapshot([replicaSet]);
+  expect(screen.getByTestId("detail-title").textContent).toBe("web-1");
+  expect(screen.getByTestId("detail-kind").textContent).toBe("ReplicaSet");
+  expect(screen.getByTestId("detail-drawer").getAttribute("aria-label")).toBe(
+    "ReplicaSet details",
+  );
+  expect(document.activeElement).toBe(screen.getByTestId("detail-drawer"));
+  const back = screen.getByTestId("detail-back");
+  expect(back.getAttribute("aria-label")).toBe("Back to web");
+  fireEvent.click(back);
+  await act(flush);
+  await f.snapshot([owned()]);
+  expect(screen.getByTestId("detail-title").textContent).toBe("web");
+  expect(screen.queryByTestId("detail-back")).toBeNull();
+});
+
+test("an entry deleted while it waits in the history shows how it last looked on Back", async () => {
+  const f = fake();
+  render(drawer());
+  await act(flush);
+  await f.snapshot([owned()]);
+  fireEvent.click(screen.getByTestId("detail-owner-link"));
+  await act(flush);
+  await f.snapshot([replicaSet]);
+  fireEvent.click(screen.getByTestId("detail-back"));
+  await act(flush);
+  // The Pod went away while the ReplicaSet was shown.
+  await f.snapshot([]);
+  expect(screen.getByTestId("detail-removed").textContent).toBe(
+    "This Pod was deleted. What is shown is how it last looked.",
+  );
+  expect(screen.getByTestId("detail-title").textContent).toBe("web");
+  expect(screen.queryByTestId("detail-actions")).toBeNull();
+});
+
+test("a linked kind the user cannot list is read once and says it is not live", async () => {
+  const f = fake();
+  render(
+    <MemoryRouter>
+      <Harness
+        clusterId="c1"
+        resource={POD}
+        objectKey="team-a/web"
+        onClose={() => {}}
+        resources={[{ ...RS, canList: false, canWatch: false }]}
+      />
+    </MemoryRouter>,
+  );
+  await act(flush);
+  await f.snapshot([owned(), replicaSet]);
+  fireEvent.click(screen.getByTestId("detail-owner-link"));
+  await act(flush);
+  expect(screen.getByTestId("detail-static-note").textContent).toBe(
+    "Not updated live: you cannot watch ReplicaSets.",
+  );
+  expect(screen.getByTestId("detail-title").textContent).toBe("web-1");
+  // A kind's own actions show for a fetched object.
+  expect(screen.getByTestId("detail-actions")).toBeTruthy();
+});
+
+test.each([
+  [
+    "NotFound",
+    "detail-not-found",
+    "There is no ReplicaSet web-1 in namespace team-a.",
+  ],
+  ["Forbidden", "detail-forbidden", "No access to this ReplicaSet"],
+  ["Internal", "detail-fetch-error", "Could not load this ReplicaSet"],
+])(
+  "a linked object whose get fails with %s says so",
+  async (code, testId, text) => {
+    const f = fake(
+      () => [],
+      (a) => {
+        if (a.resource.plural === "replicasets")
+          throw { code, message: "denied" };
+        return owned();
+      },
+    );
+    render(
+      <MemoryRouter>
+        <Harness
+          clusterId="c1"
+          resource={POD}
+          objectKey="team-a/web"
+          onClose={() => {}}
+          resources={[{ ...RS, canList: false, canWatch: false }]}
+        />
+      </MemoryRouter>,
+    );
+    await act(flush);
+    await f.snapshot([owned()]);
+    fireEvent.click(screen.getByTestId("detail-owner-link"));
+    await act(flush);
+    expect(within(screen.getByTestId(testId)).getByText(text)).toBeTruthy();
+    // The header stays, so the user can go back.
+    expect(screen.getByTestId("detail-title").textContent).toBe("web-1");
+    expect(screen.getByTestId("detail-back")).toBeTruthy();
+  },
+);
+
+test("the screen's actions are for its own kind; another kind gets its own bar", async () => {
+  const f = fake();
+  render(
+    <MemoryRouter>
+      <Harness
+        clusterId="c1"
+        resource={POD}
+        objectKey="team-a/web"
+        onClose={() => {}}
+        resources={[RS]}
+        actions={() => <span data-testid="screen-actions" />}
+      />
+    </MemoryRouter>,
+  );
+  await act(flush);
+  await f.snapshot([owned()]);
+  expect(screen.getByTestId("screen-actions")).toBeTruthy();
+  fireEvent.click(screen.getByTestId("detail-owner-link"));
+  await act(flush);
+  await f.snapshot([replicaSet]);
+  expect(screen.queryByTestId("screen-actions")).toBeNull();
+  expect(screen.getByTestId("detail-actions")).toBeTruthy();
+});
+
+test("a linked entry starts on the Overview and Back restores the earlier tab", async () => {
+  const f = fake();
+  render(
+    <MemoryRouter>
+      <Harness
+        clusterId="c1"
+        resource={POD}
+        objectKey="team-a/web"
+        onClose={() => {}}
+        resources={[RS, NAMESPACES]}
+      />
+    </MemoryRouter>,
+  );
+  await act(flush);
+  await f.snapshot([owned()]);
+  fireEvent.mouseDown(screen.getByTestId("detail-tab-events"), { button: 0 });
+  await act(flush);
+  // The Overview stays mounted under Events, so its link can still be clicked.
+  fireEvent.click(screen.getByTestId("detail-owner-link"));
+  await act(flush);
+  await f.snapshot([replicaSet]);
+  expect(
+    screen.getByTestId("detail-tab-overview").getAttribute("aria-selected"),
+  ).toBe("true");
+  fireEvent.click(screen.getByTestId("detail-back"));
+  await act(flush);
+  await f.snapshot([owned()]);
+  expect(
+    screen.getByTestId("detail-tab-events").getAttribute("aria-selected"),
+  ).toBe("true");
 });
