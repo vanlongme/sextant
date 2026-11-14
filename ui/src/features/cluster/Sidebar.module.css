@@ -92,6 +92,18 @@
   box-shadow: var(--focus-ring);
 }
 
+.groupToggle.depth2 {
+  padding-left: calc(var(--space-7) + 18px);
+}
+
+.link.indent1 {
+  padding-left: calc(var(--space-7) + 18px);
+}
+
+.link.indent2 {
+  padding-left: calc(var(--space-7) + 36px);
+}
+
 .active {
   background: var(--surface-selected);
   color: var(--text-accent);
@@ -101,7 +113,7 @@
 .groupToggle {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-4);
   width: 100%;
   min-width: 0;
   padding: var(--space-3) var(--space-7);

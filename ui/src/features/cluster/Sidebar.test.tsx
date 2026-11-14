@@ -72,6 +72,8 @@ test("shows the visible sections and items", async () => {
       .map((a) => a.getAttribute("data-testid")),
   ).toEqual(["nav-port-forwards"]);
   expect(screen.queryByTestId("nav-item-batch-jobs")).toBeNull();
+  fireEvent.click(screen.getByTestId("nav-crd-toggle-acme.io"));
+  await act(flush);
   const group = screen.getByTestId("nav-crd-group-acme.io");
   expect(within(group).getByTestId("nav-item-acme.io-gadgets")).toBeTruthy();
 });
@@ -178,6 +180,8 @@ test("without list access to definitions, CRD groups still show", async () => {
       "nav-item-apiextensions.k8s.io-customresourcedefinitions",
     ),
   ).toBeNull();
+  fireEvent.click(screen.getByTestId("nav-crd-toggle-acme.io"));
+  await act(flush);
   expect(screen.getByTestId("nav-item-acme.io-gadgets")).toBeTruthy();
 });
 
@@ -248,7 +252,7 @@ test("opening a CRD group is saved per cluster", async () => {
   vi.useRealTimers();
   expect(crdToggle("acme.io").getAttribute("aria-expanded")).toBe("true");
   expect(backend.callsTo("ui_state_set")).toContainEqual({
-    key: "cluster.c1.nav.custom.acme.io",
+    key: "cluster.c1.nav.custom.domain.acme.io",
     value: true,
   });
 });
@@ -256,7 +260,7 @@ test("opening a CRD group is saved per cluster", async () => {
 test("a saved open CRD group stays open", async () => {
   await show({ resources: MANY }, "/cluster/c1", {
     ui_state_get: ((a: { key: string }) =>
-      a.key === "cluster.c1.nav.custom.acme.io" ? true : null) as never,
+      a.key === "cluster.c1.nav.custom.domain.acme.io" ? true : null) as never,
   });
   expect(crdToggle("acme.io").getAttribute("aria-expanded")).toBe("true");
 });
@@ -282,4 +286,123 @@ test("a group the user closes on its own page stays closed", async () => {
   await act(flush);
   expect(crdToggle("acme.io").getAttribute("aria-expanded")).toBe("false");
   expect(crdToggle("acme.io").getAttribute("data-active")).toBe("true");
+});
+
+const TREE = [
+  ...SERVED,
+  info("pkg.crossplane.io", "providers", "Provider"),
+  info("pkg.crossplane.io", "functions", "Function"),
+  info("acl.kafka.m.crossplane.io", "topics", "Topic"),
+  info("crossplane.io", "compositions", "Composition"),
+];
+
+const firstIds = (panel: HTMLElement) =>
+  [...panel.children].map((li) =>
+    (li.querySelector("[data-testid]") as HTMLElement).getAttribute(
+      "data-testid",
+    ),
+  );
+
+test("domain, group and level-2 rows have their ids, counts, tooltips and panels, and start closed", async () => {
+  await show({ resources: TREE });
+  const domain = screen.getByTestId("nav-crd-domain-toggle-crossplane.io");
+  expect(screen.getByTestId("nav-crd-domain-crossplane.io")).toBeTruthy();
+  expect(domain.getAttribute("aria-expanded")).toBe("false");
+  expect(domain.getAttribute("aria-controls")).toBe(
+    "nav-crd-domain-panel-crossplane.io",
+  );
+  expect(domain.getAttribute("title")).toBe("crossplane.io · 3 API groups");
+  expect(domain.textContent).toBe("crossplane.io4");
+  const group = screen.getByTestId("nav-crd-toggle-acme.io");
+  expect(group.getAttribute("aria-controls")).toBe("nav-crd-panel-acme.io");
+  expect(group.getAttribute("title")).toBe("acme.io");
+
+  fireEvent.click(domain);
+  await act(flush);
+  const panel = screen.getByTestId("nav-crd-domain-panel-crossplane.io");
+  expect(panel.id).toBe("nav-crd-domain-panel-crossplane.io");
+  expect(firstIds(panel)).toEqual([
+    "nav-item-crossplane.io-compositions",
+    "nav-crd-toggle-acl.kafka.m.crossplane.io",
+    "nav-crd-toggle-pkg.crossplane.io",
+  ]);
+  const pkg = screen.getByTestId("nav-crd-toggle-pkg.crossplane.io");
+  expect(pkg.textContent).toBe("pkg2");
+  expect(pkg.getAttribute("title")).toBe("pkg.crossplane.io");
+  expect(pkg.getAttribute("aria-expanded")).toBe("false");
+});
+
+test("a closed row mounts no children and reads no nested state", async () => {
+  const backend = await show({ resources: TREE });
+  expect(
+    screen.getByTestId("nav-crd-domain-panel-crossplane.io").childElementCount,
+  ).toBe(0);
+  expect(screen.getByTestId("nav-crd-panel-acme.io").childElementCount).toBe(0);
+  const keys = backend.callsTo("ui_state_get").map((a) => String(a.key));
+  expect(keys).toContain("cluster.c1.nav.custom.domain.crossplane.io");
+  expect(keys).toContain("cluster.c1.nav.custom.domain.acme.io");
+  expect(keys.some((k: string) => k.includes(".nav.custom.group."))).toBe(
+    false,
+  );
+  expect(screen.queryByTestId("nav-crd-toggle-pkg.crossplane.io")).toBeNull();
+});
+
+test("rows save their state under the domain and group keys, and the G keys are not read", async () => {
+  const backend = await show({ resources: TREE }, "/cluster/c1", {
+    ui_state_get: ((a: { key: string }) =>
+      a.key === "cluster.c1.nav.custom.acme.io" ? true : null) as never,
+  });
+  expect(
+    screen.getByTestId("nav-crd-toggle-acme.io").getAttribute("aria-expanded"),
+  ).toBe("false");
+  vi.useFakeTimers();
+  fireEvent.click(screen.getByTestId("nav-crd-domain-toggle-crossplane.io"));
+  act(() => {
+    vi.advanceTimersByTime(300);
+  });
+  fireEvent.click(screen.getByTestId("nav-crd-toggle-pkg.crossplane.io"));
+  act(() => {
+    vi.advanceTimersByTime(300);
+  });
+  vi.useRealTimers();
+  expect(backend.callsTo("ui_state_set")).toContainEqual({
+    key: "cluster.c1.nav.custom.domain.crossplane.io",
+    value: true,
+  });
+  expect(backend.callsTo("ui_state_set")).toContainEqual({
+    key: "cluster.c1.nav.custom.group.pkg.crossplane.io",
+    value: true,
+  });
+});
+
+test("the rows above the active page open and carry data-active", async () => {
+  await show({ resources: TREE }, "/cluster/c1/r/pkg.crossplane.io/providers");
+  const domain = screen.getByTestId("nav-crd-domain-toggle-crossplane.io");
+  const pkg = screen.getByTestId("nav-crd-toggle-pkg.crossplane.io");
+  expect(domain.getAttribute("aria-expanded")).toBe("true");
+  expect(domain.getAttribute("data-active")).toBe("true");
+  expect(pkg.getAttribute("aria-expanded")).toBe("true");
+  expect(pkg.getAttribute("data-active")).toBe("true");
+  expect(
+    screen
+      .getByTestId("nav-crd-toggle-acl.kafka.m.crossplane.io")
+      .getAttribute("data-active"),
+  ).toBeNull();
+  expect(
+    screen.getByTestId("nav-crd-toggle-acme.io").getAttribute("data-active"),
+  ).toBeNull();
+  expect(
+    screen
+      .getByTestId("nav-item-pkg.crossplane.io-providers")
+      .getAttribute("aria-current"),
+  ).toBe("page");
+});
+
+test("a closed domain still marks the active page", async () => {
+  await show({ resources: TREE }, "/cluster/c1/r/crossplane.io/compositions");
+  const domain = screen.getByTestId("nav-crd-domain-toggle-crossplane.io");
+  fireEvent.click(domain);
+  await act(flush);
+  expect(domain.getAttribute("aria-expanded")).toBe("false");
+  expect(domain.getAttribute("data-active")).toBe("true");
 });

@@ -1,10 +1,14 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useMemo } from "react";
 import { NavLink, useLocation } from "react-router";
 import { ErrorNotice, Spinner } from "../../design";
 import type { ApiResourceInfo } from "../../ipc/generated/ApiResourceInfo";
 import {
-  customResourceGroups,
+  type CrdDomainRow,
+  type CrdKindItem,
+  crdTree,
+} from "../../kinds/crdTree";
+import {
   groupSegment,
   type NavSection,
   navItemKey,
@@ -19,14 +23,19 @@ function Item(props: {
   group: string;
   plural: string;
   label: string;
+  /** Tree depth of a Custom Resources kind: 1 under a level-1 row, 2 under a level-2 row. */
+  indent?: 1 | 2;
 }) {
-  const { clusterId, group, plural, label } = props;
+  const { clusterId, group, plural, label, indent } = props;
+  const base = indent
+    ? `${styles.link} ${styles[`indent${indent}`]}`
+    : styles.link;
   return (
     <li>
       <NavLink
         to={resourcePath(clusterId, group, plural)}
         className={({ isActive }) =>
-          isActive ? `${styles.link} ${styles.active}` : styles.link
+          isActive ? `${base} ${styles.active}` : base
         }
         data-testid={`nav-item-${groupSegment(group)}-${plural}`}
         title={label}
@@ -55,63 +64,217 @@ function RouteItem(props: { clusterId: string; path: string; label: string }) {
   );
 }
 
+/** The saved open state of a tree row (spec H §4.2). */
+function rowKey(clusterId: string, level: "domain" | "group", name: string) {
+  return `cluster.${clusterId}.nav.custom.${level}.${name}`;
+}
+
+/** The API group whose kind's list is on screen, or null. */
+function activeCrdGroup(
+  rows: CrdDomainRow[],
+  clusterId: string,
+  pathname: string,
+): string | null {
+  for (const row of rows) {
+    for (const item of [...row.items, ...row.groups.flatMap((g) => g.items)]) {
+      const path = resourcePath(clusterId, item.group, item.plural);
+      if (pathname === path || pathname.startsWith(`${path}/`)) {
+        return item.group;
+      }
+    }
+  }
+  return null;
+}
+
 /**
- * One API group under Custom Resources: a button with the group's name and kind count
- * that opens and closes its list. It starts closed, its state is kept per cluster, and
- * it opens when the page on screen becomes one of its kinds. The user can close it
- * again; it stays closed until the page changes.
+ * A row's open state, kept per cluster. It opens when the page on screen comes under
+ * it. The effect runs when `active` changes (setOpen is stable for a key), not on every
+ * render, so a row the user closes on its own page stays closed.
  */
-function CustomGroup(props: {
-  clusterId: string;
-  group: string;
-  items: { label: string; plural: string }[];
-}) {
-  const { clusterId, group, items } = props;
-  const [open, setOpen] = useUiState<boolean>(
-    `cluster.${clusterId}.nav.custom.${group}`,
-    false,
-  );
-  const { pathname } = useLocation();
-  const active = items.some((i) => {
-    const path = resourcePath(clusterId, group, i.plural);
-    return pathname === path || pathname.startsWith(`${path}/`);
-  });
-  // Runs when `active` changes (setOpen is stable for a key), not on every render,
-  // so a group the user closes on its own page stays closed.
+function useRowOpen(
+  key: string,
+  active: boolean,
+): [boolean, (v: boolean) => void] {
+  const [open, setOpen] = useUiState<boolean>(key, false);
   useEffect(() => {
     if (active) setOpen(true);
   }, [active, setOpen]);
-  const panel = `nav-crd-panel-${groupSegment(group)}`;
+  return [open, setOpen];
+}
+
+function RowToggle(props: {
+  open: boolean;
+  active: boolean;
+  panel: string;
+  title: string;
+  label: string;
+  count: number;
+  depth: 1 | 2;
+  testId: string;
+  onToggle(): void;
+}) {
   return (
-    <li data-testid={`nav-crd-group-${group}`}>
-      <button
-        type="button"
-        className={styles.groupToggle}
-        data-active={active ? "true" : undefined}
-        aria-expanded={open}
-        aria-controls={panel}
-        title={group}
-        data-testid={`nav-crd-toggle-${group}`}
-        onClick={() => setOpen(!open)}
-      >
-        <span aria-hidden="true" className={styles.chevron}>
-          {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        </span>
-        <span className={styles.groupName}>{group}</span>
-        <span className={styles.groupCount}>{items.length}</span>
-      </button>
-      <ul id={panel} className={styles.list} hidden={!open}>
-        {items.map((i) => (
-          <Item
-            key={i.plural}
-            clusterId={clusterId}
-            group={group}
-            plural={i.plural}
-            label={i.label}
+    <button
+      type="button"
+      className={
+        props.depth === 2
+          ? `${styles.groupToggle} ${styles.depth2}`
+          : styles.groupToggle
+      }
+      data-active={props.active ? "true" : undefined}
+      aria-expanded={props.open}
+      aria-controls={props.panel}
+      title={props.title}
+      data-testid={props.testId}
+      onClick={props.onToggle}
+    >
+      <span aria-hidden="true" className={styles.chevron}>
+        {props.open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+      </span>
+      <span className={styles.groupName}>{props.label}</span>
+      <span className={styles.groupCount}>{props.count}</span>
+    </button>
+  );
+}
+
+function KindLinks(props: {
+  clusterId: string;
+  items: CrdKindItem[];
+  indent: 1 | 2;
+}) {
+  return (
+    <>
+      {props.items.map((i) => (
+        <Item
+          key={`${i.group}/${i.plural}`}
+          clusterId={props.clusterId}
+          group={i.group}
+          plural={i.plural}
+          label={i.label}
+          indent={props.indent}
+        />
+      ))}
+    </>
+  );
+}
+
+/** A "group" row (level 1) or a level-2 row: an API group that opens to its kinds. */
+function GroupRow(props: {
+  clusterId: string;
+  group: string;
+  label: string;
+  title: string;
+  items: CrdKindItem[];
+  storageKey: string;
+  depth: 1 | 2;
+  activeGroup: string | null;
+}) {
+  const active = props.activeGroup === props.group;
+  const [open, setOpen] = useRowOpen(props.storageKey, active);
+  const panel = `nav-crd-panel-${props.group}`;
+  return (
+    <li data-testid={`nav-crd-group-${props.group}`}>
+      <RowToggle
+        open={open}
+        active={active}
+        panel={panel}
+        title={props.title}
+        label={props.label}
+        count={props.items.length}
+        depth={props.depth}
+        testId={`nav-crd-toggle-${props.group}`}
+        onToggle={() => setOpen(!open)}
+      />
+      {/* A closed row keeps its panel for aria-controls and mounts nothing in it. */}
+      <ul id={panel} data-testid={panel} className={styles.list} hidden={!open}>
+        {open ? (
+          <KindLinks
+            clusterId={props.clusterId}
+            items={props.items}
+            indent={props.depth}
           />
-        ))}
+        ) : null}
       </ul>
     </li>
+  );
+}
+
+/** A domain with several API groups: its own kinds first, then its level-2 rows. */
+function DomainRow(props: {
+  clusterId: string;
+  row: CrdDomainRow;
+  activeGroup: string | null;
+}) {
+  const { clusterId, row, activeGroup } = props;
+  const active =
+    activeGroup !== null &&
+    (row.items.some((i) => i.group === activeGroup) ||
+      row.groups.some((g) => g.group === activeGroup));
+  const [open, setOpen] = useRowOpen(
+    rowKey(clusterId, "domain", row.domain),
+    active,
+  );
+  const panel = `nav-crd-domain-panel-${row.domain}`;
+  return (
+    <li data-testid={`nav-crd-domain-${row.domain}`}>
+      <RowToggle
+        open={open}
+        active={active}
+        panel={panel}
+        title={row.title}
+        label={row.label}
+        count={row.count}
+        depth={1}
+        testId={`nav-crd-domain-toggle-${row.domain}`}
+        onToggle={() => setOpen(!open)}
+      />
+      <ul id={panel} data-testid={panel} className={styles.list} hidden={!open}>
+        {open ? (
+          <>
+            <KindLinks clusterId={clusterId} items={row.items} indent={1} />
+            {row.groups.map((g) => (
+              <GroupRow
+                key={g.group}
+                clusterId={clusterId}
+                group={g.group}
+                label={g.label}
+                title={g.group}
+                items={g.items}
+                storageKey={rowKey(clusterId, "group", g.group)}
+                depth={2}
+                activeGroup={activeGroup}
+              />
+            ))}
+          </>
+        ) : null}
+      </ul>
+    </li>
+  );
+}
+
+/** One level-1 row of the tree. A "group" row uses its domain's key (spec H7). */
+function CrdRow(props: {
+  clusterId: string;
+  row: CrdDomainRow;
+  activeGroup: string | null;
+}) {
+  const { clusterId, row, activeGroup } = props;
+  if (row.type === "domain") {
+    return (
+      <DomainRow clusterId={clusterId} row={row} activeGroup={activeGroup} />
+    );
+  }
+  return (
+    <GroupRow
+      clusterId={clusterId}
+      group={row.label}
+      label={row.label}
+      title={row.title}
+      items={row.items}
+      storageKey={rowKey(clusterId, "domain", row.domain)}
+      depth={1}
+      activeGroup={activeGroup}
+    />
   );
 }
 
@@ -198,7 +361,12 @@ export function Sidebar(props: {
 }) {
   const { clusterId, resources } = props;
   const sections = visibleSections(resources);
-  const crds = customResourceGroups(resources);
+  const crds = useMemo(() => crdTree(resources), [resources]);
+  const { pathname } = useLocation();
+  const activeGroup = useMemo(
+    () => activeCrdGroup(crds, clusterId, pathname),
+    [crds, clusterId, pathname],
+  );
   const custom = sections.find((s) => s.id === "custom");
 
   let body: ReactNode;
@@ -223,12 +391,12 @@ export function Sidebar(props: {
             {custom ? (
               <SectionItems clusterId={clusterId} section={custom} />
             ) : null}
-            {crds.map((g) => (
-              <CustomGroup
-                key={g.group}
+            {crds.map((row) => (
+              <CrdRow
+                key={row.domain}
                 clusterId={clusterId}
-                group={g.group}
-                items={g.items}
+                row={row}
+                activeGroup={activeGroup}
               />
             ))}
           </Section>
