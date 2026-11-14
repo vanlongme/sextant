@@ -1,5 +1,6 @@
+import { Eye, EyeOff } from "lucide-react";
 import { useRef, useState } from "react";
-import { Button, ErrorNotice } from "../../design";
+import { Button, ErrorNotice, IconButton } from "../../design";
 import { api } from "../../ipc/api";
 import { failureMessage } from "../../ipc/client";
 import type { SecretValue } from "../../ipc/generated/SecretValue";
@@ -114,15 +115,19 @@ function SecretPanel({ clusterId, object }: DetailProps) {
               actions={
                 <>
                   {edits.inBaseline(key) ? (
-                    <Button
-                      size="sm"
-                      variant="ghost"
+                    <IconButton
+                      label={open ? `Hide ${key}` : `Reveal ${key}`}
+                      icon={
+                        open ? (
+                          <EyeOff size={16} aria-hidden="true" />
+                        ) : (
+                          <Eye size={16} aria-hidden="true" />
+                        )
+                      }
                       disabled={edits.saving}
                       data-testid={`secret-reveal-${key}`}
                       onClick={() => (open ? hide(key) : startReveal(key))}
-                    >
-                      {open ? `Hide ${key}` : `Reveal ${key}`}
-                    </Button>
+                    />
                   ) : null}
                   {value && !value.binary && !editing ? (
                     <Button

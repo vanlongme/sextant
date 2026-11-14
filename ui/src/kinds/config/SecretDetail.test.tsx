@@ -269,3 +269,16 @@ test("a removed key cannot be added back as new", () => {
     true,
   );
 });
+
+test("reveal and hide are an eye icon button named for the key", async () => {
+  show();
+  const button = screen.getByTestId("secret-reveal-a");
+  expect(button.getAttribute("aria-label")).toBe("Reveal a");
+  expect(button.textContent).toBe("");
+  expect(button.querySelector("svg.lucide-eye")).not.toBeNull();
+  fireEvent.click(button);
+  await screen.findByText("value-of-a");
+  const hide = screen.getByTestId("secret-reveal-a");
+  expect(hide.getAttribute("aria-label")).toBe("Hide a");
+  expect(hide.querySelector("svg.lucide-eye-off")).not.toBeNull();
+});
