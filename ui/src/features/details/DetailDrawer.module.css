@@ -250,9 +250,12 @@
   animation: drawer-in var(--dur-base) var(--ease-out);
 }
 
-.overlay:focus-visible {
+/* Focus lands here by script (H20), and WebKit then matches :focus-visible even after a
+   click, so the layer draws no ring; its controls draw their own. The attribute makes this
+   outrank global.css's ring on every :focus-visible element. */
+.overlay[data-drawer] {
   outline: none;
-  box-shadow: var(--focus-ring);
+  box-shadow: none;
 }
 
 @keyframes drawer-in {

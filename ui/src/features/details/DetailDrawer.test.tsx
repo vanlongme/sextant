@@ -1330,6 +1330,24 @@ test("closing gives focus to the fallback when what had focus is gone", async ()
   fallback.remove();
 });
 
+test("the overlay draws no focus ring of its own, since WebKit shows one even after a click", () => {
+  const rules = cssRules(
+    CSS_FILES["/src/features/details/DetailDrawer.module.css"],
+  );
+  // More specific than global.css's `:focus-visible` ring, so it wins in any order.
+  expect(
+    rules.find((r) => r.selector === ".overlay[data-drawer]")?.decls,
+  ).toEqual(
+    expect.arrayContaining([
+      ["outline", "none"],
+      ["box-shadow", "none"],
+    ]),
+  );
+  expect(rules.some((r) => r.selector.startsWith(".overlay:focus"))).toBe(
+    false,
+  );
+});
+
 test("the overlay slides in, the dim fades in, and the dark dim is stronger", () => {
   const rules = cssRules(
     CSS_FILES["/src/features/details/DetailDrawer.module.css"],
