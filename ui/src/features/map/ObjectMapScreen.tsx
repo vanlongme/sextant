@@ -183,7 +183,7 @@ export function ObjectMapScreen({ focusId }: { focusId: string }) {
         />
         {drawing && model ? (
           <span className={styles.summary} data-testid="map-summary">
-            {summaryText(model, ids, false)}
+            {summaryText(model, ids, null)}
           </span>
         ) : null}
         <Button

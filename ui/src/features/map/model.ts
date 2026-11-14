@@ -5,6 +5,9 @@ import type { GraphRel } from "../../ipc/generated/GraphRel";
 import { NAV_SECTIONS } from "../../kinds/nav";
 import { levelOf, STATUS_TEXT } from "./layout/constants";
 
+/** A real edge, or a bridge through hidden kinds (spec H62). */
+export type MapEdge = GraphEdge & { via?: string[] };
+
 /** The map draws at most this many nodes (spec E §9.2). */
 export const MAX_NODES = 1500;
 /** Force is offered up to this many drawn nodes. */
@@ -16,6 +19,8 @@ export interface Link {
   rel: GraphRel;
   /** True when the edge leaves this node. */
   out: boolean;
+  /** The hidden kinds a bridged link passes through. */
+  via?: string[];
 }
 
 /** A snapshot indexed for the layouts (spec E §6.3). Positions are not part of it. */
@@ -23,16 +28,19 @@ export interface MapModel {
   nodes: GraphNode[];
   byId: ReadonlyMap<string, GraphNode>;
   /** The edges whose two ends are nodes, in the snapshot's order. */
-  edges: GraphEdge[];
-  outgoing: ReadonlyMap<string, GraphEdge[]>;
-  incoming: ReadonlyMap<string, GraphEdge[]>;
+  edges: MapEdge[];
+  outgoing: ReadonlyMap<string, MapEdge[]>;
+  incoming: ReadonlyMap<string, MapEdge[]>;
 }
 
-export function buildModel(nodes: GraphNode[], edges: GraphEdge[]): MapModel {
+export function buildModel(
+  nodes: GraphNode[],
+  edges: readonly MapEdge[],
+): MapModel {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const kept = edges.filter((e) => byId.has(e.from) && byId.has(e.to));
-  const outgoing = new Map<string, GraphEdge[]>();
-  const incoming = new Map<string, GraphEdge[]>();
+  const outgoing = new Map<string, MapEdge[]>();
+  const incoming = new Map<string, MapEdge[]>();
   for (const e of kept) {
     outgoing.set(e.from, [...(outgoing.get(e.from) ?? []), e]);
     incoming.set(e.to, [...(incoming.get(e.to) ?? []), e]);
@@ -42,16 +50,19 @@ export function buildModel(nodes: GraphNode[], edges: GraphEdge[]): MapModel {
 
 /** A node's edges, outgoing first, each in the snapshot's order. */
 export function linksOf(model: MapModel, id: string): Link[] {
+  const via = (e: MapEdge) => (e.via ? { via: e.via } : {});
   return [
     ...(model.outgoing.get(id) ?? []).map((e) => ({
       other: e.to,
       rel: e.rel,
       out: true,
+      ...via(e),
     })),
     ...(model.incoming.get(id) ?? []).map((e) => ({
       other: e.from,
       rel: e.rel,
       out: false,
+      ...via(e),
     })),
   ];
 }
@@ -165,21 +176,45 @@ export function countText(n: number, one: string, many: string): string {
   return `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
 }
 
+/** What the cluster map summary counts against (spec H61). */
+export interface SummaryScope {
+  /** Every resource in the cluster's graph. */
+  total: number;
+  /** True while a namespace or a present kind is hidden. */
+  filtering: boolean;
+}
+
 /**
- * The map summary: "N resources, M namespaces", counting what is drawn, or only
- * "N resources" for the object map.
+ * The map summary of what is drawn: "‹X› resources · ‹N› namespaces · ‹K› kinds", with
+ * "‹X› of ‹Y› resources" while filtering. Without a scope (the object map), only
+ * "‹X› resources".
  */
 export function summaryText(
   model: MapModel,
   ids: readonly string[],
-  withNamespaces: boolean,
+  scope: SummaryScope | null,
 ): string {
-  const resources = countText(ids.length, "resource", "resources");
-  if (!withNamespaces) return resources;
+  if (scope === null) return countText(ids.length, "resource", "resources");
+  const nodes = ids.map((id) => nodeOf(model, id));
   const namespaces = new Set(
-    ids.map((id) => nodeOf(model, id).namespace).filter((ns) => ns !== ""),
+    nodes.map((n) => n.namespace).filter((ns) => ns !== ""),
   );
-  return `${resources}, ${countText(namespaces.size, "namespace", "namespaces")}`;
+  const kinds = new Set(nodes.map((n) => n.kind));
+  const resources = scope.filtering
+    ? `${ids.length.toLocaleString("en-US")} of ${countText(scope.total, "resource", "resources")}`
+    : countText(ids.length, "resource", "resources");
+  return [
+    resources,
+    countText(namespaces.size, "namespace", "namespaces"),
+    countText(kinds.size, "kind", "kinds"),
+  ].join(" · ");
+}
+
+/** The summary's tooltip. */
+export function summaryTitle(filtering: boolean): string {
+  return filtering
+    ? "Drawn now, of every resource in the cluster"
+    : "Every resource in the cluster";
 }
 
 /** The Gateway API lists, which the sidebar shows under Custom Resources. */

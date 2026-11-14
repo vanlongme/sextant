@@ -104,7 +104,7 @@ describe("ClusterMapScreen", () => {
     );
     expect(screen.getByTestId("map-canvas")).toBeTruthy();
     expect(screen.getByTestId("map-summary").textContent).toBe(
-      "22 resources, 3 namespaces",
+      "22 resources · 3 namespaces · 16 kinds",
     );
     expect(
       ["edge", "jobs", "shop"].map((ns) => [
@@ -206,7 +206,7 @@ describe("ClusterMapScreen", () => {
     const note = screen.getByTestId("map-note");
     expect(note.getAttribute("role")).toBe("note");
     expect(note.textContent).toBe(
-      "1,501 resources in the selected namespaces. Hide some namespaces to draw the map.",
+      "1,501 resources in the selected namespaces and kinds. Hide some namespaces or kinds to draw the map.",
     );
   });
 
@@ -280,5 +280,11 @@ describe("ClusterMapScreen", () => {
     fireEvent.click(screen.getByTestId("map-layout-layered"));
     expect(radio("layered").checked).toBe(true);
     await waitFor(() => expect(store["map.layout.c1"]).toBe("layered"));
+  });
+
+  it("names kinds in the Force hint", () => {
+    expect(FORCE_HINT).toBe(
+      "Force works up to 400 resources. Hide some namespaces or kinds to use it.",
+    );
   });
 });

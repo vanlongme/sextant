@@ -9,6 +9,7 @@ import { useGraph } from "../../stores/graph";
 import { useUiState } from "../../stores/uiState";
 import { useClusterContext } from "../cluster/ClusterLayout";
 import styles from "./ClusterMapScreen.module.css";
+import { graphTotal } from "./filters";
 import { MapCanvas } from "./MapCanvas";
 import { MapDetails } from "./MapDetails";
 import { MapPanes } from "./MapPanes";
@@ -20,7 +21,7 @@ import {
   MapNote,
   NO_NODES,
   noMatchText,
-  tooManyText,
+  tooManyDrawnText,
 } from "./MapStates";
 import {
   autoHidden,
@@ -32,13 +33,14 @@ import {
   namespaceView,
   subscribedNamespaces,
   summaryText,
+  summaryTitle,
   tooMany,
 } from "./model";
 import { objectMapPath } from "./paths";
 import type { LayoutName } from "./scene";
 
 export const FORCE_HINT =
-  "Force works up to 400 resources. Hide some namespaces to use it.";
+  "Force works up to 400 resources. Hide some namespaces or kinds to use it.";
 
 const LAYOUTS: { value: LayoutName; label: string }[] = [
   { value: "grouped", label: "Grouped" },
@@ -119,6 +121,11 @@ export function ClusterMapScreen() {
     () => (model ? namespaceView(model, hidden) : []),
     [model, hidden],
   );
+  const total = useMemo(
+    () => (model ? graphTotal(model, counts ?? []) : 0),
+    [model, counts],
+  );
+  const filtering = chips.some((ns) => hidden.has(ns));
   const forceAllowed = ids.length <= FORCE_MAX_NODES;
   const drawnLayout: LayoutName =
     layout === "force" && !forceAllowed ? "grouped" : layout;
@@ -168,7 +175,7 @@ export function ClusterMapScreen() {
   } else if (allHidden) {
     body = <MapEmpty text={ALL_HIDDEN} />;
   } else if (tooMany(ids)) {
-    body = <MapNote text={tooManyText(ids.length)} />;
+    body = <MapNote text={tooManyDrawnText(ids.length)} />;
   } else if (ids.length === 0) {
     body = <MapEmpty text={NO_NODES} />;
   } else {
@@ -233,8 +240,12 @@ export function ClusterMapScreen() {
           testId="map-layout"
         />
         {model ? (
-          <span className={styles.summary} data-testid="map-summary">
-            {summaryText(model, ids, true)}
+          <span
+            className={styles.summary}
+            data-testid="map-summary"
+            title={summaryTitle(filtering)}
+          >
+            {summaryText(model, ids, { total, filtering })}
           </span>
         ) : null}
         <Button

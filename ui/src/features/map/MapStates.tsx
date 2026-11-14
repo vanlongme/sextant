@@ -58,6 +58,13 @@ export function MapNote({ text }: { text: string }) {
 export const NO_NODES = "No resources in the selected namespaces.";
 export const ALL_HIDDEN =
   "All namespaces are hidden. Pick one above to draw the map.";
+export const ALL_KINDS_HIDDEN =
+  "All kinds are hidden. Pick one in Kinds to draw the map.";
+
+/** The cluster map's cap, which counts the drawn nodes after the Kinds filter. */
+export function tooManyDrawnText(n: number): string {
+  return `${n.toLocaleString("en-US")} resources in the selected namespaces and kinds. Hide some namespaces or kinds to draw the map.`;
+}
 
 /** "1,742 resources in the selected namespaces. Hide some namespaces to draw the map." */
 export function tooManyText(n: number): string {

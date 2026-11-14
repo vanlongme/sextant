@@ -16,6 +16,7 @@ import {
   statusLine,
   subscribedNamespaces,
   summaryText,
+  summaryTitle,
   tooMany,
 } from "./model";
 
@@ -169,15 +170,22 @@ describe("namespaces", () => {
 describe("texts", () => {
   it("counts resources and namespaces of what is drawn", () => {
     const model = demoModel();
-    expect(summaryText(model, namespaceView(model, new Set()), true)).toBe(
-      "22 resources, 3 namespaces",
-    );
-    expect(summaryText(model, [DEMO.gateway], true)).toBe(
-      "1 resource, 1 namespace",
-    );
-    expect(summaryText(model, [DEMO.podA, DEMO.podB], false)).toBe(
+    expect(
+      summaryText(model, namespaceView(model, new Set()), {
+        total: 22,
+        filtering: false,
+      }),
+    ).toBe("22 resources · 3 namespaces · 16 kinds");
+    expect(
+      summaryText(model, [DEMO.gateway], { total: 22, filtering: true }),
+    ).toBe("1 of 22 resources · 1 namespace · 1 kind");
+    expect(summaryText(model, [DEMO.podA, DEMO.podB], null)).toBe(
       "2 resources",
     );
+    expect(summaryTitle(true)).toBe(
+      "Drawn now, of every resource in the cluster",
+    );
+    expect(summaryTitle(false)).toBe("Every resource in the cluster");
     expect(countText(1742, "resource", "resources")).toBe("1,742 resources");
   });
 
