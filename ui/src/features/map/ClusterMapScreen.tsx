@@ -8,13 +8,23 @@ import type { GraphNamespaceCount } from "../../ipc/generated/GraphNamespaceCoun
 import { useGraph } from "../../stores/graph";
 import { useUiState } from "../../stores/uiState";
 import { useClusterContext } from "../cluster/ClusterLayout";
+import { bridgeEdges } from "./bridges";
 import styles from "./ClusterMapScreen.module.css";
-import { graphTotal } from "./filters";
+import {
+  filtersActive,
+  graphTotal,
+  type KindGroup,
+  kindGroups,
+  kindView,
+  visibleModel,
+} from "./filters";
 import { MapCanvas } from "./MapCanvas";
 import { MapDetails } from "./MapDetails";
+import { MapFilters } from "./MapFilters";
 import { MapPanes } from "./MapPanes";
 import {
   ALL_HIDDEN,
+  ALL_KINDS_HIDDEN,
   MapEmpty,
   MapError,
   MapLoading,
@@ -59,21 +69,26 @@ export function matchesSearch(
   );
 }
 
-/** The cluster map (spec E §9), at `cluster/:id/map`. */
+/** The cluster map (spec E §9, H §10), at `cluster/:id/map`. */
 export function ClusterMapScreen() {
   const { clusterId, resources } = useClusterContext();
   const navigate = useNavigate();
   const [savedHidden, setSavedHidden, hiddenLoaded] = useUiState<
     string[] | null
   >(`map.hidden.${clusterId}`, null);
+  const [savedKinds, setSavedKinds] = useUiState<string[]>(
+    `map.hiddenKinds.${clusterId}`,
+    [],
+  );
   const [layout, setLayout] = useUiState<LayoutName>(
     `map.layout.${clusterId}`,
     "grouped",
   );
   const hidden = useMemo(() => new Set(savedHidden ?? []), [savedHidden]);
-  // The last counts seen: the chips stay while a new filter loads.
+  const hiddenKinds = useMemo(() => new Set(savedKinds), [savedKinds]);
+  // The last counts seen: the filters row stays while a new filter loads.
   const [counts, setCounts] = useState<GraphNamespaceCount[] | null>(null);
-  const chips = useMemo(() => chipNamespaces(counts ?? []), [counts]);
+  const namespaces = useMemo(() => chipNamespaces(counts ?? []), [counts]);
   // Until the namespaces are known, a saved choice subscribes with none of them.
   const filter = useMemo(
     () =>
@@ -81,8 +96,8 @@ export function ClusterMapScreen() {
         ? null
         : counts === null
           ? []
-          : subscribedNamespaces(chips, hidden),
-    [hidden, counts, chips],
+          : subscribedNamespaces(namespaces, hidden),
+    [hidden, counts, namespaces],
   );
   const graph = useGraph(hiddenLoaded ? clusterId : null, filter);
   const snapshot = graph.snapshot;
@@ -113,20 +128,47 @@ export function ClusterMapScreen() {
     if (auto !== null) setSavedHidden(auto);
   }, [hiddenLoaded, savedHidden, snapshot, defaultNamespace, setSavedHidden]);
 
+  // Spec H62, in order: the model, the namespace view, the kind view, the bridges, and
+  // the drawn model.
   const model = useMemo(
     () => (snapshot ? buildModel(snapshot.nodes, snapshot.edges) : null),
     [snapshot],
   );
-  const ids = useMemo(
+  const viewIds = useMemo(
     () => (model ? namespaceView(model, hidden) : []),
     [model, hidden],
   );
-  const total = useMemo(
-    () => (model ? graphTotal(model, counts ?? []) : 0),
-    [model, counts],
+  const shownIds = useMemo(
+    () => (model ? kindView(model, viewIds, hiddenKinds) : []),
+    [model, viewIds, hiddenKinds],
   );
-  const filtering = chips.some((ns) => hidden.has(ns));
-  const forceAllowed = ids.length <= FORCE_MAX_NODES;
+  const drawn = useMemo(() => {
+    if (!model) return null;
+    const kindHidden = shownIds.length < viewIds.length;
+    const bridges = kindHidden
+      ? bridgeEdges(model, viewIds, new Set(shownIds))
+      : [];
+    return visibleModel(model, shownIds, bridges);
+  }, [model, viewIds, shownIds]);
+
+  const liveGroups = useMemo(
+    () => (model ? kindGroups(model, viewIds) : null),
+    [model, viewIds],
+  );
+  // The last groups seen: the Kinds dropdown keeps its rows while a new filter loads.
+  const [lastGroups, setLastGroups] = useState<KindGroup[]>([]);
+  useEffect(() => {
+    if (liveGroups) setLastGroups(liveGroups);
+  }, [liveGroups]);
+  const groups = liveGroups ?? lastGroups;
+
+  const filtering = filtersActive(namespaces, hidden, groups, hiddenKinds);
+  const total = useMemo(
+    () => (model && snapshot ? graphTotal(model, snapshot.counts) : 0),
+    [model, snapshot],
+  );
+
+  const forceAllowed = shownIds.length <= FORCE_MAX_NODES;
   const drawnLayout: LayoutName =
     layout === "force" && !forceAllowed ? "grouped" : layout;
 
@@ -134,18 +176,25 @@ export function ClusterMapScreen() {
   const [selected, setSelected] = useState<string | null>(null);
   const [centre, setCentre] = useState<{ id: string; n: number } | undefined>();
   const [resetSignal, setResetSignal] = useState(0);
-  const shown = selected !== null && ids.includes(selected) ? selected : null;
+  // A selection whose node is no longer drawn is cleared, not kept for later (spec H67).
+  useEffect(() => {
+    if (drawn && selected !== null && !drawn.byId.has(selected)) {
+      setSelected(null);
+    }
+  }, [drawn, selected]);
+  const shown =
+    selected !== null && drawn?.byId.has(selected) === true ? selected : null;
   const searching = search.trim() !== "";
   const matches = useMemo(() => {
-    if (!model || !searching) return [];
+    if (!drawn || !searching) return [];
     return levelSort(
-      model,
-      ids.filter((id) => {
-        const node = model.byId.get(id);
+      drawn,
+      shownIds.filter((id) => {
+        const node = drawn.byId.get(id);
         return node !== undefined && matchesSearch(search, node);
       }),
     );
-  }, [model, ids, search, searching]);
+  }, [drawn, shownIds, search, searching]);
 
   const selectAndCentre = (id: string) => {
     setSelected(id);
@@ -158,33 +207,30 @@ export function ClusterMapScreen() {
     selectAndCentre(matches[0]);
   };
 
-  const toggle = (namespace: string) => {
-    const next = new Set(hidden);
-    if (next.has(namespace)) next.delete(namespace);
-    else next.add(namespace);
-    setSavedHidden([...next].sort());
-  };
-
-  const allHidden = chips.length > 0 && chips.every((ns) => hidden.has(ns));
+  const allHidden =
+    namespaces.length > 0 && namespaces.every((ns) => hidden.has(ns));
+  const allKindsHidden = viewIds.length > 0 && shownIds.length === 0;
 
   let body: React.ReactNode;
   if (graph.error !== null) {
     body = <MapError message={graph.error} onRetry={graph.retry} />;
-  } else if (!model) {
+  } else if (drawn === null) {
     body = <MapLoading />;
   } else if (allHidden) {
     body = <MapEmpty text={ALL_HIDDEN} />;
-  } else if (tooMany(ids)) {
-    body = <MapNote text={tooManyDrawnText(ids.length)} />;
-  } else if (ids.length === 0) {
+  } else if (allKindsHidden) {
+    body = <MapEmpty text={ALL_KINDS_HIDDEN} />;
+  } else if (tooMany(shownIds)) {
+    body = <MapNote text={tooManyDrawnText(shownIds.length)} />;
+  } else if (shownIds.length === 0) {
     body = <MapEmpty text={NO_NODES} />;
   } else {
     body = (
       <MapPanes
         canvas={
           <MapCanvas
-            model={model}
-            ids={ids}
+            model={drawn}
+            ids={shownIds}
             layout={drawnLayout}
             page="cluster"
             memoryKey={`${clusterId}|cluster|${drawnLayout}`}
@@ -198,7 +244,7 @@ export function ClusterMapScreen() {
         details={
           shown !== null ? (
             <MapDetails
-              model={model}
+              model={drawn}
               id={shown}
               clusterId={clusterId}
               resources={resources}
@@ -212,7 +258,8 @@ export function ClusterMapScreen() {
     );
   }
 
-  const drawing = model !== null && graph.error === null && !allHidden;
+  const drawing =
+    drawn !== null && graph.error === null && !allHidden && !allKindsHidden;
   return (
     <section className={styles.page} data-testid="map-page">
       <header className={styles.toolbar}>
@@ -239,15 +286,7 @@ export function ClusterMapScreen() {
           onChange={setLayout}
           testId="map-layout"
         />
-        {model ? (
-          <span
-            className={styles.summary}
-            data-testid="map-summary"
-            title={summaryTitle(filtering)}
-          >
-            {summaryText(model, ids, { total, filtering })}
-          </span>
-        ) : null}
+        <div className={styles.grow} />
         <Button
           size="sm"
           data-testid="map-reset"
@@ -257,29 +296,24 @@ export function ClusterMapScreen() {
           Reset layout
         </Button>
       </header>
-      {chips.length > 0 ? (
-        <div className={styles.chips}>
-          {(counts ?? [])
-            .filter((c) => c.namespace !== "")
-            .sort((a, b) => a.namespace.localeCompare(b.namespace))
-            .map((c) => (
-              <button
-                key={c.namespace}
-                type="button"
-                className={styles.chip}
-                aria-pressed={!hidden.has(c.namespace)}
-                data-testid={`map-ns-${c.namespace}`}
-                onClick={() => toggle(c.namespace)}
-              >
-                {`${c.namespace} ${c.nodes.toLocaleString("en-US")}`}
-              </button>
-            ))}
-        </div>
+      {counts !== null ? (
+        <MapFilters
+          counts={counts}
+          hiddenNamespaces={savedHidden ?? []}
+          onHiddenNamespacesChange={setSavedHidden}
+          groups={groups}
+          hiddenKinds={savedKinds}
+          onHiddenKindsChange={setSavedKinds}
+          summary={
+            drawn ? summaryText(drawn, shownIds, { total, filtering }) : null
+          }
+          summaryTitle={summaryTitle(filtering)}
+        />
       ) : null}
       {drawing && snapshot && snapshot.missing.length > 0 ? (
         <MapNote text={missingText(snapshot.missing)} />
       ) : null}
-      {drawing && searching && matches.length === 0 && !tooMany(ids) ? (
+      {drawing && searching && matches.length === 0 && !tooMany(shownIds) ? (
         <MapNote text={noMatchText(search)} />
       ) : null}
       <div className={styles.body}>{body}</div>
