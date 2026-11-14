@@ -80,6 +80,26 @@ describe("the application shell", () => {
     await expectResourceTitle("ConfigMap");
   });
 
+  it("keeps the header on one line on the Resource map at the default window size", async () => {
+    // Wrapping is for narrow windows (spec C §5); at the default 1360 px the title shrinks first.
+    expect(await browser.execute(() => window.innerWidth)).toBeGreaterThanOrEqual(1300);
+    await clickWhenShown("nav-map");
+    await shown("map-ns-filter", 60000);
+    const [title, disconnect, header] = await browser.execute(() =>
+      ["header-title", "cluster-disconnect", "app-header"].map((id) => {
+        const r = document.querySelector(`[data-testid="${id}"]`)?.getBoundingClientRect();
+        return r ? { top: r.top, bottom: r.bottom, width: r.width } : null;
+      }),
+    );
+    if (title === null || disconnect === null || header === null) {
+      throw new Error("the header, its title or Disconnect is missing");
+    }
+    const middle = (r: { top: number; bottom: number }) => (r.top + r.bottom) / 2;
+    expect(Math.abs(middle(disconnect) - middle(title))).toBeLessThan(4);
+    expect(header.bottom - header.top).toBeLessThan(60);
+    expect(title.width).toBeGreaterThan(100);
+  });
+
   it("finds an object by name and opens its drawer", async () => {
     await openPalette();
     await (await shown("palette-input")).setValue("palette-target");

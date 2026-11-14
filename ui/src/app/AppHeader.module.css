@@ -13,9 +13,13 @@
   gap: var(--space-3);
 }
 
+/* Wrapping counts each item at its base size, so the title's is 0: it shrinks to its
+   ellipsis before anything wraps, and only a narrow window wraps the header (spec C §5).
+   Growing, it takes the free space first, up to its text. */
 .title {
-  min-width: 0;
-  max-width: 40ch;
+  flex: 1000 1 0;
+  min-width: 8ch;
+  max-width: max-content;
   margin: 0;
   overflow: hidden;
   color: var(--text-primary);
