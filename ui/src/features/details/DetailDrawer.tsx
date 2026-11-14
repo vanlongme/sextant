@@ -186,13 +186,29 @@ export interface DetailDrawerProps {
   columns?: readonly TableColumn<KubeObject>[];
   /** The header's actions for an object of the screen's resource. */
   actions?(object: KubeObject): ReactNode;
+  /** Where focus goes on close when the element that had it is gone (spec H20). */
+  fallbackFocus?(): HTMLElement | null;
+}
+
+/**
+ * True when an Escape that reached the screen root should close the drawer (spec H19):
+ * from inside the drawer or the list's grid, not from a portal (a menu or tooltip, whose
+ * keys React bubbles here although its nodes sit elsewhere) and not from a text box.
+ */
+export function isDrawerEscape(e: React.KeyboardEvent<HTMLElement>): boolean {
+  if (e.key !== "Escape") return false;
+  const target = e.target;
+  if (!(target instanceof Element) || !e.currentTarget.contains(target))
+    return false;
+  if (target instanceof HTMLTextAreaElement) return false;
+  return target.closest('[data-drawer], [role="grid"]') !== null;
 }
 
 /**
  * The drawer of the object the history shows: the row the URL names, or an object a link
  * in it opened (spec H42–H53). It renders nothing while nothing is open. Links push onto
- * the history and Back pops it; both move focus into the drawer. Escape closes it and
- * hands focus back to what had it before.
+ * the history and Back pops it; both move focus into the drawer. The screen root closes it on Escape
+ * (`isDrawerEscape`); closing hands focus back to what had it before.
  */
 export function DetailDrawer(props: DetailDrawerProps): ReactElement | null {
   const { clusterId, resource, history, onClose } = props;
@@ -228,12 +244,16 @@ export function DetailDrawer(props: DetailDrawerProps): ReactElement | null {
     }
   }, [target, read.status, read.object, remember]);
 
+  const fallback = useRef(props.fallbackFocus);
+  fallback.current = props.fallbackFocus;
+
   useEffect(() => {
     if (!open) return;
     const before = document.activeElement;
     drawerRef.current?.focus();
     return () => {
       if (before instanceof HTMLElement && before.isConnected) before.focus();
+      else fallback.current?.()?.focus();
     };
   }, [open]);
 
@@ -290,103 +310,109 @@ export function DetailDrawer(props: DetailDrawerProps): ReactElement | null {
   }
 
   return (
-    <aside
-      ref={drawerRef}
-      tabIndex={-1}
-      className={styles.drawer}
-      aria-label={`${kind} details`}
-      data-testid="detail-drawer"
-      onKeyDown={(e) => {
-        if (e.key !== "Escape") return;
-        // A menu opened from the header sits in a portal outside the drawer. React
-        // still bubbles its keys here, but that Escape belongs to the menu.
-        if (!(e.target instanceof Node) || !e.currentTarget.contains(e.target))
-          return;
-        e.stopPropagation();
-        // Escape in a text box must not throw away what is being typed.
-        if (e.target instanceof HTMLTextAreaElement) return;
-        onClose();
-      }}
-      style={{ flexBasis: drawerWidth }}
-    >
-      <DrawerResize width={drawerWidth} onChange={setDrawerWidth} />
-      <header className={styles.header}>
-        {history.previous ? (
-          <IconButton
-            label={`Back to ${history.previous.target.name}`}
-            icon={<ChevronLeft size={16} aria-hidden="true" />}
-            onClick={history.back}
-            data-testid="detail-back"
-          />
-        ) : null}
-        <h3 className={styles.title} data-testid="detail-title" title={name}>
-          {name}
-        </h3>
-        <span className={styles.kind} data-testid="detail-kind">
-          {kind}
-        </span>
-        <div className={styles.grow} />
-        {actions ? (
-          <>
-            {actions}
-            <span className={styles.divider} aria-hidden="true" />
-          </>
-        ) : null}
-        <IconButton
-          label="Close details"
-          icon={<X size={14} aria-hidden="true" />}
-          onClick={onClose}
-          data-testid="detail-close"
+    <>
+      <div className={styles.dim} aria-hidden="true" data-testid="detail-dim" />
+      <aside
+        ref={drawerRef}
+        tabIndex={-1}
+        className={styles.overlay}
+        aria-label={`${kind} details`}
+        data-testid="detail-drawer"
+        data-drawer=""
+        style={{ width: drawerWidth }}
+      >
+        <DrawerResize
+          className={styles.handle}
+          width={drawerWidth}
+          onChange={setDrawerWidth}
         />
-      </header>
-      {read.status === "deleted" ? (
-        <p
-          className={styles.removed}
-          role="status"
-          data-testid="detail-removed"
-        >
-          This {kind} was deleted. What is shown is how it last looked.
-        </p>
-      ) : null}
-      {read.status === "fetched" ? (
-        <p className={styles.staticNote} data-testid="detail-static-note">
-          Not updated live: you cannot watch{" "}
-          {listLabel(target.plural, entryResource?.kind)}.
-        </p>
-      ) : null}
-      {read.status === "error" ? (
-        <div className={styles.fetchError} data-testid="detail-fetch-error">
-          <ErrorNotice
-            title={
-              object
-                ? `Could not load the latest ${kind}`
-                : `Could not load this ${kind}`
-            }
-            message={read.message ?? ""}
-            onRetry={read.retry}
-          />
-        </div>
-      ) : null}
-      {object && entryResource ? (
-        <DrawerLinkContext.Provider value={links}>
-          <DrawerKindContext.Provider value={kindKey}>
-            <Tabs value={tab} onChange={history.setTab} tabs={tabs} />
-            <div ref={contentRef} className={styles.content}>
-              <Body
-                key={targetKey(target)}
-                clusterId={clusterId}
-                resource={entryResource}
-                object={object}
-                resources={resources}
-                columns={columns}
-                tab={tab}
+        <div className={styles.frame}>
+          <header className={styles.band}>
+            <div className={styles.bandRow}>
+              {history.previous ? (
+                <IconButton
+                  className={styles.back}
+                  label={`Back to ${history.previous.target.name}`}
+                  icon={<ChevronLeft size={16} aria-hidden="true" />}
+                  onClick={history.back}
+                  data-testid="detail-back"
+                />
+              ) : null}
+              <span className={styles.bandKind} data-testid="detail-kind">
+                {kind}
+              </span>
+              <div className={styles.grow} />
+              {actions ? (
+                <>
+                  {actions}
+                  <span className={styles.divider} aria-hidden="true" />
+                </>
+              ) : null}
+              <IconButton
+                label="Close details"
+                icon={<X size={14} aria-hidden="true" />}
+                onClick={onClose}
+                data-testid="detail-close"
               />
             </div>
-          </DrawerKindContext.Provider>
-        </DrawerLinkContext.Provider>
-      ) : (
-        <StateNotice read={read} kind={kind} target={target} />
-      )}
-    </aside>
+            <h3
+              className={styles.bandTitle}
+              data-testid="detail-title"
+              title={name}
+            >
+              {name}
+            </h3>
+          </header>
+          {read.status === "deleted" ? (
+            <p
+              className={styles.removed}
+              role="status"
+              data-testid="detail-removed"
+            >
+              This {kind} was deleted. What is shown is how it last looked.
+            </p>
+          ) : null}
+          {read.status === "fetched" ? (
+            <p className={styles.staticNote} data-testid="detail-static-note">
+              Not updated live: you cannot watch{" "}
+              {listLabel(target.plural, entryResource?.kind)}.
+            </p>
+          ) : null}
+          {read.status === "error" ? (
+            <div className={styles.fetchError} data-testid="detail-fetch-error">
+              <ErrorNotice
+                title={
+                  object
+                    ? `Could not load the latest ${kind}`
+                    : `Could not load this ${kind}`
+                }
+                message={read.message ?? ""}
+                onRetry={read.retry}
+              />
+            </div>
+          ) : null}
+          {object && entryResource ? (
+            <DrawerLinkContext.Provider value={links}>
+              <DrawerKindContext.Provider value={kindKey}>
+                <Tabs value={tab} onChange={history.setTab} tabs={tabs} />
+                <div ref={contentRef} className={styles.content}>
+                  <Body
+                    key={targetKey(target)}
+                    clusterId={clusterId}
+                    resource={entryResource}
+                    object={object}
+                    resources={resources}
+                    columns={columns}
+                    tab={tab}
+                  />
+                </div>
+              </DrawerKindContext.Provider>
+            </DrawerLinkContext.Provider>
+          ) : (
+            <StateNotice read={read} kind={kind} target={target} />
+          )}
+        </div>
+      </aside>
+    </>
   );
 }

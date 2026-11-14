@@ -30,7 +30,11 @@ import {
   prometheus,
 } from "../../test/metrics";
 import { connectClusters } from "../../test/terminal";
-import { DetailDrawer, type DetailDrawerProps } from "./DetailDrawer";
+import {
+  DetailDrawer,
+  type DetailDrawerProps,
+  isDrawerEscape,
+} from "./DetailDrawer";
 import { useDrawerHistory } from "./useDrawerHistory";
 
 vi.mock("../../design/clipboard", () => ({ copyText: vi.fn(async () => {}) }));
@@ -77,13 +81,27 @@ function pod(over: Partial<KubeObject> = {}): KubeObject {
   };
 }
 
-/** The drawer with the history `ResourceScreen` would own for `objectKey`. */
+/**
+ * The drawer with the history `ResourceScreen` would own for `objectKey`, inside a root
+ * that closes it on Escape as the screen root does.
+ */
 function Harness(
   props: Omit<DetailDrawerProps, "history"> & { objectKey: string | null },
 ) {
   const { objectKey, ...rest } = props;
   const history = useDrawerHistory(rest.resource, objectKey);
-  return <DetailDrawer {...rest} history={history} />;
+  return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: it stands in for the screen root, which only listens for Escape.
+    <div
+      onKeyDown={(e) => {
+        if (!isDrawerEscape(e)) return;
+        e.stopPropagation();
+        rest.onClose();
+      }}
+    >
+      <DetailDrawer {...rest} history={history} />
+    </div>
+  );
 }
 
 const NAMESPACES: ApiResourceInfo = {
@@ -1250,4 +1268,104 @@ test("a linked entry starts on the Overview and Back restores the earlier tab", 
   expect(
     screen.getByTestId("detail-tab-events").getAttribute("aria-selected"),
   ).toBe("true");
+});
+
+test("the drawer is a dim and a framed layer with a header band", async () => {
+  const f = fake();
+  render(drawer());
+  await act(flush);
+  await f.snapshot([owned()]);
+  const dim = screen.getByTestId("detail-dim");
+  const aside = screen.getByTestId("detail-drawer");
+  expect(dim.getAttribute("aria-hidden")).toBe("true");
+  expect(dim.nextElementSibling).toBe(aside);
+  expect(aside.style.width).toBe("420px");
+  expect(aside.children[0].contains(screen.getByTestId("drawer-resize"))).toBe(
+    true,
+  );
+  const frame = aside.children[1] as HTMLElement;
+  const band = frame.querySelector("header") as HTMLElement;
+  expect(band.contains(screen.getByTestId("detail-kind"))).toBe(true);
+  expect(band.lastElementChild).toBe(screen.getByTestId("detail-title"));
+  fireEvent.click(screen.getByTestId("detail-owner-link"));
+  await act(flush);
+  // The Back button comes first in the band's row.
+  expect(band.firstElementChild?.firstElementChild).toBe(
+    screen.getByTestId("detail-back"),
+  );
+});
+
+test("closing gives focus to the fallback when what had focus is gone", async () => {
+  const f = fake();
+  const before = document.createElement("button");
+  const fallback = document.createElement("button");
+  document.body.append(before, fallback);
+  before.focus();
+  const view = render(
+    <MemoryRouter>
+      <Harness
+        clusterId="c1"
+        resource={POD}
+        objectKey="team-a/web"
+        onClose={() => {}}
+        fallbackFocus={() => fallback}
+      />
+    </MemoryRouter>,
+  );
+  await act(flush);
+  await f.snapshot([pod()]);
+  before.remove();
+  view.rerender(
+    <MemoryRouter>
+      <Harness
+        clusterId="c1"
+        resource={POD}
+        objectKey={null}
+        onClose={() => {}}
+        fallbackFocus={() => fallback}
+      />
+    </MemoryRouter>,
+  );
+  expect(document.activeElement).toBe(fallback);
+  fallback.remove();
+});
+
+test("the overlay slides in, the dim fades in, and the dark dim is stronger", () => {
+  const rules = cssRules(
+    CSS_FILES["/src/features/details/DetailDrawer.module.css"],
+  );
+  const decls = (s: string) =>
+    Object.fromEntries(rules.find((r) => r.selector === s)?.decls ?? []);
+  expect(decls(".overlay")).toMatchObject({
+    position: "absolute",
+    top: "8px",
+    right: "8px",
+    bottom: "8px",
+    "z-index": "5",
+    "max-width": "calc(100% - 16px)",
+    animation: "drawer-in var(--dur-base) var(--ease-out)",
+  });
+  expect(decls(".dim")).toMatchObject({
+    position: "absolute",
+    inset: "0",
+    "z-index": "4",
+    background: "var(--scrim)",
+    opacity: "0.32",
+    "pointer-events": "none",
+    animation: "dim-in var(--dur-base) var(--ease-out)",
+  });
+  expect(decls(':global([data-theme="dark"]) .dim').opacity).toBe("0.7");
+  expect(decls(".frame")).toMatchObject({
+    background: "var(--surface-raised)",
+    border: "1px solid var(--border-subtle)",
+    "border-radius": "var(--radius-lg)",
+    "box-shadow": "var(--shadow-4)",
+    overflow: "hidden",
+  });
+  expect(decls(".band")).toMatchObject({
+    background: "var(--surface-sunken)",
+    "border-bottom": "1px solid var(--border-subtle)",
+    padding: "8px 8px 10px 16px",
+  });
+  expect(decls(".handle")).toMatchObject({ top: "14px", bottom: "14px" });
 });

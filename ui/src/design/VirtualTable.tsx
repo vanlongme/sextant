@@ -106,6 +106,8 @@ export function VirtualTable<T>(props: {
   /** The test id of a row's checkbox. */
   selectTestId?(row: T): string;
   activeKey?: string;
+  /** Makes the sticky end cells inert, as while a drawer covers them (spec H21). */
+  endInert?: boolean;
   testId?: string;
   rowHeight?: number;
 }): React.JSX.Element {
@@ -210,6 +212,7 @@ export function VirtualTable<T>(props: {
     <div ref={scroller} className={styles.scroller} style={layout}>
       <table
         className={styles.table}
+        tabIndex={-1}
         // biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: rows are selected and activated, which is what a grid is, and aria-selected needs one.
         role="grid"
         aria-rowcount={rows.length + 1}
@@ -340,6 +343,7 @@ export function VirtualTable<T>(props: {
                         ? `${styles.cell} ${styles.stickyEnd}`
                         : styles.cell
                     }
+                    inert={props.endInert && c.stickyEnd ? true : undefined}
                   >
                     {c.render(row)}
                   </td>

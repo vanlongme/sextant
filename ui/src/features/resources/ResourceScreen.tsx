@@ -1,5 +1,5 @@
 import { Columns3 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router";
 import {
   Badge,
@@ -20,7 +20,7 @@ import { kindSpec } from "../../kinds/registry";
 import { findResource, useResourceList } from "../../stores/resources";
 import { useUiState } from "../../stores/uiState";
 import { useClusterContext } from "../cluster/ClusterLayout";
-import { DetailDrawer } from "../details/DetailDrawer";
+import { DetailDrawer, isDrawerEscape } from "../details/DetailDrawer";
 import { useDrawerHistory } from "../details/useDrawerHistory";
 import { useListUsage } from "../metrics/useListUsage";
 import { DeleteDialog } from "./DeleteDialog";
@@ -71,6 +71,33 @@ export function ResourceScreen(props: {
   const [params, setParams] = useSearchParams();
   const openKey = params.get("object");
   const history = useDrawerHistory(resource, openKey);
+  const screenRef = useRef<HTMLDivElement>(null);
+  const lastRoot = useRef<string | null>(null);
+  useEffect(() => {
+    if (openKey !== null) lastRoot.current = openKey;
+  }, [openKey]);
+  const drawerOpen = openKey !== null;
+  // On close, the root's row if it is still rendered, else the grid (spec H20).
+  const fallbackFocus = () => {
+    const root = screenRef.current;
+    if (!root) return null;
+    const key = lastRoot.current;
+    if (key !== null) {
+      const slash = key.indexOf("/");
+      const id = rowTestId({
+        metadata: {
+          namespace: key.slice(0, slash) || undefined,
+          name: key.slice(slash + 1),
+        },
+      });
+      // Compared as a string, so a name needs no CSS escaping.
+      const row = [
+        ...root.querySelectorAll<HTMLElement>('[data-testid^="resource-row-"]'),
+      ].find((el) => el.dataset.testid === id);
+      if (row) return row;
+    }
+    return root.querySelector<HTMLElement>('[role="grid"]');
+  };
   const shownTarget = history.shown?.target;
   // The active row is the shown object's, while it belongs to this list (spec H18).
   const activeKey =
@@ -186,7 +213,17 @@ export function ResourceScreen(props: {
   }
 
   return (
-    <div className={styles.screen}>
+    // biome-ignore lint/a11y/noStaticElementInteractions: the root only listens for the Escape that closes the drawer (spec H19).
+    <div
+      ref={screenRef}
+      className={styles.screen}
+      data-testid="resource-screen"
+      onKeyDown={(e) => {
+        if (!isDrawerEscape(e)) return;
+        e.stopPropagation();
+        openObject(null);
+      }}
+    >
       <div className={styles.toolbar}>
         <h2 className={styles.title} data-testid="resource-title">
           {kind}
@@ -243,6 +280,7 @@ export function ResourceScreen(props: {
           disabled={!canDelete || selectedRows.length === 0}
           title={canDelete ? undefined : "You may not delete these objects."}
           onClick={() => setDeleting(selectedRows)}
+          inert={drawerOpen}
           data-testid="bulk-delete"
         >
           Delete{selectedRows.length > 0 ? ` (${selectedRows.length})` : ""}
@@ -286,29 +324,31 @@ export function ResourceScreen(props: {
                 else openObject(key);
               }}
               activeKey={activeKey}
+              endInert={drawerOpen}
             />
           )}
         </div>
-        <DetailDrawer
-          clusterId={clusterId}
-          resource={resource}
-          history={history}
-          onClose={() => openObject(null)}
-          resources={resources}
-          columns={columns}
-          actions={(object) => (
-            <ObjectActionBar
-              items={objectActions({
-                object,
-                kindActions,
-                info,
-                context,
-                onDelete: (o) => setDeleting([o]),
-              })}
-            />
-          )}
-        />
       </div>
+      <DetailDrawer
+        fallbackFocus={fallbackFocus}
+        clusterId={clusterId}
+        resource={resource}
+        history={history}
+        onClose={() => openObject(null)}
+        resources={resources}
+        columns={columns}
+        actions={(object) => (
+          <ObjectActionBar
+            items={objectActions({
+              object,
+              kindActions,
+              info,
+              context,
+              onDelete: (o) => setDeleting([o]),
+            })}
+          />
+        )}
+      />
 
       {deleting ? (
         <KindDeleteDialog

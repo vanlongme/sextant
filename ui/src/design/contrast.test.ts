@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { CLUSTER_PALETTE } from "../app/clusterVisual";
-import { contrast, themeTokens } from "../test/css";
+import { CSS_FILES, contrast, cssRules, themeTokens } from "../test/css";
 
 const TEXT = [
   "--text-primary",
@@ -77,3 +77,55 @@ test("the chart series is the accent, one step lighter in the dark theme", () =>
 test.each(CLUSTER_PALETTE)("white initials on %s reach 3:1", (colour) => {
   expect(contrast("#ffffff", colour)).toBeGreaterThanOrEqual(3);
 });
+
+/** `#rrggbb` or `rgba(r, g, b, a)` as channels and alpha. */
+function channels(colour: string): [number, number, number, number] {
+  const hex = /^#([0-9a-f]{6})$/i.exec(colour);
+  if (hex) {
+    const n = Number.parseInt(hex[1], 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255, 1];
+  }
+  const [r, g, b, a = 1] = (/\(([^)]+)\)/.exec(colour)?.[1] ?? "")
+    .split(",")
+    .map((x) => Number(x.trim()));
+  return [r, g, b, a];
+}
+
+const hexOf = (rgb: number[]) =>
+  `#${rgb.map((v) => Math.round(v).toString(16).padStart(2, "0")).join("")}`;
+
+test.each(["light", "dark"] as const)(
+  "%s: text on the card under the drawer's dim reaches 4.5:1",
+  (theme) => {
+    const t = themeTokens(theme);
+    const rules = cssRules(
+      CSS_FILES["/src/features/details/DetailDrawer.module.css"],
+    );
+    const selector =
+      theme === "dark" ? ':global([data-theme="dark"]) .dim' : ".dim";
+    const opacity = Number(
+      Object.fromEntries(
+        rules.find((r) => r.selector === selector)?.decls ?? [],
+      ).opacity,
+    );
+    expect(opacity).toBeGreaterThan(0);
+    const [sr, sg, sb, sa] = channels(t.get("--scrim") ?? "");
+    const a = sa * opacity;
+    // Text and card both sit under the dim.
+    const veil = (colour: string) => {
+      const [r, g, b] = channels(colour);
+      return hexOf([
+        sr * a + r * (1 - a),
+        sg * a + g * (1 - a),
+        sb * a + b * (1 - a),
+      ]);
+    };
+    const card = veil(t.get("--surface-card") ?? "");
+    for (const fg of ["--text-primary", "--text-secondary"]) {
+      expect([fg, contrast(veil(t.get(fg) ?? ""), card) >= 4.5]).toEqual([
+        fg,
+        true,
+      ]);
+    }
+  },
+);

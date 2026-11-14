@@ -1044,3 +1044,85 @@ test("a row click while a linked object is shown clears the history", async () =
   expect(screen.getByTestId("detail-title").textContent).toBe("db");
   expect(screen.queryByTestId("detail-back")).toBeNull();
 });
+
+test("the drawer is a layer over the list that leaves its controls usable but the covered ones", async () => {
+  const fake = fakeBackend();
+  await show(fake, [pod("web", "team-a")], DEPLOYMENTS);
+  const root = screen.getByTestId("resource-screen");
+  expect(screen.getByTestId("bulk-delete").hasAttribute("inert")).toBe(false);
+  fireEvent.click(row("team-a", "web") as HTMLElement);
+  await act(flush);
+  expect(screen.getByTestId("detail-drawer").parentElement).toBe(root);
+  expect(screen.getByTestId("detail-dim").parentElement).toBe(root);
+  expect(screen.getByTestId("bulk-delete").hasAttribute("inert")).toBe(true);
+  expect(
+    screen.getByTestId("row-menu-web").closest("td")?.hasAttribute("inert"),
+  ).toBe(true);
+  // The list stays usable under the dim.
+  expect(screen.getByTestId("resource-search").hasAttribute("inert")).toBe(
+    false,
+  );
+  fireEvent.click(screen.getByTestId("detail-close"));
+  await act(flush);
+  expect(screen.getByTestId("bulk-delete").hasAttribute("inert")).toBe(false);
+  expect(
+    screen.getByTestId("row-menu-web").closest("td")?.hasAttribute("inert"),
+  ).toBe(false);
+});
+
+test("Escape closes from the drawer and the grid, never from the toolbar, a portal or a textarea", async () => {
+  const fake = fakeBackend();
+  await show(fake, [pod("web", "team-a")], DEPLOYMENTS);
+  const open = async () => {
+    fireEvent.click(row("team-a", "web") as HTMLElement);
+    await act(flush);
+  };
+  await open();
+  fireEvent.keyDown(screen.getByTestId("resource-search"), { key: "Escape" });
+  expect(screen.getByTestId("detail-drawer")).toBeTruthy();
+  // A menu sits in a portal: its Escape closes the menu only.
+  openMenu("columns-menu");
+  closeMenu();
+  expect(screen.queryByRole("menu")).toBeNull();
+  expect(screen.getByTestId("detail-drawer")).toBeTruthy();
+  const textarea = document.createElement("textarea");
+  screen.getByTestId("detail-drawer").append(textarea);
+  fireEvent.keyDown(textarea, { key: "Escape" });
+  expect(screen.getByTestId("detail-drawer")).toBeTruthy();
+  textarea.remove();
+  fireEvent.keyDown(screen.getByTestId("detail-drawer"), { key: "Escape" });
+  await act(flush);
+  expect(screen.queryByTestId("detail-drawer")).toBeNull();
+  await open();
+  fireEvent.keyDown(row("team-a", "web") as HTMLElement, { key: "Escape" });
+  await act(flush);
+  expect(screen.queryByTestId("detail-drawer")).toBeNull();
+});
+
+test("closing focuses the root's row when what had focus is gone, else the grid", async () => {
+  const fake = fakeBackend();
+  await show(fake, [pod("web", "team-a")], DEPLOYMENTS);
+  const temporary = document.createElement("button");
+  document.body.append(temporary);
+  temporary.focus();
+  fireEvent.click(row("team-a", "web") as HTMLElement);
+  await act(flush);
+  temporary.remove();
+  fireEvent.click(screen.getByTestId("detail-close"));
+  await act(flush);
+  expect(document.activeElement).toBe(row("team-a", "web"));
+
+  document.body.append(temporary);
+  temporary.focus();
+  fireEvent.click(row("team-a", "web") as HTMLElement);
+  await act(flush);
+  temporary.remove();
+  // The root's row went away while the drawer was open.
+  await fake.send("deployments", {
+    type: "snapshot",
+    items: [pod("db", "team-a")],
+  } as WatchEvent);
+  fireEvent.click(screen.getByTestId("detail-close"));
+  await act(flush);
+  expect(document.activeElement).toBe(screen.getByTestId("resource-table"));
+});
