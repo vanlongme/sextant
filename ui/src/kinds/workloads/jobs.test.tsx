@@ -3,9 +3,13 @@ import { CirclePause, CirclePlay, Play } from "lucide-react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { toast } from "../../design";
+import { OverviewSections } from "../../features/details/OverviewSections";
+import type { ApiResourceInfo } from "../../ipc/generated/ApiResourceInfo";
+import type { ResourceRef } from "../../ipc/generated/ResourceRef";
 import type { WatchEvent } from "../../ipc/generated/WatchEvent";
 import { resetResourcesForTest } from "../../stores/resources";
 import { flush, mockBackend } from "../../test/ipc";
+import type { KubeObject } from "../objects";
 import { CRONJOBS, JOBS } from "../refs";
 import { type ActionContext, kindSpec } from "../registry";
 import {
@@ -310,4 +314,83 @@ test("a cronjob panel shows schedule, suspend, last schedule and active jobs as 
   expect(screen.getByText("Last schedule")).toBeTruthy();
   const link = screen.getByRole("link", { name: "Job tick-123" });
   expect(link.getAttribute("href")).toContain("tick-123");
+});
+
+function served(resource: ResourceRef): ApiResourceInfo {
+  return {
+    resource,
+    verbs: [],
+    shortNames: [],
+    canList: true,
+    canWatch: true,
+    canCreate: true,
+    canUpdate: true,
+    canPatch: true,
+    canDelete: true,
+  };
+}
+
+test("a Job and a CronJob list their Pod template's volumes and service account", async () => {
+  mockBackend({
+    resources_subscribe: () => "sub",
+    resources_unsubscribe: () => null,
+  });
+  const template = {
+    spec: {
+      serviceAccountName: "runner",
+      volumes: [{ name: "scratch", emptyDir: {} }],
+      containers: [
+        {
+          name: "task",
+          volumeMounts: [{ name: "scratch", mountPath: "/work" }],
+        },
+      ],
+    },
+  };
+  const cases: [ResourceRef, KubeObject][] = [
+    [JOBS, { metadata: { name: "j", namespace: "n" }, spec: { template } }],
+    [
+      CRONJOBS,
+      {
+        metadata: { name: "c", namespace: "n" },
+        spec: { schedule: "*/5 * * * *", jobTemplate: { spec: { template } } },
+      },
+    ],
+  ];
+  const resources = [
+    served(JOBS),
+    served(CRONJOBS),
+    served({
+      group: "",
+      version: "v1",
+      plural: "serviceaccounts",
+      kind: "ServiceAccount",
+      namespaced: true,
+    }),
+  ];
+  for (const [resource, object] of cases) {
+    const view = render(
+      <MemoryRouter>
+        <OverviewSections
+          clusterId="c"
+          resource={resource}
+          object={object}
+          resources={resources}
+          columns={
+            kindSpec(resource.group, resource.plural)?.columns?.(
+              served(resource),
+            ) ?? []
+          }
+        />
+      </MemoryRouter>,
+    );
+    await act(flush);
+    const volume = within(screen.getByTestId("detail-volume-scratch"));
+    expect(volume.getByText("EmptyDir")).toBeTruthy();
+    expect(volume.getByText("Node disk")).toBeTruthy();
+    const relations = within(screen.getByTestId("detail-relations"));
+    expect(relations.getByText("None")).toBeTruthy();
+    expect(relations.getByRole("link", { name: "runner" })).toBeTruthy();
+    view.unmount();
+  }
 });

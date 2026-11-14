@@ -1,10 +1,11 @@
 import { render } from "@testing-library/react";
-import { createElement } from "react";
 import { MemoryRouter } from "react-router";
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
+import { OverviewSections } from "../features/details/OverviewSections";
 import type { ApiResourceInfo } from "../ipc/generated/ApiResourceInfo";
 import { resetResourcesForTest } from "../stores/resources";
 import { flush, mockBackend } from "../test/ipc";
+import { DrawerLinkContext } from "./detail/links";
 import "./index";
 import type { KubeObject } from "./objects";
 import { registeredKinds } from "./registry";
@@ -33,6 +34,46 @@ function infoFor(group: string, plural: string): ApiResourceInfo {
   };
 }
 
+/** An object with a namespace and a controller, the links every kind's Overview draws. */
+const LINKED: KubeObject = {
+  metadata: {
+    name: "x",
+    namespace: "n",
+    ownerReferences: [
+      {
+        apiVersion: "v1",
+        kind: "ConfigMap",
+        name: "owner",
+        uid: "u1",
+        controller: true,
+      },
+    ],
+  },
+  spec: {},
+  status: {},
+};
+
+const NAMESPACES: ApiResourceInfo = {
+  ...infoFor("", "namespaces"),
+  resource: {
+    group: "",
+    version: "v1",
+    plural: "namespaces",
+    kind: "Namespace",
+    namespaced: false,
+  },
+};
+const CONFIGMAPS: ApiResourceInfo = {
+  ...infoFor("", "configmaps"),
+  resource: {
+    group: "",
+    version: "v1",
+    plural: "configmaps",
+    kind: "ConfigMap",
+    namespaced: true,
+  },
+};
+
 beforeEach(() => {
   resetResourcesForTest();
   mockBackend({
@@ -50,29 +91,54 @@ describe.each(registeredKinds())(
   "$group/$plural",
   ({ group, plural, spec }) => {
     test.each(SPARSE)(
-      "cells and panel survive a sparse object (%#)",
+      "cells and the Overview survive a sparse object (%#)",
       async (object) => {
         const info = infoFor(group, plural);
-        const cells = spec.columns?.(info).map((c) => {
+        const columns = spec.columns?.(info) ?? [];
+        const cells = columns.map((c) => {
           c.sortValue?.(object);
           return <div key={c.id}>{c.render(object)}</div>;
         });
         render(
           <MemoryRouter>
             {cells}
-            {spec.detail
-              ? createElement(spec.detail, {
-                  clusterId: "c",
-                  object,
-                  resource: info.resource,
-                  resources: [info],
-                })
-              : null}
+            <OverviewSections
+              clusterId="c"
+              resource={info.resource}
+              object={object}
+              resources={[info]}
+              columns={columns}
+            />
           </MemoryRouter>,
         );
         await flush();
       },
     );
+
+    test("inside a drawer, its Overview's links open there and never route to a list", async () => {
+      const info = infoFor(group, plural);
+      const open = vi.fn();
+      const { container } = render(
+        <MemoryRouter>
+          <DrawerLinkContext.Provider value={{ open }}>
+            <OverviewSections
+              clusterId="c"
+              resource={info.resource}
+              object={LINKED}
+              resources={[info, NAMESPACES, CONFIGMAPS]}
+              columns={spec.columns?.(info) ?? []}
+            />
+          </DrawerLinkContext.Provider>
+        </MemoryRouter>,
+      );
+      await flush();
+      expect(container.querySelectorAll('a[href*="object="]')).toHaveLength(0);
+      const targets = [
+        ...container.querySelectorAll<HTMLElement>("button[data-target]"),
+      ].map((b) => b.dataset.target);
+      expect(targets).toContain("/namespaces//n");
+      expect(targets).toContain("/configmaps/n/owner");
+    });
   },
 );
 

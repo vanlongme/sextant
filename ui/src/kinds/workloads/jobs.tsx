@@ -18,7 +18,9 @@ import {
 } from "../registry";
 import { matchesSelector, selectorText } from "../selectors";
 import { workloadLogsAction } from "./logsAction";
+import { serviceAccountRelations } from "./PodDetail";
 import { PodList } from "./PodList";
+import { cronJobPodSpec, templatePodSpec } from "./volumes";
 
 const holds = (o: KubeObject, type: string) =>
   (o.status?.conditions ?? []).some(
@@ -221,6 +223,8 @@ registerKind("batch", "jobs", {
     ),
   actions: [workloadLogsAction, jobSuspendAction, jobResumeAction],
   detail: JobDetail,
+  podSpec: (o) => ({ spec: templatePodSpec(o), podName: null }),
+  relations: serviceAccountRelations(templatePodSpec),
 });
 
 registerKind("batch", "cronjobs", {
@@ -245,4 +249,6 @@ registerKind("batch", "cronjobs", {
     ),
   actions: [triggerAction, suspendAction, resumeAction],
   detail: CronJobDetail,
+  podSpec: (o) => ({ spec: cronJobPodSpec(o), podName: null }),
+  relations: serviceAccountRelations(cronJobPodSpec),
 });

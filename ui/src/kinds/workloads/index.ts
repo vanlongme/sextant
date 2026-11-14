@@ -13,7 +13,12 @@ import { registerKind } from "../registry";
 import { usageColumns } from "../usageColumns";
 import "./jobs";
 import { podLogsAction, workloadLogsAction } from "./logsAction";
-import { PodDetail, podRelations, podSummaryStats } from "./PodDetail";
+import {
+  PodDetail,
+  podRelations,
+  podSummaryStats,
+  serviceAccountRelations,
+} from "./PodDetail";
 import { podStatus, podSummary } from "./pod";
 import { forceDeleteAction } from "./podActions";
 import { RolloutDetail } from "./RolloutDetail";
@@ -26,6 +31,13 @@ import {
   scaleAction,
 } from "./rollouts";
 import { podAttachAction, podShellAction } from "./sessionActions";
+import { claimTemplateItems, templatePodSpec } from "./volumes";
+
+/** The Volumes and Relations of a kind that runs `spec.template` (spec H39). */
+const fromTemplate = {
+  podSpec: (o: KubeObject) => ({ spec: templatePodSpec(o), podName: null }),
+  relations: serviceAccountRelations(templatePodSpec),
+};
 
 registerKind("", "pods", {
   columns: (info, usage) =>
@@ -92,6 +104,7 @@ registerKind("apps", "deployments", {
     ),
   actions: [workloadLogsAction, scaleAction, restartAction],
   detail: RolloutDetail,
+  ...fromTemplate,
 });
 
 registerKind("apps", "statefulsets", {
@@ -103,6 +116,12 @@ registerKind("apps", "statefulsets", {
     ),
   actions: [workloadLogsAction, scaleAction, restartAction],
   detail: RolloutDetail,
+  podSpec: (o) => ({
+    spec: templatePodSpec(o),
+    podName: null,
+    claimTemplates: claimTemplateItems(o),
+  }),
+  relations: serviceAccountRelations(templatePodSpec),
 });
 
 registerKind("apps", "daemonsets", {
@@ -136,6 +155,7 @@ registerKind("apps", "daemonsets", {
     ),
   actions: [workloadLogsAction, restartAction],
   detail: RolloutDetail,
+  ...fromTemplate,
 });
 
 registerKind("apps", "replicasets", {
@@ -149,4 +169,5 @@ registerKind("apps", "replicasets", {
     ),
   actions: [workloadLogsAction, scaleAction],
   detail: RolloutDetail,
+  ...fromTemplate,
 });
