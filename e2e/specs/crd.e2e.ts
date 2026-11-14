@@ -19,6 +19,31 @@ const NS = "skopos-test-e2e";
 const GROUP = "e2e.skopos.test";
 const CRD_NAME = `widgets.${GROUP}`;
 const NAV_ITEM = `nav-item-${GROUP}-widgets`;
+const EXTRA_GROUP = "extra.skopos.test";
+const EXTRA_CRD_NAME = `gadgets.${EXTRA_GROUP}`;
+const DOMAIN = "skopos.test";
+
+const EXTRA_CRD = `
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: ${EXTRA_CRD_NAME}
+spec:
+  group: ${EXTRA_GROUP}
+  scope: Namespaced
+  names:
+    kind: Gadget
+    plural: gadgets
+    singular: gadget
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+`;
 
 const CRD = `
 apiVersion: apiextensions.k8s.io/v1
@@ -70,6 +95,13 @@ describe("custom resources", () => {
       "--ignore-not-found",
       "--wait=true",
     ]);
+    await kubectl([
+      "delete",
+      "crd",
+      EXTRA_CRD_NAME,
+      "--ignore-not-found",
+      "--wait=true",
+    ]);
     await createTestNamespace(NS);
     await openCluster(KIND);
   });
@@ -79,6 +111,13 @@ describe("custom resources", () => {
       "delete",
       "crd",
       CRD_NAME,
+      "--ignore-not-found",
+      "--wait=true",
+    ]);
+    await kubectl([
+      "delete",
+      "crd",
+      EXTRA_CRD_NAME,
       "--ignore-not-found",
       "--wait=true",
     ]);
@@ -119,6 +158,29 @@ describe("custom resources", () => {
         timeout: 15000,
         timeoutMsg: "the printer column's value never showed",
       },
+    );
+  });
+
+  it("puts two API groups of one domain under a domain row, and back", async () => {
+    await kubectl(["apply", "-f", "-"], EXTRA_CRD);
+    const domain = await shown(`nav-crd-domain-toggle-${DOMAIN}`, 30000);
+    await browser.waitUntil(
+      async () => /^skopos\.test\s*2$/.test(await domain.getText()),
+      { timeout: 15000, timeoutMsg: "the domain row never counted two kinds" },
+    );
+    if ((await domain.getAttribute("aria-expanded")) !== "true") {
+      await domain.click();
+    }
+    expect(await (await shown(`nav-crd-toggle-${GROUP}`)).getText()).toMatch(/^e2e\s*1$/);
+    expect(await (await shown(`nav-crd-toggle-${EXTRA_GROUP}`)).getText()).toMatch(
+      /^extra\s*1$/,
+    );
+
+    await kubectl(["delete", "crd", EXTRA_CRD_NAME, "--wait=true"]);
+    await gone(`nav-crd-domain-${DOMAIN}`, 30000);
+    // The domain's only group is a "group" row again, under its full name.
+    expect(await (await shown(`nav-crd-toggle-${GROUP}`)).getText()).toMatch(
+      /^e2e\.skopos\.test\s*1$/,
     );
   });
 

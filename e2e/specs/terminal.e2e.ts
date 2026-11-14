@@ -120,7 +120,7 @@ describe("terminal tabs on the kind cluster", () => {
     await openDrawer("duo");
     await clickWhenShown("detail-action-shell");
     await expectTab("Shell · duo");
-    // The drawer would cover part of the dock's toolbar.
+    // The drawer floats over the list only; it is closed so the steps below start from the list.
     await clickWhenShown("detail-close");
     await gone("detail-drawer");
     await expectTerminalStatus("Connected");

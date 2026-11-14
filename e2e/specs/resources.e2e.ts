@@ -333,11 +333,20 @@ describe("resource browsing on a real cluster", () => {
 
     await pointerClick(await byTestId("detail-drawer").$("button=Overview"));
     await clickWhenShown("detail-owner-link");
-    await expectResourceTitle("ReplicaSet");
-    await shown("detail-drawer");
+    // The owner opens in the drawer, over the Pods list (spec H43).
     await browser.waitUntil(
-      async () => (await byTestId("detail-title").getText()).includes("web-"),
+      async () =>
+        (await byTestId("detail-kind").getText()) === "ReplicaSet" &&
+        (await byTestId("detail-title").getText()).includes("web-"),
       { timeoutMsg: "the drawer never showed the ReplicaSet" },
+    );
+    expect(await byTestId("resource-title").getText()).toBe("Pod");
+    await clickWhenShown("detail-back");
+    await browser.waitUntil(
+      async () =>
+        (await byTestId("detail-kind").getText()) === "Pod" &&
+        (await byTestId("detail-title").getText()).includes(podName),
+      { timeoutMsg: "Back never returned to the Pod" },
     );
     await clickWhenShown("detail-close");
     await gone("detail-drawer");
@@ -369,8 +378,11 @@ describe("resource browsing on a real cluster", () => {
     });
     expect(Math.round(await widthOf("cluster-sidebar"))).toBe(nav + 32);
 
+    const tableWidth = await widthOf("resource-table");
     await byTestId(row).click();
     await shown("detail-drawer");
+    // The drawer floats over the list, so the table keeps its width (spec H12).
+    expect(await widthOf("resource-table")).toBe(tableWidth);
     const drawer = await valueOf("drawer-resize");
     // The drawer's handle is on its left border, so ArrowLeft widens it.
     await press("drawer-resize", "ArrowLeft", 3);
@@ -516,6 +528,8 @@ describe("resource browsing on a real cluster", () => {
     await searchResources("live-row");
     await byTestId(rowId(NS, "live-row")).click();
     await shown("detail-drawer");
+    // Annotations are an expander (spec H31): it is opened to read the values.
+    await clickWhenShown("detail-expand-annotations");
     await browser.waitUntil(
       async () =>
         (await shown("detail-annotations")).getText().then((t) => /note\s*first/.test(t)),
@@ -563,5 +577,49 @@ describe("resource browsing on a real cluster", () => {
     await expectResourceTitle("Pod");
     await press(4);
     await expectResourceTitle("ConfigMap");
+  });
+
+  it("keeps the Actions cell opaque in a narrow list scrolled sideways", async () => {
+    await openResource("nav-item-core-nodes", "Node");
+    await expectRows("the kind node", (ids) => ids.length > 0);
+    const [row] = await rowIds();
+    const nodeName = row.slice("resource-row-".length);
+    // The list is narrowed in the page and scrolled to its end, under the sticky Actions cell.
+    const point = await browser.execute((id) => {
+      const screen = document.querySelector<HTMLElement>('[data-testid="resource-screen"]');
+      const table = document.querySelector<HTMLElement>('[data-testid="resource-table"]');
+      const line = document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
+      if (!screen || !table || !line) return null;
+      screen.style.maxWidth = "480px";
+      let scroller: HTMLElement | null = table.parentElement;
+      while (scroller && scroller !== screen && scroller.scrollWidth <= scroller.clientWidth) {
+        scroller = scroller.parentElement;
+      }
+      if (!scroller || scroller === screen) return null;
+      scroller.scrollLeft = scroller.scrollWidth;
+      const box = scroller.getBoundingClientRect();
+      const r = line.getBoundingClientRect();
+      return {
+        scrolled: scroller.scrollLeft > 0,
+        x: Math.round(box.left + 40),
+        y: Math.round(r.top + r.height / 2),
+      };
+    }, row);
+    expect(point?.scrolled).toBe(true);
+    // The real pointer hovers the row, as in the reported bug.
+    await browser
+      .action("pointer", { parameters: { pointerType: "mouse" } })
+      .move({ x: point?.x ?? 0, y: point?.y ?? 0 })
+      .perform();
+    const background = await browser.execute((name) => {
+      const cell = document.querySelector(`[data-testid="row-menu-${name}"]`)?.closest("td");
+      return cell ? getComputedStyle(cell).backgroundColor : "";
+    }, nodeName);
+    // Opaque: rgb(), or rgba() with alpha 1 (spec H68, H70).
+    expect(background).toMatch(/^rgb\(|^rgba\(\d+, \d+, \d+, 1\)$/);
+    await browser.execute(() => {
+      const screen = document.querySelector<HTMLElement>('[data-testid="resource-screen"]');
+      if (screen) screen.style.maxWidth = "";
+    });
   });
 });

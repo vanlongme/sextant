@@ -42,7 +42,7 @@ describe("kinds on a real cluster", () => {
     await $('[data-testid^="resource-row-"]').click();
     const container = await shown("detail-container-main");
     const text = await container.getText();
-    expect(text).toContain("FROM_SECRET from secret creds/password");
+    expect(text).toContain("FROM_SECRET ← Secret creds / password");
     expect(text).toContain("readiness: tcp-socket :8080");
     expect(await browser.getPageSource()).not.toContain("e2e-hidden-value");
     await clickWhenShown("detail-close");
@@ -111,8 +111,16 @@ describe("kinds on a real cluster", () => {
     await openResource("nav-item-rbac.authorization.k8s.io-rolebindings", "RoleBinding");
     await searchResources("admin-robot");
     await byTestId(rowId(NS, "admin-robot")).click();
-    await byTestId("detail-drawer").$("a=ClusterRole view").click();
-    await until(async () => (await byTestId("resource-title").getText()) === "ClusterRole", "never reached the ClusterRole list");
+    await byTestId("detail-drawer").$("button=ClusterRole view").click();
+    // The ClusterRole opens in the drawer; the list stays the RoleBindings (spec H43).
+    await until(
+      async () =>
+        (await byTestId("detail-kind").getText()) === "ClusterRole" &&
+        (await byTestId("detail-title").getText()) === "view",
+      "the drawer never showed the ClusterRole",
+    );
+    expect(await byTestId("resource-title").getText()).toBe("RoleBinding");
+    await clickWhenShown("detail-close");
   });
 
   it("shows a namespace's quota summary", async () => {

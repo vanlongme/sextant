@@ -150,6 +150,25 @@ describe("a user limited by RBAC", () => {
     await shown(rowId(NS, POD));
   });
 
+  it("says the viewer may not read the Node a Pod links to, and Back returns", async () => {
+    await byTestId(rowId(NS, POD)).click();
+    await shown("detail-drawer");
+    const node = $('[data-testid="detail-relations"] [data-target^="/nodes//"]');
+    await node.waitForDisplayed({ timeout: 30000 });
+    await node.click();
+    await shown("detail-forbidden", 15000);
+    expect(await byTestId("detail-back").getAttribute("aria-label")).toBe(`Back to ${POD}`);
+    await clickWhenShown("detail-back");
+    await browser.waitUntil(
+      async () =>
+        (await byTestId("detail-kind").getText()) === "Pod" &&
+        (await byTestId("detail-title").getText()).includes(POD),
+      { timeoutMsg: "Back never returned to the Pod" },
+    );
+    await clickWhenShown("detail-close");
+    await gone("detail-drawer");
+  });
+
   it("shows the API's forbidden message in a toast when a delete fails", async () => {
     // The app hides what the access checks at connect time deny, so a delete it
     // still offers can only be refused if the right is taken away afterwards.

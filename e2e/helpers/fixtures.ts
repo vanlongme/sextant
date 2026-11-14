@@ -178,6 +178,7 @@ const FIXTURES: Record<string, SpecFixture> = {
   editor: { kubeconfigs: {}, start: startKindFixture },
   crd: { kubeconfigs: {}, start: startKindFixture },
   kinds: { kubeconfigs: {}, start: startKindFixture },
+  drawer: { kubeconfigs: {}, start: startKindFixture },
   "config-kinds": { kubeconfigs: {}, start: startKindFixture },
   "workloads-overview": { kubeconfigs: {}, start: startKindFixture },
   drain: { kubeconfigs: {}, start: startKindFixture },

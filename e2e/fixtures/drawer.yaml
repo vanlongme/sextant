@@ -1,0 +1,73 @@
+# The drawer spec's objects (spec H §13.3). The spec creates the namespace first.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: linked
+  namespace: skopos-test-drawer
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: linked-config
+  namespace: skopos-test-drawer
+data:
+  greeting: hello-linked
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: linked-secret
+  namespace: skopos-test-drawer
+type: Opaque
+stringData:
+  password: drawer-hidden-value
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: linked
+  namespace: skopos-test-drawer
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: linked
+  template:
+    metadata:
+      labels:
+        app: linked
+    spec:
+      serviceAccountName: linked
+      containers:
+        - name: main
+          image: registry.k8s.io/pause:3.10
+          env:
+            - name: GREETING
+              valueFrom:
+                configMapKeyRef:
+                  name: linked-config
+                  key: greeting
+            - name: PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: linked-secret
+                  key: password
+          envFrom:
+            - configMapRef:
+                name: linked-config
+          volumeMounts:
+            - name: config
+              mountPath: /etc/linked
+            - name: secret
+              mountPath: /etc/linked-secret
+            - name: scratch
+              mountPath: /scratch
+      volumes:
+        - name: config
+          configMap:
+            name: linked-config
+        - name: secret
+          secret:
+            secretName: linked-secret
+        - name: scratch
+          emptyDir: {}

@@ -2,6 +2,7 @@ import { kubectl } from "../helpers/kube";
 import {
   byTestId,
   clickWhenShown,
+  gone,
   openCluster,
   openResource,
   pointerClick,
@@ -118,6 +119,45 @@ async function focus(): Promise<string | null> {
 const opacity = async (id: string) =>
   Number((await node(id).getCSSProperty("opacity")).value);
 
+/** Opens a popover of the filters row, unless it is open. */
+async function openFilter(which: "ns" | "kind"): Promise<void> {
+  if (!(await byTestId(`map-${which}-popover`).isExisting())) {
+    await clickWhenShown(`map-${which}-filter`);
+  }
+  await shown(`map-${which}-popover`);
+}
+
+/** Closes a popover with Escape from its search box (spec H59). */
+async function closeFilter(which: "ns" | "kind"): Promise<void> {
+  await clickWhenShown(`map-${which}-search`);
+  await browser.keys("Escape");
+  await gone(`map-${which}-popover`);
+}
+
+/** Checks or unchecks a box of an open popover. */
+async function setBox(testId: string, checked: boolean): Promise<void> {
+  const box = await shown(testId);
+  if ((await box.isSelected()) !== checked) await box.click();
+  await browser.waitUntil(async () => (await byTestId(testId).isSelected()) === checked, {
+    timeout: 5000,
+    timeoutMsg: `${testId} never turned ${checked ? "on" : "off"}`,
+  });
+}
+
+/** Shows only `namespace`: Clear hides the listed namespaces, then its box shows it. */
+async function onlyNamespace(namespace: string): Promise<void> {
+  await openFilter("ns");
+  if (await byTestId("map-ns-clear").isEnabled()) {
+    await clickWhenShown("map-ns-clear");
+  }
+  await setBox(`map-ns-option-${namespace}`, true);
+  await closeFilter("ns");
+  await until(
+    async () => (await byTestId("map-ns-filter").getText()) === namespace,
+    `the Namespaces filter never showed only ${namespace}`,
+  );
+}
+
 describe("resource map", () => {
   let pod = "";
 
@@ -139,17 +179,9 @@ describe("resource map", () => {
 
   it("draws the fixture's objects and relations from the sidebar", async () => {
     await clickWhenShown("nav-map");
-    await shown(`map-ns-${NS}`, 60000);
+    await shown("map-ns-filter", 60000);
     // Only the fixture's namespace stays shown, so the drawing stays small.
-    for (const chip of await $$('[data-testid^="map-ns-"]')) {
-      const id = await chip.getAttribute("data-testid");
-      if (
-        id !== `map-ns-${NS}` &&
-        (await chip.getAttribute("aria-pressed")) === "true"
-      ) {
-        await chip.click();
-      }
-    }
+    await onlyNamespace(NS);
     for (const id of OBJECTS) {
       await node(id).waitForExist({
         timeout: 30000,
@@ -183,7 +215,7 @@ describe("resource map", () => {
     const canvas = await shown("map-canvas");
     const { height } = await canvas.getSize();
     const viewport = await browser.execute(() => window.innerHeight);
-    // The toolbar, chips and window chrome take well under half of the window.
+    // The toolbar, the filters row and window chrome take well under half of the window.
     expect(height).toBeGreaterThan(viewport / 2);
   });
 
@@ -277,7 +309,8 @@ describe("resource map", () => {
 
   it("says so when the only shown namespace is hidden", async () => {
     await clickWhenShown("nav-map");
-    await clickWhenShown(`map-ns-${NS}`);
+    await openFilter("ns");
+    await setBox(`map-ns-option-${NS}`, false);
     await until(
       async () =>
         (await byTestId("map-empty").isExisting()) &&
@@ -285,8 +318,96 @@ describe("resource map", () => {
           "All namespaces are hidden. Pick one above to draw the map.",
       "hiding the last namespace never said so",
     );
-    await clickWhenShown(`map-ns-${NS}`);
+    await setBox(`map-ns-option-${NS}`, true);
+    await closeFilter("ns");
     await shown("map-canvas", 30000);
+  });
+
+  it("hides kinds and bridges their links", async () => {
+    await clickWhenShown("nav-map");
+    await node(DEPLOYMENT).waitForExist({ timeout: 30000 });
+    // Bridges are read from Layered, which draws every edge as a line.
+    await clickWhenShown("map-layout-layered");
+
+    // 1. ReplicaSets hidden: the Deployment owns its Pod through one.
+    await openFilter("kind");
+    await setBox("map-kind-option-ReplicaSet", false);
+    await closeFilter("kind");
+    await node(REPLICA_SET).waitForExist({ timeout: 15000, reverse: true });
+    const owns = edge(DEPLOYMENT, "owns", POD);
+    await owns.waitForExist({
+      timeout: 15000,
+      timeoutMsg: "no bridge from the Deployment to its Pod",
+    });
+    expect(await owns.getAttribute("data-via")).toBe("ReplicaSet");
+    await select(DEPLOYMENT, "Deployment web");
+    const row = $(
+      `[data-testid="map-connection"]${idMatch("data-id", POD)}[data-via="ReplicaSet"]`,
+    );
+    await row.waitForExist({
+      timeout: 15000,
+      timeoutMsg: "the details never listed the Pod via ReplicaSet",
+    });
+    expect(await row.getText()).toContain("via ReplicaSet");
+    await clickWhenShown("map-details-close");
+
+    // 2. Pods hidden too. The graph's use edges start at Pods, so neither bridge meets a real edge.
+    await openFilter("kind");
+    await setBox("map-kind-option-Pod", false);
+    await closeFilter("kind");
+    const selects = edge(SERVICE, "selects", DEPLOYMENT);
+    await selects.waitForExist({
+      timeout: 15000,
+      timeoutMsg: "no bridge from the Service to the Deployment",
+    });
+    expect(await selects.getAttribute("data-via")).toBe("Pod,ReplicaSet");
+    const mounts = edge(DEPLOYMENT, "mounts", CONFIG);
+    await mounts.waitForExist({
+      timeout: 15000,
+      timeoutMsg: "no bridge from the Deployment to its ConfigMap",
+    });
+    expect(await mounts.getAttribute("data-via")).toBe("Pod,ReplicaSet");
+
+    // 3. The legend names bridges while one is drawn.
+    await clickWhenShown("map-legend-toggle");
+    await shown("map-legend-bridge");
+    await clickWhenShown("map-legend-toggle");
+
+    // 4. Every kind hidden.
+    await openFilter("kind");
+    await clickWhenShown("map-kind-clear");
+    await until(
+      async () =>
+        (await byTestId("map-empty").isExisting()) &&
+        (await byTestId("map-empty").getText()) ===
+          "All kinds are hidden. Pick one in Kinds to draw the map.",
+      "hiding every kind never said so",
+    );
+
+    // 5. A Kinds choice is kept when the page is opened again.
+    await clickWhenShown("map-kind-select-all");
+    await setBox("map-kind-option-ReplicaSet", false);
+    await closeFilter("kind");
+    await openResource("nav-item-core-pods", "Pod");
+    await clickWhenShown("nav-map");
+    await until(
+      async () =>
+        (await byTestId("map-kind-filter").isExisting()) &&
+        (await byTestId("map-kind-filter").getAttribute("title")) === "Hidden: ReplicaSets",
+      "the Kinds choice was not kept",
+    );
+    await edge(DEPLOYMENT, "owns", POD).waitForExist({
+      timeout: 30000,
+      timeoutMsg: "the kept choice drew no bridge",
+    });
+
+    // 6. Clear filters brings everything back; then the fixture's namespace alone again.
+    await clickWhenShown("map-clear-filters");
+    await gone("map-clear-filters");
+    expect(await byTestId("map-kind-filter").getText()).toBe("All kinds");
+    expect(await byTestId("map-ns-filter").getText()).toBe("All namespaces");
+    await node(REPLICA_SET).waitForExist({ timeout: 30000 });
+    await onlyNamespace(NS);
   });
 
   it("dims what the search misses, and each layout draws the fixture", async () => {
