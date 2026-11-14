@@ -8,6 +8,22 @@ function groupOf(apiVersion: string): string {
 }
 
 /**
+ * The served resource of a kind, matched on the group of `apiVersion` when it is given.
+ * Undefined when no served resource has that kind.
+ */
+export function servedResourceOf(
+  ref: { kind: string; apiVersion?: string },
+  resources: ApiResourceInfo[],
+): ApiResourceInfo | undefined {
+  const group = ref.apiVersion === undefined ? null : groupOf(ref.apiVersion);
+  return resources.find(
+    (r) =>
+      r.resource.kind === ref.kind &&
+      (group === null || r.resource.group === group),
+  );
+}
+
+/**
  * The route to an owner, relative to its cluster: the owner's list with the owner
  * selected in the `object` search param. Prefix it with `/cluster/<id>`. It is null
  * when no served resource has the owner's kind, so the owner has nowhere to link to.
@@ -18,13 +34,7 @@ export function ownerTarget(
   namespace: string | undefined,
   resources: ApiResourceInfo[],
 ): string | null {
-  const group =
-    owner.apiVersion === undefined ? null : groupOf(owner.apiVersion);
-  const found = resources.find(
-    (r) =>
-      r.resource.kind === owner.kind &&
-      (group === null || r.resource.group === group),
-  );
+  const found = servedResourceOf(owner, resources);
   if (!found) return null;
   const { resource } = found;
   const ns = resource.namespaced ? (namespace ?? "") : "";

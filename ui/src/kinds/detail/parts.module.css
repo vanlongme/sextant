@@ -80,3 +80,12 @@
   outline: none;
   box-shadow: var(--focus-ring);
 }
+
+button.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}

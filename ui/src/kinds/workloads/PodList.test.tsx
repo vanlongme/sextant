@@ -1,9 +1,10 @@
-import { act, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { WatchEvent } from "../../ipc/generated/WatchEvent";
 import { resetResourcesForTest } from "../../stores/resources";
 import { flush, mockBackend } from "../../test/ipc";
+import { DrawerLinkContext } from "../detail/links";
 import type { KubeObject } from "../objects";
 import { PodList } from "./PodList";
 
@@ -82,4 +83,27 @@ test("says so when pods cannot be listed", async () => {
   await act(flush);
   expect(screen.getByRole("alert").textContent).toContain("pods is forbidden");
   expect(screen.queryByText("No pods.")).toBeNull();
+});
+
+test("inside a drawer a pod's name opens the Pod in that drawer", async () => {
+  const snapshot = live();
+  const open = vi.fn();
+  render(
+    <MemoryRouter>
+      <DrawerLinkContext.Provider value={{ open }}>
+        <PodList clusterId="c" match={() => true} namespace="n" />
+      </DrawerLinkContext.Provider>
+    </MemoryRouter>,
+  );
+  await act(flush);
+  await snapshot([{ metadata: { name: "a", namespace: "n" } }]);
+  const table = within(screen.getByTestId("detail-pods"));
+  expect(table.queryByRole("link")).toBeNull();
+  fireEvent.click(table.getByRole("button", { name: "a" }));
+  expect(open).toHaveBeenCalledWith({
+    group: "",
+    plural: "pods",
+    namespace: "n",
+    name: "a",
+  });
 });

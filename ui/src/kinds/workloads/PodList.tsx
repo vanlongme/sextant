@@ -1,3 +1,4 @@
+import { useContext } from "react";
 import { Link } from "react-router";
 import {
   Badge,
@@ -7,6 +8,7 @@ import {
   Spinner,
 } from "../../design";
 import { useResourceList } from "../../stores/resources";
+import { DrawerLinkContext } from "../detail/links";
 import type { KubeObject } from "../objects";
 import { PODS } from "../refs";
 import { podStatus, podSummary } from "./pod";
@@ -25,6 +27,7 @@ export function PodList(props: {
 }) {
   const { clusterId, match, namespace } = props;
   const list = useResourceList(clusterId, PODS);
+  const drawer = useContext(DrawerLinkContext);
 
   if (list.status === "forbidden" || list.status === "notServed") {
     return (
@@ -52,11 +55,27 @@ export function PodList(props: {
       id: "name",
       header: "Name",
       sortValue: (p) => p.metadata.name,
-      render: (p) => (
-        <Link className={styles.link} to={podHref(clusterId, p)}>
-          {p.metadata.name}
-        </Link>
-      ),
+      render: (p) =>
+        drawer ? (
+          <button
+            type="button"
+            className={styles.linkButton}
+            onClick={() =>
+              drawer.open({
+                group: "",
+                plural: "pods",
+                namespace: p.metadata.namespace ?? null,
+                name: p.metadata.name,
+              })
+            }
+          >
+            {p.metadata.name}
+          </button>
+        ) : (
+          <Link className={styles.link} to={podHref(clusterId, p)}>
+            {p.metadata.name}
+          </Link>
+        ),
     },
     {
       id: "status",
