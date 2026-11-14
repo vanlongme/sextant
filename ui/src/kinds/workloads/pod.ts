@@ -7,7 +7,7 @@ interface Terminated {
   signal?: number;
   exitCode?: number;
 }
-interface ContainerStatus {
+export interface ContainerStatus {
   name?: string;
   ready?: boolean;
   started?: boolean;
@@ -136,41 +136,98 @@ export interface ContainerPort {
   protocol: string | null;
 }
 
+/** A whole ConfigMap or Secret a container reads its environment from. */
+export interface EnvFromSource {
+  kind: "ConfigMap" | "Secret";
+  name: string;
+  prefix: string | null;
+}
+
+/** A variable whose value comes from elsewhere; it is named and never resolved (milestone F6). */
+export type EnvRef =
+  | {
+      name: string;
+      from: "key";
+      kind: "ConfigMap" | "Secret";
+      source: string;
+      key: string;
+    }
+  | { name: string; from: "field"; path: string }
+  | { name: string; from: "resource"; resource: string };
+
 export interface ContainerInfo {
   name: string;
   init: boolean;
   image: string;
-  state: string;
+  /** The state badge (spec H38). */
+  state: StatusInfo;
   ready: boolean;
   restarts: number;
+  /** `‹port›/‹protocol›`, one per declared port. */
   ports: string[];
   /** The same ports as data, in the same order. */
   portSpecs: ContainerPort[];
+  /** `NAME=value` for each variable with a literal value. */
   env: string[];
-  mounts: string[];
+  envFrom: EnvFromSource[];
+  envRefs: EnvRef[];
   probes: string[];
-  requests: string[];
-  limits: string[];
+  /** `cpu 250m · memory 512Mi`; empty with none. */
+  requests: string;
+  limits: string;
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: container specs are free-form JSON.
 type Json = any;
 
-/** An environment variable; references are named and never resolved. */
-export function envText(env: Json): string {
-  const name = env?.name ?? "";
+function envRefOf(env: Json): EnvRef | null {
+  const name: string = env?.name ?? "";
   const from = env?.valueFrom;
-  if (from?.secretKeyRef) {
-    return `${name} from secret ${from.secretKeyRef.name}/${from.secretKeyRef.key}`;
-  }
   if (from?.configMapKeyRef) {
-    return `${name} from configmap ${from.configMapKeyRef.name}/${from.configMapKeyRef.key}`;
+    return {
+      name,
+      from: "key",
+      kind: "ConfigMap",
+      source: from.configMapKeyRef.name ?? "",
+      key: from.configMapKeyRef.key ?? "",
+    };
   }
-  if (from?.fieldRef) return `${name} from field ${from.fieldRef.fieldPath}`;
+  if (from?.secretKeyRef) {
+    return {
+      name,
+      from: "key",
+      kind: "Secret",
+      source: from.secretKeyRef.name ?? "",
+      key: from.secretKeyRef.key ?? "",
+    };
+  }
+  if (from?.fieldRef) {
+    return { name, from: "field", path: from.fieldRef.fieldPath ?? "" };
+  }
   if (from?.resourceFieldRef) {
-    return `${name} from resource ${from.resourceFieldRef.resource}`;
+    return {
+      name,
+      from: "resource",
+      resource: from.resourceFieldRef.resource ?? "",
+    };
   }
-  return `${name}=${env?.value ?? ""}`;
+  return null;
+}
+
+function envFromOf(source: Json): EnvFromSource[] {
+  const prefix =
+    typeof source?.prefix === "string" && source.prefix !== ""
+      ? source.prefix
+      : null;
+  if (source?.secretRef) {
+    return [{ kind: "Secret", name: source.secretRef.name ?? "", prefix }];
+  }
+  if (source?.configMapRef) {
+    return [
+      { kind: "ConfigMap", name: source.configMapRef.name ?? "", prefix },
+    ];
+  }
+  return [];
 }
 
 /** A probe the way `kubectl describe` prints it, with the Kubernetes defaults filled in. */
@@ -193,19 +250,39 @@ export function probeText(probe: Json): string {
   return `${action} delay=${delay}s timeout=${timeout}s period=${period}s #success=${success} #failure=${failure}`;
 }
 
-function stateText(status: ContainerStatus | undefined): string {
+/** Waiting reasons that mean the container cannot start. */
+const FAILING = new Set([
+  "CrashLoopBackOff",
+  "ImagePullBackOff",
+  "ErrImagePull",
+  "CreateContainerConfigError",
+]);
+
+/** A container's state as a badge (spec H38). */
+export function containerState(
+  status: ContainerStatus | undefined,
+): StatusInfo {
   const state = status?.state;
-  if (state?.running) return "Running";
-  if (state?.waiting) return `Waiting: ${state.waiting.reason ?? "Unknown"}`;
+  if (state?.running) return { label: "Running", tone: "ok" };
+  if (state?.waiting) {
+    const reason = state.waiting.reason;
+    if (reason && FAILING.has(reason)) return { label: reason, tone: "danger" };
+    return { label: reason || "Waiting", tone: "info" };
+  }
   if (state?.terminated) {
     const t = state.terminated;
-    return `Terminated: ${t.reason ?? "Unknown"} (exit ${t.exitCode ?? 0})`;
+    if ((t.exitCode ?? 0) === 0) {
+      return { label: t.reason || "Completed", tone: "neutral" };
+    }
+    return { label: t.reason || "Error", tone: "danger" };
   }
-  return "Not started";
+  return { label: "Not started", tone: "neutral" };
 }
 
-function quantities(map: Record<string, string> | undefined): string[] {
-  return Object.entries(map ?? {}).map(([k, v]) => `${k} ${v}`);
+function quantities(map: Record<string, string> | undefined): string {
+  return Object.entries(map ?? {})
+    .map(([k, v]) => `${k} ${v}`)
+    .join(" · ");
 }
 
 function describeContainer(
@@ -213,12 +290,6 @@ function describeContainer(
   status: ContainerStatus | undefined,
   init: boolean,
 ): ContainerInfo {
-  const envFrom: string[] = (spec.envFrom ?? []).map((source: Json) => {
-    const prefix = source.prefix ? ` (prefix ${source.prefix})` : "";
-    if (source.secretRef)
-      return `all of secret ${source.secretRef.name}${prefix}`;
-    return `all of configmap ${source.configMapRef?.name ?? ""}${prefix}`;
-  });
   const probes: string[] = [];
   for (const [field, label] of [
     ["livenessProbe", "liveness"],
@@ -227,16 +298,16 @@ function describeContainer(
   ] as const) {
     if (spec[field]) probes.push(`${label}: ${probeText(spec[field])}`);
   }
+  const env: Json[] = spec.env ?? [];
   return {
     name: spec.name ?? "",
     init,
     image: spec.image ?? "",
-    state: stateText(status),
+    state: containerState(status),
     ready: Boolean(status?.ready),
     restarts: status?.restartCount ?? 0,
     ports: (spec.ports ?? []).map(
-      (p: Json) =>
-        `${p.name ? `${p.name} ` : ""}${p.containerPort}/${p.protocol ?? "TCP"}`,
+      (p: Json) => `${p.containerPort}/${p.protocol ?? "TCP"}`,
     ),
     portSpecs: (spec.ports ?? []).map(
       (p: Json): ContainerPort => ({
@@ -246,10 +317,11 @@ function describeContainer(
         protocol: typeof p.protocol === "string" ? p.protocol : null,
       }),
     ),
-    env: [...(spec.env ?? []).map(envText), ...envFrom],
-    mounts: (spec.volumeMounts ?? []).map(
-      (m: Json) => `${m.mountPath} from ${m.name}${m.readOnly ? " (ro)" : ""}`,
-    ),
+    env: env
+      .filter((e) => !e?.valueFrom)
+      .map((e) => `${e?.name ?? ""}=${e?.value ?? ""}`),
+    envFrom: (spec.envFrom ?? []).flatMap(envFromOf),
+    envRefs: env.map(envRefOf).filter((r): r is EnvRef => r !== null),
     probes,
     requests: quantities(spec.resources?.requests),
     limits: quantities(spec.resources?.limits),

@@ -13,7 +13,7 @@ import { registerKind } from "../registry";
 import { usageColumns } from "../usageColumns";
 import "./jobs";
 import { podLogsAction, workloadLogsAction } from "./logsAction";
-import { PodDetail } from "./PodDetail";
+import { PodDetail, podRelations, podSummaryStats } from "./PodDetail";
 import { podStatus, podSummary } from "./pod";
 import { forceDeleteAction } from "./podActions";
 import { RolloutDetail } from "./RolloutDetail";
@@ -67,6 +67,10 @@ registerKind("", "pods", {
     forceDeleteAction,
   ],
   detail: PodDetail,
+  summary: podSummaryStats,
+  relations: podRelations,
+  podSpec: (o) => ({ spec: o.spec, podName: o.metadata.name }),
+  ownConditions: true,
 });
 
 const count = (n: unknown) => (typeof n === "number" ? n : 0);

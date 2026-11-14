@@ -1,5 +1,13 @@
 import { describe, expect, test } from "vitest";
-import { containersOf, envText, podStatus, podSummary, probeText } from "./pod";
+import type { Tone } from "../../design/Badge";
+import {
+  type ContainerStatus,
+  containerState,
+  containersOf,
+  podStatus,
+  podSummary,
+  probeText,
+} from "./pod";
 
 const running = {
   state: { running: {} },
@@ -298,33 +306,87 @@ describe("podStatus tones", () => {
   });
 });
 
-test("envText names references and never resolves them", () => {
-  expect(envText({ name: "A", value: "1" })).toBe("A=1");
-  expect(envText({ name: "A" })).toBe("A=");
-  expect(
-    envText({
-      name: "A",
-      valueFrom: { secretKeyRef: { name: "s", key: "k" } },
-    }),
-  ).toBe("A from secret s/k");
-  expect(
-    envText({
-      name: "A",
-      valueFrom: { configMapKeyRef: { name: "c", key: "k" } },
-    }),
-  ).toBe("A from configmap c/k");
-  expect(
-    envText({
-      name: "A",
-      valueFrom: { fieldRef: { fieldPath: "metadata.name" } },
-    }),
-  ).toBe("A from field metadata.name");
-  expect(
-    envText({
-      name: "A",
-      valueFrom: { resourceFieldRef: { resource: "limits.cpu" } },
-    }),
-  ).toBe("A from resource limits.cpu");
+test("variables from references are named and never resolved", () => {
+  const [c] = containersOf({
+    metadata: { name: "p" },
+    spec: {
+      containers: [
+        {
+          name: "a",
+          env: [
+            { name: "A", value: "1" },
+            { name: "E" },
+            { name: "S", valueFrom: { secretKeyRef: { name: "s", key: "k" } } },
+            {
+              name: "C",
+              valueFrom: { configMapKeyRef: { name: "c", key: "k" } },
+            },
+            {
+              name: "F",
+              valueFrom: { fieldRef: { fieldPath: "metadata.name" } },
+            },
+            {
+              name: "R",
+              valueFrom: { resourceFieldRef: { resource: "limits.cpu" } },
+            },
+          ],
+        },
+      ],
+    },
+  });
+  expect(c.env).toEqual(["A=1", "E="]);
+  expect(c.envRefs).toEqual([
+    { name: "S", from: "key", kind: "Secret", source: "s", key: "k" },
+    { name: "C", from: "key", kind: "ConfigMap", source: "c", key: "k" },
+    { name: "F", from: "field", path: "metadata.name" },
+    { name: "R", from: "resource", resource: "limits.cpu" },
+  ]);
+});
+
+test.each<[ContainerStatus | undefined, string, Tone]>([
+  [{ state: { running: {} } }, "Running", "ok"],
+  [
+    { state: { waiting: { reason: "CrashLoopBackOff" } } },
+    "CrashLoopBackOff",
+    "danger",
+  ],
+  [
+    { state: { waiting: { reason: "ImagePullBackOff" } } },
+    "ImagePullBackOff",
+    "danger",
+  ],
+  [
+    { state: { waiting: { reason: "ErrImagePull" } } },
+    "ErrImagePull",
+    "danger",
+  ],
+  [
+    { state: { waiting: { reason: "CreateContainerConfigError" } } },
+    "CreateContainerConfigError",
+    "danger",
+  ],
+  [
+    { state: { waiting: { reason: "ContainerCreating" } } },
+    "ContainerCreating",
+    "info",
+  ],
+  [{ state: { waiting: {} } }, "Waiting", "info"],
+  [{ state: { terminated: { exitCode: 0 } } }, "Completed", "neutral"],
+  [
+    { state: { terminated: { exitCode: 0, reason: "Done" } } },
+    "Done",
+    "neutral",
+  ],
+  [
+    { state: { terminated: { exitCode: 137, reason: "OOMKilled" } } },
+    "OOMKilled",
+    "danger",
+  ],
+  [{ state: { terminated: { exitCode: 1 } } }, "Error", "danger"],
+  [{ name: "a" }, "Not started", "neutral"],
+  [undefined, "Not started", "neutral"],
+])("container status %j reads %s (%s)", (status, label, tone) => {
+  expect(containerState(status)).toEqual({ label, tone });
 });
 
 test("probeText reads like kubectl describe", () => {
@@ -386,24 +448,41 @@ test("containersOf joins spec and status for init and regular containers", () =>
   const a = rows[1];
   expect(a).toMatchObject({
     image: "web:1",
-    state: "Waiting: Back",
+    state: { label: "Back", tone: "info" },
     ready: true,
     restarts: 2,
   });
-  expect(a.ports).toEqual(["http 80/TCP"]);
+  expect(a.ports).toEqual(["80/TCP"]);
   expect(a.portSpecs).toEqual([
     { containerPort: 80, name: "http", protocol: "TCP" },
   ]);
-  expect(a.env).toEqual([
-    "A=1",
-    "all of secret s",
-    "all of configmap c (prefix P_)",
+  expect(a.env).toEqual(["A=1"]);
+  expect(a.envFrom).toEqual([
+    { kind: "Secret", name: "s", prefix: null },
+    { kind: "ConfigMap", name: "c", prefix: "P_" },
   ]);
-  expect(a.mounts).toEqual(["/d from v (ro)"]);
+  expect(a.envRefs).toEqual([]);
+  expect("mounts" in a).toBe(false);
   expect(a.probes[0]).toMatch(/^readiness: tcp-socket :80/);
-  expect(a.requests).toEqual(["cpu 1"]);
-  expect(a.limits).toEqual(["memory 1Gi"]);
-  expect(rows[0].state).toBe("Not started");
+  expect(a.requests).toBe("cpu 1");
+  expect(a.limits).toBe("memory 1Gi");
+  expect(rows[0].state).toEqual({ label: "Not started", tone: "neutral" });
+});
+
+test("requests and limits join their entries with a middle dot", () => {
+  const [c] = containersOf({
+    metadata: { name: "p" },
+    spec: {
+      containers: [
+        {
+          name: "a",
+          resources: { requests: { cpu: "250m", memory: "512Mi" } },
+        },
+      ],
+    },
+  });
+  expect(c.requests).toBe("cpu 250m · memory 512Mi");
+  expect(c.limits).toBe("");
 });
 
 test("container ports are data too, with null for what is not declared", () => {
@@ -421,7 +500,7 @@ test("container ports are data too, with null for what is not declared", () => {
       ],
     },
   });
-  expect(rows[0]?.ports).toEqual(["9090/TCP", "dns 53/UDP"]);
+  expect(rows[0]?.ports).toEqual(["9090/TCP", "53/UDP"]);
   expect(rows[0]?.portSpecs).toEqual([
     { containerPort: 9090, name: null, protocol: null },
     { containerPort: 53, name: "dns", protocol: "UDP" },
