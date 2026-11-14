@@ -29,21 +29,36 @@
   border-bottom: 1px solid var(--border-subtle);
 }
 
+/* The sticky cell is opaque in every row state: the row's tint is laid over the card
+   colour, so the cells that scroll under it never show through (spec H68). */
 .stickyEnd {
   position: sticky;
   right: 0;
-  background: var(--surface-card);
+  background-color: var(--surface-card);
 }
 
 .bodyRow:hover .stickyEnd {
-  background: var(--surface-hover);
+  background-color: var(--surface-card);
+  background-image: linear-gradient(var(--surface-hover), var(--surface-hover));
 }
 
 .bodyRow.selected .stickyEnd,
 .bodyRow.active .stickyEnd,
 .bodyRow.selected:hover .stickyEnd,
 .bodyRow.active:hover .stickyEnd {
-  background: var(--surface-selected);
+  background-color: var(--surface-card);
+  background-image: linear-gradient(
+    var(--surface-selected),
+    var(--surface-selected)
+  );
+}
+
+.cell > a,
+.cell > button {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .head .cell {

@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { CSS_FILES, cssRules } from "../test/css";
+import { CSS_FILES, cssRules, themeTokens } from "../test/css";
 
 // Every stylesheet but the vendored tokens and the base layer.
 const RESTYLED = Object.keys(CSS_FILES).filter(
@@ -155,4 +155,61 @@ test("switches show the accent when on and the focus ring on the track", () => {
   );
   expect(decl(".sm .track", "height")).toBe("16px");
   expect(decl(".md .track", "height")).toBe("18px");
+});
+
+/** `cssRules` keeps line breaks inside selectors and values. */
+const norm = (s: string) =>
+  s.replace(/\s+/g, " ").replace(/\(\s/g, "(").replace(/\s\)/g, ")");
+
+test("sticky cells paint an opaque base under their tint, in every row state and both themes", () => {
+  const vt = cssRules(CSS_FILES["/src/design/VirtualTable.module.css"]);
+  const sticky = vt.filter((r) => r.selector.includes(".stickyEnd"));
+  expect(sticky.map((r) => norm(r.selector))).toEqual([
+    ".stickyEnd",
+    ".bodyRow:hover .stickyEnd",
+    ".bodyRow.selected .stickyEnd, .bodyRow.active .stickyEnd, .bodyRow.selected:hover .stickyEnd, .bodyRow.active:hover .stickyEnd",
+  ]);
+  const tints = [undefined, "var(--surface-hover)", "var(--surface-selected)"];
+  sticky.forEach((r, i) => {
+    const decls = Object.fromEntries(r.decls.map(([p, v]) => [p, norm(v)]));
+    expect([r.selector, decls.background]).toEqual([r.selector, undefined]);
+    expect([r.selector, decls["background-color"]]).toEqual([
+      r.selector,
+      "var(--surface-card)",
+    ]);
+    const tint = tints[i];
+    expect([r.selector, decls["background-image"]]).toEqual([
+      r.selector,
+      tint === undefined ? undefined : `linear-gradient(${tint}, ${tint})`,
+    ]);
+  });
+  for (const theme of ["light", "dark"] as const) {
+    expect([theme, themeTokens(theme).get("--surface-card")]).toEqual([
+      theme,
+      expect.stringMatching(/^#[0-9a-f]{6}$/i),
+    ]);
+  }
+});
+
+test("cells clip links, buttons and badges with an ellipsis", () => {
+  const vt = cssRules(CSS_FILES["/src/design/VirtualTable.module.css"]);
+  const inner = Object.fromEntries(
+    vt.find((r) => norm(r.selector) === ".cell > a, .cell > button")?.decls ??
+      [],
+  );
+  expect(inner).toMatchObject({
+    "max-width": "100%",
+    overflow: "hidden",
+    "text-overflow": "ellipsis",
+    "white-space": "nowrap",
+  });
+  const badge = cssRules(CSS_FILES["/src/design/Badge.module.css"]);
+  const decls = (s: string) =>
+    Object.fromEntries(badge.find((r) => r.selector === s)?.decls ?? []);
+  expect(decls(".badge")["max-width"]).toBe("100%");
+  expect(decls(".label")).toMatchObject({
+    overflow: "hidden",
+    "text-overflow": "ellipsis",
+    "white-space": "nowrap",
+  });
 });

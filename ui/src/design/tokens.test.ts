@@ -58,10 +58,15 @@ test.each(Object.entries(CSS_FILES))(
 );
 
 test.each(Object.entries(CSS_FILES))(
-  "%s loads nothing from a network and draws no gradient",
+  "%s loads nothing from a network and draws no gradient but a flat tint",
   (_, css) => {
     expect(css).not.toMatch(/@import\s+url\(\s*["']?https?:/);
     expect(css).not.toMatch(/fonts\.googleapis|fonts\.gstatic/);
-    expect(css).not.toMatch(/gradient\(/);
+    // `linear-gradient(var(--x), var(--x))` is one flat colour over a base (spec H68).
+    const flat = css.replace(
+      /linear-gradient\(\s*(var\(--[a-z-]+\)),\s*\1\s*\)/g,
+      "",
+    );
+    expect(flat).not.toMatch(/gradient\(/);
   },
 );
