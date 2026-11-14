@@ -14,11 +14,9 @@ import {
   VirtualTable,
 } from "../../design";
 import type { ApiResourceInfo } from "../../ipc/generated/ApiResourceInfo";
-import { BUILTIN_GROUPS, groupFromSegment } from "../../kinds/nav";
+import { groupFromSegment } from "../../kinds/nav";
 import { type KubeObject, objectKey } from "../../kinds/objects";
-import { columnsFromCrd } from "../../kinds/printerColumns";
-import { defaultColumns, kindSpec } from "../../kinds/registry";
-import type { UsageView } from "../../kinds/usageColumns";
+import { kindSpec } from "../../kinds/registry";
 import { findResource, useResourceList } from "../../stores/resources";
 import { useUiState } from "../../stores/uiState";
 import { useClusterContext } from "../cluster/ClusterLayout";
@@ -26,6 +24,7 @@ import { DetailDrawer } from "../details/DetailDrawer";
 import { useListUsage } from "../metrics/useListUsage";
 import { DeleteDialog } from "./DeleteDialog";
 import { matchesSearch } from "./filter";
+import { kindColumns, useCustomResourceDefinition } from "./kindColumns";
 import { NamespaceFilter, namespaceFilterKey } from "./NamespaceFilter";
 import { ObjectActionBar } from "./ObjectActionBar";
 import { objectActions } from "./objectActions";
@@ -44,44 +43,6 @@ function rowTestId(o: KubeObject): string {
   return namespace
     ? `resource-row-${namespace}-${name}`
     : `resource-row-${name}`;
-}
-
-/**
- * The definition of a custom resource, kept up to date. It is undefined for
- * built-in kinds, and while or when definitions cannot be listed.
- */
-function useCustomResourceDefinition(
-  clusterId: string,
-  info: ApiResourceInfo,
-  resources: ApiResourceInfo[],
-): KubeObject | undefined {
-  const { group, plural } = info.resource;
-  const crds = findResource(
-    resources,
-    "apiextensions.k8s.io",
-    "customresourcedefinitions",
-  );
-  const watchable =
-    !BUILTIN_GROUPS.has(group) && crds?.canList && crds.canWatch;
-  const list = useResourceList(clusterId, watchable ? crds.resource : null);
-  const name = `${plural}.${group}`;
-  return list.items.find((o) => o.metadata.name === name);
-}
-
-function kindColumns(
-  info: ApiResourceInfo,
-  crd: KubeObject | undefined,
-  usage: UsageView | undefined,
-): TableColumn<KubeObject>[] {
-  const { resource } = info;
-  const registered = kindSpec(resource.group, resource.plural)?.columns;
-  if (registered) return registered(info, usage);
-  const printer = columnsFromCrd(crd, resource.version);
-  if (printer.length === 0) return defaultColumns(resource);
-  return [
-    ...defaultColumns(resource).filter((c) => c.id !== "age"),
-    ...printer,
-  ];
 }
 
 function emptyText(kind: string, namespaced: boolean, namespaces: string[]) {
