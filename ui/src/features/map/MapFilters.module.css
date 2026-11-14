@@ -1,0 +1,109 @@
+/* The chips row's box: the toolbar's side padding and a bottom hairline (spec H54).
+   A fieldset, for its implicit group role, so the browser's default box is reset. */
+.row {
+  margin: 0;
+  min-width: 0;
+  border: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.grow {
+  flex: 1;
+}
+
+.summary {
+  font-size: var(--text-12);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.tally {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font: var(--type-caption);
+}
+
+.options {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.option,
+.groupRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 28px;
+  padding: 0 var(--space-5);
+  cursor: pointer;
+}
+
+.option:hover,
+.groupRow:hover {
+  background: var(--surface-hover);
+}
+
+.option input,
+.groupRow input {
+  flex: none;
+  margin: 0;
+  accent-color: var(--surface-accent);
+}
+
+/* Kind rows sit under their group's box (spec H56). */
+.kind {
+  padding-left: 34px;
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.off {
+  color: var(--text-secondary);
+}
+
+.count {
+  color: var(--text-secondary);
+  font: var(--type-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.icon {
+  display: inline-flex;
+  flex: none;
+}
+
+.iconOff {
+  opacity: 0.45;
+}
+
+.group + .group {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.groupLabel {
+  flex: 1;
+  color: var(--text-secondary);
+  font: var(--type-overline);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+}
+
+.empty {
+  margin: 0;
+  padding: var(--space-5);
+  color: var(--text-secondary);
+}

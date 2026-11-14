@@ -1,0 +1,82 @@
+.anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.triggerLabel {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  max-width: calc(100vw - 32px);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-3);
+  overflow: hidden;
+}
+
+.searchRow {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.searchIcon {
+  flex: none;
+  color: var(--text-secondary);
+}
+
+.search {
+  flex: 1;
+  min-width: 0;
+  height: var(--control-sm);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font: var(--type-body);
+}
+
+.search:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-3) 0;
+}
+
+.foot {
+  flex: none;
+  margin: 0;
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font: var(--type-caption);
+}
