@@ -64,7 +64,7 @@ export interface SceneBox {
   sub: string;
 }
 
-export type EdgeStyle = "own" | "net" | "use";
+export type EdgeStyle = "own" | "net" | "use" | "bridge";
 
 export interface SceneEdge {
   key: string;
@@ -78,6 +78,10 @@ export interface SceneEdge {
   style: EdgeStyle;
   /** True when the two ends sit in different namespaces. */
   across: boolean;
+  /** The hidden kinds a bridge passes through (spec H63). */
+  via?: string[];
+  /** Where the via mark sits. */
+  mid?: Point;
 }
 
 /** A namespace's area in Layered and Force. */
@@ -188,9 +192,11 @@ export function buildScene(
         ids: e.ids,
         d: e.d,
         head: e.head,
-        style: e.cls,
+        style: e.via ? "bridge" : e.cls,
         across:
           nodeOf(model, e.from).namespace !== nodeOf(model, e.to).namespace,
+        mid: e.mid,
+        ...(e.via ? { via: e.via } : {}),
       }),
     );
     return { icons, boxes, edges, hulls: [], extent, centres, tree };
@@ -217,9 +223,14 @@ export function buildScene(
         ids: [e.from, e.to],
         d: segment(centres[e.from], centres[e.to], curve),
         head: "",
-        style: styleOf(e.rel),
+        style: e.via ? "bridge" : styleOf(e.rel),
         across:
           nodeOf(model, e.from).namespace !== nodeOf(model, e.to).namespace,
+        mid: {
+          x: (centres[e.from].x + centres[e.to].x) / 2,
+          y: (centres[e.from].y + centres[e.to].y) / 2,
+        },
+        ...(e.via ? { via: e.via } : {}),
       }),
     );
   const byNamespace = new Map<string, Rect[]>();

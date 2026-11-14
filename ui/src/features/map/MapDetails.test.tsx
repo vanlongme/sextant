@@ -1,7 +1,13 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { describe, expect, it, vi } from "vitest";
-import { DEMO, demoGraph, gnode, servedResource } from "../../test/graph";
+import {
+  DEMO,
+  demoGraph,
+  drawnHiding,
+  gnode,
+  servedResource,
+} from "../../test/graph";
 import { MapDetails, type MapDetailsProps, placeLine } from "./MapDetails";
 import { buildModel } from "./model";
 
@@ -159,5 +165,34 @@ describe("MapDetails", () => {
     const props = show(DEMO.podA);
     fireEvent.click(screen.getByTestId("map-details-close"));
     expect(props.onClose).toHaveBeenCalled();
+  });
+
+  it("lists bridged connections with the kinds they pass through, and none to hidden nodes", () => {
+    show(DEMO.deployment, { model: drawnHiding(["ReplicaSet"]) });
+    expect(connections()).toEqual([
+      `out owns ${DEMO.podA}: Owns Pod, via ReplicaSetweb-7d9-a`,
+      `out owns ${DEMO.podB}: Owns Pod, via ReplicaSetweb-7d9-b`,
+    ]);
+    expect(
+      screen
+        .getAllByTestId("map-connection")
+        .map((el) => el.getAttribute("data-via")),
+    ).toEqual(["ReplicaSet", "ReplicaSet"]);
+  });
+
+  it("a Pod's connections leave out its hidden owner and show the bridged one", () => {
+    show(DEMO.podA, { model: drawnHiding(["ReplicaSet"]) });
+    const rows = connections();
+    expect(rows.some((r) => r.includes(DEMO.replicaSet))).toBe(false);
+    expect(rows).toContain(
+      `in owns ${DEMO.deployment}: Owned by Deployment, via ReplicaSetweb`,
+    );
+  });
+
+  it("a collapsed Pods row names the kinds its bridged links pass through", () => {
+    show(DEMO.ingress, { model: drawnHiding(["Service"]) });
+    const group = screen.getByTestId("map-connection-group");
+    expect(group.textContent).toBe("Selects 2 Pods of web-7d9, via Service");
+    expect(group.getAttribute("data-via")).toBe("Service");
   });
 });

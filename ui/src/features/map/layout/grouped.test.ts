@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { DEMO, demoGraph, ownsCycle } from "../../../test/graph";
+import {
+  DEMO,
+  demoGraph,
+  drawnHiding,
+  gedge,
+  gnode,
+  ownsCycle,
+} from "../../../test/graph";
 import { buildModel, type MapModel } from "../model";
+import { leafSize } from "./geometry";
 import {
   boxRects,
   EXTERNAL,
@@ -9,6 +17,7 @@ import {
   groupTree,
   layoutGrouped,
   type Positions,
+  poly,
   type Rect,
   ROOT,
 } from "./grouped";
@@ -149,4 +158,91 @@ describe("owners that own each other", () => {
       expect(groupedEdges(model, tree, pos, "h", "")).toEqual([]);
     });
   }
+});
+
+describe("poly", () => {
+  it("gives the point halfway along the line", () => {
+    expect(
+      poly([
+        [0, 0],
+        [10, 0],
+      ]).mid,
+    ).toEqual({ x: 5, y: 0 });
+    expect(
+      poly([
+        [0, 0],
+        [0, 10],
+        [30, 10],
+      ]).mid,
+    ).toEqual({ x: 10, y: 10 });
+  });
+});
+
+describe("bridged edges", () => {
+  const f = (n: number) => n.toFixed(1);
+
+  it("draws a bridged owns edge as a branch from the owner box's corner to each child", () => {
+    const model = drawnHiding(["ReplicaSet"]);
+    const ids = model.nodes.map((n) => n.id);
+    const tree = groupTree(model, ids);
+    const pos = layoutGrouped(model, ids);
+    const owner = boxRects(model, tree, pos, "").boxes[DEMO.deployment];
+    const branches = groupedEdges(model, tree, pos, "h", "").filter(
+      (e) => e.cls === "own",
+    );
+    expect(branches.map((e) => [e.from, e.to, e.via])).toEqual([
+      [DEMO.deployment, DEMO.podA, ["ReplicaSet"]],
+      [DEMO.deployment, DEMO.podB, ["ReplicaSet"]],
+    ]);
+    const sx = owner.x0 + 14;
+    const sy = owner.y0 + 40;
+    for (const e of branches) {
+      const p = pos[e.to];
+      // Straight down, then right to the leaf's left edge at its centre.
+      expect(e.d.startsWith(`M${f(sx)} ${f(sy)} L${f(sx)} `)).toBe(true);
+      expect(
+        e.head.startsWith(` M${f(p.x - leafSize(false) / 2)} ${f(p.y)} `),
+      ).toBe(true);
+      expect(e.mid).toEqual({ x: sx, y: sy + 9 });
+    }
+  });
+
+  it("does not draw a branch to a child box that starts less than 16 px right of the start", () => {
+    const nodes = [
+      gnode("Deployment/n/d"),
+      gnode("ReplicaSet/n/r"),
+      gnode("Job/n/j"),
+      gnode("Pod/n/p"),
+    ];
+    const edges = [
+      gedge("Deployment/n/d", "owns", "ReplicaSet/n/r"),
+      gedge("ReplicaSet/n/r", "owns", "Job/n/j"),
+      gedge("Job/n/j", "owns", "Pod/n/p"),
+    ];
+    const model = drawnHiding(["ReplicaSet"], { nodes, edges });
+    const ids = model.nodes.map((n) => n.id);
+    const tree = groupTree(model, ids);
+    expect(tree.parentOf["Job/n/j"]).toBe("Deployment/n/d");
+    expect(
+      groupedEdges(model, tree, layoutGrouped(model, ids), "h", "").filter(
+        (e) => e.cls === "own",
+      ),
+    ).toEqual([]);
+  });
+
+  it("a merged arrow carries via only when every edge it stands for is a bridge", () => {
+    const model = drawnHiding(["Service"]);
+    const ids = model.nodes.map((n) => n.id);
+    const tree = groupTree(model, ids);
+    const edges = groupedEdges(model, tree, layoutGrouped(model, ids), "h", "");
+    const fromIngress = edges.find(
+      (e) => e.from === DEMO.ingress && e.rel === "selects",
+    );
+    expect(fromIngress?.to).toBe(DEMO.replicaSet);
+    expect(fromIngress?.via).toEqual(["Service"]);
+    const mounts = edges.find(
+      (e) => e.rel === "mounts" && e.to === DEMO.configMap,
+    );
+    expect(mounts?.via).toBeUndefined();
+  });
 });

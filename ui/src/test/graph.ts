@@ -1,4 +1,11 @@
 import { act } from "@testing-library/react";
+import { bridgeEdges } from "../features/map/bridges";
+import { kindView, visibleModel } from "../features/map/filters";
+import {
+  buildModel,
+  type MapModel,
+  namespaceView,
+} from "../features/map/model";
 import type { ApiResourceInfo } from "../ipc/generated/ApiResourceInfo";
 import type { GraphEdge } from "../ipc/generated/GraphEdge";
 import type { GraphEvent } from "../ipc/generated/GraphEvent";
@@ -348,4 +355,22 @@ export function graphBackend(
       channels.get(subscriptionId)?.(event);
     },
   };
+}
+
+/**
+ * A graph as the cluster map draws it with `kinds` hidden: the shown nodes, their real
+ * edges and the bridges through the hidden ones (spec H63). The demo graph by default.
+ */
+export function drawnHiding(
+  kinds: readonly string[],
+  graph: { nodes: GraphNode[]; edges: GraphEdge[] } = demoGraph(),
+): MapModel {
+  const model = buildModel(graph.nodes, graph.edges);
+  const view = namespaceView(model, new Set());
+  const shownIds = kindView(model, view, new Set(kinds));
+  return visibleModel(
+    model,
+    shownIds,
+    bridgeEdges(model, view, new Set(shownIds)),
+  );
 }

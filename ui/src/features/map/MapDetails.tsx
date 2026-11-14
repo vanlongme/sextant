@@ -64,6 +64,15 @@ export function placeLine(node: GraphNode): string {
 
 const relationOf = (link: Link) => (link.out ? REL_OUT : REL_IN)[link.rel];
 
+const viaText = (via: readonly string[] | null | undefined) =>
+  via && via.length > 0 ? `, via ${via.join(", ")}` : "";
+
+/** The hidden kinds of a group whose every link is bridged, first seen first. */
+function groupVia(links: readonly Link[]): string[] | null {
+  if (!links.every((l) => l.via)) return null;
+  return [...new Set(links.flatMap((l) => l.via ?? []))];
+}
+
 /** One row, or several Pods of one owner on the same relation. */
 type Row =
   | { type: "one"; link: Link }
@@ -141,13 +150,14 @@ function ConnectionRow({
         data-id={link.other}
         data-rel={link.rel}
         data-dir={link.out ? "out" : "in"}
+        data-via={link.via?.join(",")}
         onClick={() => onSelect(link.other)}
       >
         <KindIcon kind={other.kind} size={20} />
         <span className={styles.rowText}>
           <span
             className={styles.rowRel}
-          >{`${relationOf(link)} ${other.kind}`}</span>
+          >{`${relationOf(link)} ${other.kind}${viaText(link.via)}`}</span>
           <span className={styles.rowName}>{other.name}</span>
         </span>
       </button>
@@ -194,6 +204,7 @@ export function Connections({
           }
           const first = row.links[0];
           const expanded = open.has(row.key);
+          const via = groupVia(row.links);
           return (
             <li key={row.key}>
               <button
@@ -202,6 +213,7 @@ export function Connections({
                 data-testid="map-connection-group"
                 data-rel={first.rel}
                 data-dir={first.out ? "out" : "in"}
+                data-via={via?.join(",")}
                 aria-expanded={expanded}
                 onClick={() => toggle(row.key)}
               >
@@ -212,7 +224,7 @@ export function Connections({
                 )}
                 <span className={styles.rowText}>
                   <span className={styles.rowRel}>
-                    {`${relationOf(first)} ${row.links.length} Pods of ${row.owner.name}`}
+                    {`${relationOf(first)} ${row.links.length} Pods of ${row.owner.name}${viaText(via)}`}
                   </span>
                 </span>
               </button>

@@ -576,10 +576,28 @@ export function MapCanvas({
                   data-from={e.from}
                   data-rel={e.rel}
                   data-to={e.to}
+                  data-via={e.via?.join(",")}
                   className={edgeClass(e)}
                 >
                   <path d={e.d} className={styles.line} />
                   {e.head ? <path d={e.head} className={styles.head} /> : null}
+                  {e.via ? (
+                    <>
+                      {e.mid ? (
+                        <circle
+                          cx={e.mid.x}
+                          cy={e.mid.y}
+                          r={Math.min(4 / view.k, 8)}
+                          strokeWidth={Math.min(1.5 / view.k, 3)}
+                          className={styles.viaMark}
+                        />
+                      ) : null}
+                      {/* A wide invisible stroke, so the hidden kinds show on hover. */}
+                      <path d={e.d} className={styles.hit}>
+                        <title>{`via ${e.via.join(", ")}`}</title>
+                      </path>
+                    </>
+                  ) : null}
                 </g>
               ))}
             </g>
@@ -622,7 +640,11 @@ export function MapCanvas({
             })}
             <g className={styles.hot}>
               {hot.map((e) => (
-                <path key={e.key} d={`${e.d}${e.head}`} />
+                <path
+                  key={e.key}
+                  d={`${e.d}${e.head}`}
+                  className={e.via ? styles.hotBridge : undefined}
+                />
               ))}
             </g>
           </g>
@@ -689,6 +711,14 @@ export function MapCanvas({
                     {text}
                   </li>
                 ))}
+                {edges.some((e) => e.via) ? (
+                  <li data-testid="map-legend-bridge">
+                    <span
+                      className={`${styles.swatch} ${styles["key-bridge"]}`}
+                    />
+                    Through a hidden kind (hover for which)
+                  </li>
+                ) : null}
               </ul>
             </section>
           ) : null}

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DEMO, demoGraph, gedge, gnode } from "../../test/graph";
+import { DEMO, demoGraph, drawnHiding, gedge, gnode } from "../../test/graph";
 import { mockElementSize } from "../../test/size";
 import { MapCanvas, type MapCanvasProps, resetMovedForTest } from "./MapCanvas";
 import { buildModel } from "./model";
@@ -351,5 +351,74 @@ describe("MapCanvas", () => {
     ]) {
       expect(legend.getByText(text)).toBeTruthy();
     }
+  });
+
+  it("draws a bridge dashed, with a via mark and its hidden kinds on hover", () => {
+    const model = drawnHiding(["ReplicaSet"]);
+    draw({
+      model,
+      ids: model.nodes.map((n) => n.id),
+      layout: "layered",
+      memoryKey: "c1|cluster|layered",
+    });
+    const all = screen.getAllByTestId("map-edge");
+    const bridge = all.find(
+      (el) =>
+        el.getAttribute("data-rel") === "owns" &&
+        el.getAttribute("data-to") === DEMO.podA,
+    ) as Element;
+    expect(bridge.getAttribute("data-from")).toBe(DEMO.deployment);
+    expect(bridge.getAttribute("data-via")).toBe("ReplicaSet");
+    expect(bridge.getAttribute("class")?.split(" ")).toContain("bridge");
+    expect(bridge.querySelector("title")?.textContent).toBe("via ReplicaSet");
+    const k = Number(
+      /scale\(([^)]+)\)/.exec(
+        document.querySelector("svg g[transform]")?.getAttribute("transform") ??
+          "",
+      )?.[1],
+    );
+    const mark = bridge.querySelector("circle") as SVGCircleElement;
+    expect(Number(mark.getAttribute("r"))).toBeCloseTo(Math.min(4 / k, 8));
+    expect(Number(mark.getAttribute("stroke-width"))).toBeCloseTo(
+      Math.min(1.5 / k, 3),
+    );
+    const real = all.find(
+      (el) => el.getAttribute("data-rel") === "selects",
+    ) as Element;
+    expect(real.hasAttribute("data-via")).toBe(false);
+    expect(real.querySelector("circle")).toBeNull();
+  });
+
+  it("draws a selected bridge on top, still dashed", () => {
+    const model = drawnHiding(["ReplicaSet"]);
+    draw({
+      model,
+      ids: model.nodes.map((n) => n.id),
+      layout: "layered",
+      memoryKey: "c1|cluster|layered",
+      selected: DEMO.podA,
+    });
+    expect(document.querySelectorAll(".hot .hotBridge").length).toBeGreaterThan(
+      0,
+    );
+  });
+
+  it("names bridges in the legend only while one is drawn", () => {
+    const first = draw();
+    fireEvent.click(screen.getByTestId("map-legend-toggle"));
+    expect(screen.queryByTestId("map-legend-bridge")).toBeNull();
+    first.unmount();
+    const model = drawnHiding(["ReplicaSet"]);
+    draw({
+      model,
+      ids: model.nodes.map((n) => n.id),
+      memoryKey: "c1|cluster|grouped|b",
+    });
+    fireEvent.click(screen.getByTestId("map-legend-toggle"));
+    const line = screen.getByTestId("map-legend-bridge");
+    expect(line.textContent).toBe("Through a hidden kind (hover for which)");
+    expect(line.querySelector(".key-bridge")).not.toBeNull();
+    // Grouped draws the bridged owns edges as branches in the owner's box.
+    expect(edges()).toContain(`${DEMO.deployment} owns ${DEMO.podA}`);
   });
 });

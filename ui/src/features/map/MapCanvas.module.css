@@ -190,11 +190,37 @@
   fill: var(--border-strong-color);
 }
 
+/* An edge through a hidden kind (spec H64). */
+.bridge .line {
+  stroke: var(--text-secondary);
+  stroke-dasharray: 6 4;
+}
+
+.bridge .head {
+  fill: var(--text-secondary);
+}
+
+.viaMark {
+  fill: var(--surface-card);
+  stroke: var(--text-secondary);
+}
+
+.hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 12;
+  pointer-events: stroke;
+}
+
 .hot path {
   fill: none;
   stroke: var(--border-accent);
   stroke-width: 2;
   pointer-events: none;
+}
+
+.hot .hotBridge {
+  stroke-dasharray: 6 4;
 }
 
 .controls {
@@ -288,7 +314,8 @@
 
 .key-own,
 .key-net,
-.key-use {
+.key-use,
+.key-bridge {
   height: 0;
   border-radius: var(--radius-none);
   border-width: 1px 0 0;
@@ -304,6 +331,10 @@
 
 .key-use {
   border-top: 2px dashed var(--border-strong-color);
+}
+
+.key-bridge {
+  border-top: 2px dashed var(--text-secondary);
 }
 
 .live {

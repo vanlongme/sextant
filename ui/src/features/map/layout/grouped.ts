@@ -608,8 +608,8 @@ export function boxRects(
   return { boxes, extent };
 }
 
-/** The class an edge is drawn with. */
-export type EdgeClass = "net" | "use";
+/** The class an edge is drawn with; `own` is a bridged owns branch (spec H64). */
+export type EdgeClass = "net" | "use" | "own";
 
 /** A drawn Grouped edge, with the ids it stands for and its path and arrow head. */
 export interface GroupedEdge {
@@ -620,14 +620,40 @@ export interface GroupedEdge {
   ids: string[];
   d: string;
   head: string;
+  /** Where a bridge's via mark sits. */
+  mid: Point;
+  /** The hidden kinds a bridge passes through. */
+  via?: string[];
 }
 
 const f = (n: number) => n.toFixed(1);
 const clamp = (v: number, lo: number, hi: number) =>
   Math.max(lo, Math.min(hi, v));
 
+/** The point halfway along a polyline, bends taken as corners. */
+function midpoint(pts: [number, number][]): Point {
+  const lengths = pts
+    .slice(1)
+    .map(([x, y], i) => Math.hypot(x - pts[i][0], y - pts[i][1]));
+  let left = lengths.reduce((a, b) => a + b, 0) / 2;
+  for (let i = 0; i < lengths.length; i++) {
+    if (left <= lengths[i] || i === lengths.length - 1) {
+      const t = lengths[i] === 0 ? 0 : Math.min(1, left / lengths[i]);
+      const [x0, y0] = pts[i];
+      const [x1, y1] = pts[i + 1];
+      return { x: x0 + (x1 - x0) * t, y: y0 + (y1 - y0) * t };
+    }
+    left -= lengths[i];
+  }
+  return { x: pts[0][0], y: pts[0][1] };
+}
+
 /** An orthogonal polyline with rounded bends, ending in an arrow head. */
-export function poly(pts: [number, number][]): { d: string; head: string } {
+export function poly(pts: [number, number][]): {
+  d: string;
+  head: string;
+  mid: Point;
+} {
   const n = pts.length;
   const [xe, ye] = pts[n - 1];
   const [xa, ya] = pts[n - 2];
@@ -652,14 +678,14 @@ export function poly(pts: [number, number][]): { d: string; head: string } {
   }
   d += ` L${f(bx)} ${f(by)}`;
   const head = ` M${f(xe)} ${f(ye)} L${f(bx - uy * 4.5)} ${f(by + ux * 4.5)} L${f(bx + uy * 4.5)} ${f(by - ux * 4.5)} Z`;
-  return { d, head };
+  return { d, head, mid: midpoint(pts) };
 }
 
 /**
- * The Grouped edges between the drawn nodes (spec E §8.1): `owns` is the box nesting and is
- * not drawn; a link to every Pod of a box becomes one arrow to the box. Each runs
- * orthogonally between the edges of its ends, and between two namespace boxes through
- * the gap between them.
+ * The Grouped edges between the drawn nodes (spec E §8.1, H64): a real `owns` is the box
+ * nesting and is not drawn, a bridged one is a branch in its owner's box; a link to every
+ * Pod of a box becomes one arrow to the box. Each other edge runs orthogonally between the
+ * edges of its ends, and between two namespace boxes through the gap between them.
  */
 export function groupedEdges(
   model: MapModel,
@@ -673,7 +699,7 @@ export function groupedEdges(
     Object.keys(tree.parentOf).filter((k) => !tree.groups[k]),
   );
   const all = model.edges.filter((e) => shown.has(e.from) && shown.has(e.to));
-  const drawn: Omit<GroupedEdge, "d" | "head">[] = [];
+  const drawn: Omit<GroupedEdge, "d" | "head" | "mid">[] = [];
   const fan = (
     cls: EdgeClass,
     list: typeof all,
@@ -685,22 +711,34 @@ export function groupedEdges(
     for (const e of list) byHub.set(hub(e), [...(byHub.get(hub(e)) ?? []), e]);
     for (const [h, es] of byHub) {
       const many = [...new Set(es.map(spoke))];
-      const ends = new Map<string, { rel: GraphRel; members: string[] }>();
+      const ends = new Map<
+        string,
+        { rel: GraphRel; members: string[]; via: string[] | null }
+      >();
       for (const e of es) {
         const s = spoke(e);
         const end =
           nodeOf(model, s).kind === "Pod" ? podEnd(model, tree, s, many, h) : s;
-        const entry = ends.get(end) ?? { rel: e.rel, members: [] };
+        const entry = ends.get(end) ?? { rel: e.rel, members: [], via: [] };
         if (!entry.members.includes(s)) entry.members.push(s);
+        // A merged arrow is a bridge only when every edge it stands for is one.
+        if (!e.via) {
+          entry.via = null;
+        } else if (entry.via) {
+          for (const kind of e.via) {
+            if (!entry.via.includes(kind)) entry.via.push(kind);
+          }
+        }
         ends.set(end, entry);
       }
-      for (const [end, { rel, members }] of ends) {
+      for (const [end, { rel, members, via }] of ends) {
         drawn.push({
           cls,
           rel,
           from: hubFirst ? h : end,
           to: hubFirst ? end : h,
           ids: [h, ...members],
+          ...(via ? { via } : {}),
         });
       }
     }
@@ -849,7 +887,7 @@ export function groupedEdges(
     }
     return out;
   };
-  return drawn.map((e) => {
+  const routed = drawn.map((e): GroupedEdge => {
     const ca = chain(e.from);
     const cb = chain(e.to);
     const inB = new Set(cb);
@@ -867,4 +905,49 @@ export function groupedEdges(
         : route(rectFor(e.from), rectFor(e.to));
     return { ...e, ...path };
   });
+  // A bridged owns edge is a dashed branch in its owner's box: down from under the
+  // box's icon, then right to the child (spec H64).
+  const branches: GroupedEdge[] = [];
+  for (const e of model.edges) {
+    if (e.rel !== "owns" || !e.via) continue;
+    if (
+      tree.parentOf[e.from] === undefined ||
+      tree.parentOf[e.to] === undefined
+    )
+      continue;
+    const owner = boxes[e.from];
+    if (!owner || tree.parentOf[e.to] !== e.from) {
+      branches.push({
+        cls: "own",
+        rel: e.rel,
+        from: e.from,
+        to: e.to,
+        ids: [e.from, e.to],
+        via: e.via,
+        ...route(rectFor(e.from), rectFor(e.to)),
+      });
+      continue;
+    }
+    const sx = owner.x0 + 14;
+    const sy = owner.y0 + 40;
+    const box = tree.groups[e.to] ? boxes[e.to] : undefined;
+    const ex = box ? box.x0 : leafRect(e.to).x0;
+    const ey = box ? box.y0 + 23 : pos[e.to].y;
+    if (ex - sx < 16) continue;
+    branches.push({
+      cls: "own",
+      rel: e.rel,
+      from: e.from,
+      to: e.to,
+      ids: [e.from, e.to],
+      via: e.via,
+      ...poly([
+        [sx, sy],
+        [sx, ey],
+        [ex, ey],
+      ]),
+      mid: { x: sx, y: sy + 9 },
+    });
+  }
+  return [...routed, ...branches];
 }
